@@ -4,7 +4,10 @@ Ultimo aggiornamento: 2026-10-13
 
 ## Dove siamo
 
-Progettazione chiusa (passi 1–3). **Prossimo: passo 4**, creazione del progetto e prime tabelle.
+Progettazione chiusa (passi 1–3). **In corso: passo 4**, creazione del progetto e prime tabelle (dettagli in `passi/04-fondamenta.md`).
+
+Fatto finora: struttura del repository, `.gitignore`, `.env.example`, progetto Spring Boot 4.1.1 generato da Initializr, package vuoti `auth`, `practitioner`, `customer`.
+Da fare (Nicholas): `infra/docker-compose.dev.yml`, configurazione del backend, migrazione V1, entità `AppUser` e repository, test con Testcontainers.
 
 ## Percorso
 
@@ -13,7 +16,7 @@ Progettazione chiusa (passi 1–3). **Prossimo: passo 4**, creazione del progett
 | 1 | Regole e requisiti | — | ✅ fatto → `requisiti.md` |
 | 2 | Architettura e scelte tecniche | — | ✅ fatto → `architettura.md` |
 | 3 | Modello dei dati | — | ✅ fatto → `modello-dati.md` |
-| 4 | Fondamenta: repository, Spring Boot, PostgreSQL in Docker, Flyway, prime tabelle | Nicholas | ⏳ prossimo |
+| 4 | Fondamenta: repository, Spring Boot, PostgreSQL in Docker, Flyway, prime tabelle | Nicholas | ⏳ in corso |
 | 5 | Catalogo e professionisti: servizi, prezzi, impostazioni | Nicholas | |
 | 6 | Calendario: orari di lavoro, indisponibilità, calcolo degli orari liberi | Nicholas | |
 | 7 | Prenotazione: blocco dell'orario, vincolo di non sovrapposizione, lavori programmati | Nicholas | |
