@@ -1,0 +1,33 @@
+# --- Secrets: never in the repository (D-016) ---
+.env
+.env.*
+!.env.example
+
+# --- Backend: Java / Maven ---
+target/
+.mvn/wrapper/maven-wrapper.jar
+*.log
+
+# --- Frontend: Node / Next.js ---
+node_modules/
+.next/
+out/
+next-env.d.ts
+
+# --- IDE ---
+.idea/
+*.iml
+*.iws
+*.ipr
+.vscode/
+.classpath
+.project
+.settings/
+.factorypath
+
+# --- Claude Code: local, per-machine settings ---
+.claude/settings.local.json
+
+# --- OS ---
+.DS_Store
+Thumbs.db
