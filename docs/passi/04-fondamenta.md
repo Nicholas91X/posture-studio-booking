@@ -55,7 +55,12 @@ JDK (per sviluppare) contiene il JRE (per eseguire), che contiene la JVM. `PATH`
 - Boot 4: auto-configurazione divisa per tecnologia, ogni tecnologia ha il suo starter. Senza `spring-boot-starter-flyway` Flyway non parte e nessun messaggio te lo segnala. Jackson 3, Testcontainers 2, JSpecify.
 
 ### Docker Compose: servizi, volumi, variabili d'ambiente
-*(da completare durante il passo)*
+> Spiegazione completa: [`docs/studio/02-docker-compose-postgres.md`](../studio/02-docker-compose-postgres.md).
+
+- Immagine `postgres:17`, non `latest`: parità con la produzione, e il formato dei dati cambia tra versioni principali.
+- Named volume sulla cartella dei dati della 17 (`/var/lib/postgresql/data`); senza, Docker crea un volume anonimo e dopo `down`/`up` il database appare vuoto.
+- Segreti dal `.env` della radice tramite interpolazione `${...}` e `--env-file .env`; non `env_file:`, che passerebbe al container tutti i segreti.
+- Porta pubblicata solo su `127.0.0.1`. In produzione la porta del database non si pubblica affatto.
 
 ### Flyway: versioni, storico, checksum
 *(da completare durante il passo)*
