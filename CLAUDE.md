@@ -71,6 +71,15 @@ Se una richiesta contraddice una decisione registrata, **fermati e segnalalo**. 
 
 Vedi "A fine sessione" più sotto.
 
+### Verifiche di comprensione
+
+Nicholas studia con test interattivi: una domanda alla volta, da punti di vista diversi, con correzione graduata (✅ / 🟡 / ❌). Il metodo completo è in `docs/metodo-di-studio.md` ed è vincolante.
+
+- Si lanciano con `/verifica [argomento]` (skill in `.claude/skills/verifica/`), quando Nicholas vuole, anche più volte al giorno e sullo stesso argomento.
+- **Ogni test produce sempre la sua documentazione**: il file in `docs/studio/verifiche/` (con le risposte di Nicholas testuali e le correzioni), l'aggiornamento di `docs/studio/punti-deboli.md` e la riga nell'indice `docs/studio/verifiche/README.md`.
+- Proponi un test dopo ogni guida di studio (prima che Nicholas scriva il codice) e a fine passo.
+- Quando Nicholas sbaglia un concetto anche fuori dai test, valuta se aggiungerlo ai punti deboli.
+
 ---
 
 ## Come parlare con Nicholas
@@ -99,8 +108,9 @@ Quando Nicholas dice "chiudiamo", o quando un pezzo è completo:
 1. **Aggiorna `docs/stato.md`**: cosa è finito, cosa resta, eventuali problemi aperti.
 2. **Registra le decisioni**: se in sessione è stata presa una scelta importante, aggiungi una scheda in `docs/decisioni.md`.
 3. **Scrivi o aggiorna `docs/passi/NN-nome-passo.md`** seguendo lo schema qui sotto.
-4. **Proponi il messaggio di commit.**
-5. **Scrivi un riepilogo di 5–10 righe** che Nicholas riporterà nella chat di pianificazione.
+4. **Se il passo è completo, proponi la verifica di fine passo** (`/verifica colloquio passo NN`).
+5. **Proponi il messaggio di commit.**
+6. **Scrivi un riepilogo di 5–10 righe** che Nicholas riporterà nella chat di pianificazione.
 
 ### Schema dei documenti di passo (`docs/passi/`)
 
