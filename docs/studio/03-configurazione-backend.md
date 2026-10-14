@@ -43,6 +43,18 @@ jdbc:postgresql://localhost:5432/posture_studio
 
 Dall'URL Spring Boot capisce anche **quale classe del driver** usare: non serve più scrivere `driver-class-name`, come si vede in molti tutorial vecchi.
 
+**JDBC è un contratto.** Il nostro codice (e Hibernate, e Flyway) parla **solo** le interfacce JDBC, che fanno parte del JDK. Il driver le implementa per un database specifico. Per questo il driver ha scope `runtime`: a compilazione basta il contratto, e così nessuno può importare per errore classi del driver (es. `org.postgresql.util.PSQLException`) legando il codice a PostgreSQL. Cambiare database vorrebbe dire cambiare driver e URL; resterebbe da riscrivere solo l'SQL che usa funzioni proprie di PostgreSQL (nel nostro caso alcune migrazioni).
+
+**Come viene scelto il driver, a runtime.** Ogni driver si annuncia con un file dentro il suo jar (`META-INF/services/java.sql.Driver`, meccanismo *ServiceLoader*). Quando arriva un URL, `DriverManager` chiede ai driver presenti chi sa gestirlo; Spring Boot, prima ancora, guarda l'inizio dell'URL (`jdbc:postgresql:`) per scegliere la classe del driver.
+
+**Gli errori arrivano uno alla volta**, nell'ordine della catena: prima la scelta del driver (locale), poi la rete, poi PostgreSQL (credenziali, poi database). Con un URL che ha tre errori se ne vede uno; corretto quello, compare il successivo (esempio reale nella [verifica 02, D3](verifiche/02-2026-10-14-jdbc.md)):
+
+| Errore nell'URL | Messaggio | Anello |
+|---|---|---|
+| `jdbc:postgres:` invece di `jdbc:postgresql:` | `Failed to determine a suitable driver class` | Scelta del driver |
+| Porta sbagliata | `Connection to localhost:5433 refused` | Rete: nessuno in ascolto |
+| Nome del database sbagliato (anche solo le maiuscole) | `FATAL: database "..." does not exist` | PostgreSQL |
+
 ### 1.2 DataSource e pool di connessioni
 
 Aprire una connessione a un database è **costoso**: rete, autenticazione, allocazione di memoria sul server, decine di millisecondi. Se ogni richiesta HTTP ne aprisse e chiudesse una, l'applicazione passerebbe più tempo a collegarsi che a lavorare.
@@ -66,6 +78,14 @@ Per creare la `DataSource`, all'auto-configurazione servono tre informazioni (gu
 | `spring.datasource.username` | L'utente del database |
 | `spring.datasource.password` | La password |
 
+**Quante connessioni servono? 10 connessioni non sono 10 clienti.** Una connessione si prende in prestito solo per la durata di un'operazione sul database (una transazione, pochi millisecondi) e poi torna nel pool. Un cliente passa quasi tutto il tempo altrove. Con transazioni da 5 ms, 10 connessioni reggono migliaia di operazioni al secondo.
+
+**Quando finiscono.** Una richiesta in più **aspetta** che una connessione si liberi, fino a `connectionTimeout` (default 30 secondi); poi Hikari rinuncia con `Connection is not available, request timed out after 30000ms`. La richiesta HTTP non viene rifiutata: la accetta Tomcat, che ha **il suo** pool di thread (200 di default), ed è il thread ad aspettare.
+
+**Il pool è anche un limitatore.** Senza pool, ogni richiesta aprirebbe la sua connessione: autenticazione e, in PostgreSQL, **un processo del sistema operativo per connessione**. PostgreSQL ne accetta al massimo `max_connections` (100 di default); oltre, risponde `FATAL: sorry, too many clients already`. Con il pool la coda si forma ordinata nell'applicazione, invece di travolgere il database.
+
+Cosa esaurisce il pool: tenere una connessione più del necessario. Per questo `open-in-view` va disattivato (bonus della Parte 2), e al passo 9 non si chiamerà mai Stripe **dentro** una transazione.
+
 ### 1.3 JPA, Hibernate, Spring Data JPA
 
 Tre livelli, spesso confusi:
@@ -77,6 +97,16 @@ Tre livelli, spesso confusi:
 | **Spring Data JPA** | Un livello sopra JPA: scrivi un'interfaccia `AppUserRepository extends JpaRepository<...>` e Spring genera l'implementazione | Comodità in più |
 
 Le proprietà di Hibernate in Spring Boot iniziano con `spring.jpa.`.
+
+**JPA non sostituisce JDBC: ci sta sopra.** Nel nostro progetto non scriviamo mai `Connection` o `PreparedStatement`, ma JDBC lavora sempre, usato da altri componenti:
+
+```
+Spring Data JPA (repository)  →  Hibernate (genera SQL)  ┐
+                                 Flyway (migrazioni)     ┼→ JDBC (interfacce) → HikariCP (connessioni) → driver PostgreSQL → rete → PostgreSQL
+            (se servisse)        JdbcClient di Spring    ┘
+```
+
+Se servisse una query che non riguarda un'entità (un report, un'aggregazione), si potrebbe usare JDBC direttamente con `JdbcClient` di Spring, sullo stesso pool e nella stessa transazione.
 
 ### 1.4 Chi crea le tabelle? `ddl-auto`
 
