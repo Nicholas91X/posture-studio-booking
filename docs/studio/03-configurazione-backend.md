@@ -164,6 +164,16 @@ variabile d'ambiente  SERVER_PORT             ──►  proprietà  server.port
 
 Quindi una proprietà si può impostare dall'ambiente **anche senza scriverla** in `application.properties`. È utile e da sapere (domanda da colloquio frequente). Nel nostro caso preferiamo i placeholder espliciti (risposta 1, più sotto spiega perché).
 
+**Attenzione: la conversione vale solo per le variabili d'ambiente vere.** Il file `.env`, per Spring, **non è l'ambiente**: è un file che importiamo come `.properties`, quindi le sue chiavi sono nomi di proprietà normali. Verificato sul backend:
+
+| Dove | Scritto così | Funziona? |
+|---|---|---|
+| Variabile d'ambiente vera (terminale, IDE, container) | `SERVER_PORT=8093` | ✅ convertita in `server.port` |
+| File `.env` importato | `server.port=8092` | ✅ è già il nome della proprietà |
+| File `.env` importato | `SERVER_PORT=8091` | ❌ ignorata in silenzio: per Spring è una proprietà che si chiama `SERVER_PORT`, e nessuno la usa |
+
+(Le `POSTGRES_*` nel `.env` funzionano per un altro motivo: non le converte nessuno, le leggono i nostri placeholder `${POSTGRES_...}` con quel nome esatto.)
+
 ### 1.8 I profili (per sapere che esistono)
 
 Un **profilo** è un insieme di configurazione attivo solo in certi ambienti: `application-dev.properties` vale solo se è attivo il profilo `dev` (`spring.profiles.active=dev`). Per ora non ci servono: la differenza tra locale e produzione la fanno le variabili d'ambiente, e un solo file resta più semplice. Li valuteremo se emergerà configurazione davvero diversa tra gli ambienti, per esempio log più dettagliati in sviluppo.
@@ -217,7 +227,8 @@ La prima è più robusta.
 
 **Due regole sul contenuto del `.env`**, perché ora lo leggono due programmi diversi:
 - **niente virgolette** intorno ai valori: Compose le toglie, Spring le terrebbe come parte della password;
-- **niente barre rovesciate** (`\`): nei file `.properties` hanno un significato speciale.
+- **niente barre rovesciate** (`\`): nei file `.properties` hanno un significato speciale;
+- **niente spazi in fondo alle righe**: Compose li toglie, ma nel formato `.properties` fanno parte del valore. `localhost␣` diventa un host che non esiste (`UnknownHostException`). Errore reale del passo 4.
 
 **Perché placeholder e non *relaxed binding* (1.7)?** Potremmo chiamare le variabili `SPRING_DATASOURCE_USERNAME` ecc. e non scrivere niente in `application.properties`. Però:
 - il container di PostgreSQL vuole `POSTGRES_USER`: avremmo due nomi per lo stesso valore, da tenere allineati;

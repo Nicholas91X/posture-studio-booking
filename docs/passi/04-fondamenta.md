@@ -75,7 +75,7 @@ JDK (per sviluppare) contiene il JRE (per eseguire), che contiene la JVM. `PATH`
 - Il `.env` della radice importato con `spring.config.import=optional:file:...[.properties]`: `optional:` perché in produzione il file non c'è e le variabili arrivano dall'ambiente, che ha comunque precedenza.
 - Placeholder `${NOME:default}`: default per host e porta, mai per la password (*fail fast*).
 - `validate` e non `update`: lo schema ha un solo padrone, Flyway. Boot fa partire Flyway prima di Hibernate.
-- `open-in-view`: da decidere esplicitamente (consigliato `false`).
+- `open-in-view=false` (D-019).
 
 ### JPA: mapping dell'entità, e perché un'entità non può essere un record
 *(da completare durante il passo)*
@@ -85,10 +85,19 @@ JDK (per sviluppare) contiene il JRE (per eseguire), che contiene la JVM. `PATH`
 
 ## Decisioni
 - D-003 (Java 21, Spring Boot): applicata con Spring Boot 4.1.1.
-- *(altre da registrare durante il passo, es. la scelta per l'email in minuscolo)*
+- D-018: un unico `.env` nella radice, letto da Compose e da Spring.
+- D-019: Open Session In View disattivato.
+- *(da registrare: la scelta per l'email in minuscolo, con V1)*
 
 ## Errori fatti e come sono stati corretti
-*(a fine passo)*
+
+| # | Errore | Sintomo | Causa | Correzione | Lezione |
+|---|---|---|---|---|---|
+| 1 | Volume montato su `/var/lib/postgresql` | Nessuno, all'inizio: tutto sembrava funzionare | È il percorso di PostgreSQL **18**; con l'immagine 17 Docker crea un volume anonimo su `/var/lib/postgresql/data` e i dati finiscono lì | Montare il named volume su `/var/lib/postgresql/data` | Leggere la documentazione dell'immagine **per la versione usata**; verificare la persistenza con `down`/`up` |
+| 2 | `spring.config.import=../.env` | `File extension is not known to any PropertySourceLoader` | Spring sceglie il lettore dall'estensione, e `.env` non ne ha una che conosca | Indicare il formato tra parentesi quadre: `...env[.properties]` | Il formato si dichiara con una sintassi apposita |
+| 3 | `optional:file:../.env.properties` | `password authentication failed` | Senza parentesi, `.properties` diventa parte del nome: il file non esiste, `optional:` lo salta in silenzio, e i placeholder usano il default della password | Parentesi quadre; password **senza default** | `optional:` + default = errore silenzioso nel posto sbagliato. Senza default l'errore diventa `Could not resolve placeholder`, che punta alla causa vera |
+| 4 | Secondo percorso `../../../.env` | Da VS Code, `.env` non trovato | Pensato come relativo alla cartella di `application.properties`, ma i percorsi `file:` sono relativi alla **cartella di lavoro** del processo | `.env` (dalla radice) accanto a `../.env` (da `backend/`) | Relativo a cosa? Sempre alla cartella da cui parte il processo |
+| 5 | Spazio dopo `localhost` nel `.env` | `UnknownHostException: localhost` | Nel formato `.properties` gli spazi finali fanno parte del valore; Compose invece li toglie | Togliere lo spazio | Lo stesso file letto da due programmi può essere interpretato in modo diverso (PD-01). Nel `.env`: niente virgolette, niente `\`, niente spazi finali |
 
 ## Domande da colloquio
 *(a fine passo)*
