@@ -68,8 +68,14 @@ JDK (per sviluppare) contiene il JRE (per eseguire), che contiene la JVM. `PATH`
 ### Vincoli SQL come ultima difesa
 *(da completare durante il passo)*
 
-### `ddl-auto=validate`
-*(da completare durante il passo)*
+### Configurazione del backend e `ddl-auto=validate`
+> Spiegazione completa: [`docs/studio/03-configurazione-backend.md`](../studio/03-configurazione-backend.md).
+
+- JDBC + driver; `DataSource` come pool di connessioni (HikariCP).
+- Il `.env` della radice importato con `spring.config.import=optional:file:...[.properties]`: `optional:` perché in produzione il file non c'è e le variabili arrivano dall'ambiente, che ha comunque precedenza.
+- Placeholder `${NOME:default}`: default per host e porta, mai per la password (*fail fast*).
+- `validate` e non `update`: lo schema ha un solo padrone, Flyway. Boot fa partire Flyway prima di Hibernate.
+- `open-in-view`: da decidere esplicitamente (consigliato `false`).
 
 ### JPA: mapping dell'entità, e perché un'entità non può essere un record
 *(da completare durante il passo)*

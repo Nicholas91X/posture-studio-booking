@@ -6,8 +6,10 @@ Ultimo aggiornamento: 2026-10-13
 
 Progettazione chiusa (passi 1–3). **In corso: passo 4**, creazione del progetto e prime tabelle (dettagli in `passi/04-fondamenta.md`).
 
-Fatto finora: struttura del repository, `.gitignore`, `.env.example`, progetto Spring Boot 4.1.1 generato da Initializr, package vuoti `auth`, `practitioner`, `customer`.
-Da fare (Nicholas): `infra/docker-compose.dev.yml`, configurazione del backend, migrazione V1, entità `AppUser` e repository, test con Testcontainers.
+Fatto finora: struttura del repository, `.gitignore`, `.env.example`, progetto Spring Boot 4.1.1 generato da Initializr, package vuoti `auth`, `practitioner`, `customer`, PostgreSQL 17 in locale con `infra/docker-compose.dev.yml` (verificata la persistenza sul named volume).
+Da fare (Nicholas): configurazione del backend, migrazione V1, entità `AppUser` e repository, test con Testcontainers.
+
+Avvio del database in locale, dalla radice: `docker compose -f infra/docker-compose.dev.yml --env-file .env up -d`
 
 ## Percorso
 
