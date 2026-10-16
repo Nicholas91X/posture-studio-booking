@@ -63,10 +63,17 @@ JDK (per sviluppare) contiene il JRE (per eseguire), che contiene la JVM. `PATH`
 - Porta pubblicata solo su `127.0.0.1`. In produzione la porta del database non si pubblica affatto.
 
 ### Flyway: versioni, storico, checksum
-*(da completare durante il passo)*
+> Spiegazione completa: [`docs/studio/04-flyway-e-migrazione-v1.md`](../studio/04-flyway-e-migrazione-v1.md).
+
+- File `V<versione>__<descrizione>.sql` in `db/migration`; storico in `flyway_schema_history`.
+- Il checksum impedisce di modificare una migrazione già applicata: altrimenti database "alla stessa versione" avrebbero schemi diversi. Le correzioni sono migrazioni nuove.
+- In PostgreSQL ogni migrazione è una transazione: se fallisce, viene annullata per intero.
 
 ### Vincoli SQL come ultima difesa
-*(da completare durante il passo)*
+- Tutto ciò che è vero per ogni riga, sempre, diventa un vincolo: `not null`, `unique`, `check`, `foreign key`, identity `always`.
+- "Al massimo uno" = `unique` sulla chiave esterna. Un `check` vede solo la propria riga: le regole tra tabelle restano in Java.
+- Vincoli sempre con un nome (`tabella_colonna_tipo`).
+- Email: tre strade (`check` + `unique`, indice su `lower()`, `citext`), scelta di Nicholas da registrare in `decisioni.md`.
 
 ### Configurazione del backend e `ddl-auto=validate`
 > Spiegazione completa: [`docs/studio/03-configurazione-backend.md`](../studio/03-configurazione-backend.md).
