@@ -41,7 +41,17 @@ Elencati in `requisiti.md`, sezione "Punti aperti". Da chiudere prima del passo 
 - Scatto di inizio delle sedute → prima del passo 6
 - Cancellazione da parte dello studio → prima del passo 11
 - Aliquota IVA → prima del passo 5
-- Servizio email → prima del passo 8
+- Servizio email (orientamento: Brevo) → prima del passo 8
+- Codice di accesso anche via SMS → al passo 8 o dopo la prima versione
+- Concessioni discrezionali del professionista (crediti, omaggi) → prima del passo 10
+- Cancellazione dei dati di un cliente (GDPR, anonimizzazione) → prima del passo 14
+
+## Note per i passi futuri
+
+- **Passo 8 (accesso)**: sessione lunga che si rinnova a ogni visita (ordine di grandezza 30–90 giorni), per ridurre i codici via email senza introdurre password (D-014). Valutare il codice via SMS (requisiti, punto aperto 7): costo per messaggio, verifica del numero, limiti contro gli abusi (invio di SMS a raffica verso numeri a pagamento), consenso. Se il telefono diventa un modo per accedere, deve stare in `app_user`, unico e in un formato standard (internazionale, es. `+39...`), con la data di verifica.
+- **Passi 10–11 (crediti, cancellazioni)**: concessioni discrezionali del professionista (requisiti, punto aperto 6). Il modello a lotti e movimenti (D-009, D-010) le regge senza stravolgimenti: un omaggio o un credito concesso su una cancellazione tardiva è un **lotto** con una nuova origine (es. `GRANT`), una correzione è un **movimento** con un nuovo motivo (es. `ADJUSTMENT`). Serve la traccia: chi l'ha concesso, quando, con una nota. Una concessione non cambia lo stato della prenotazione (resta `CANCELLED_LATE`): cambia solo il credito. Perimetro deciso: credito su cancellazione tardiva, sedute omaggio, proroga di una scadenza, ognuno per i propri clienti. Attenzione alla **proroga**: è l'unica che *modifica* qualcosa (la scadenza di un lotto) invece di aggiungere; per non perdere la storia va registrato anche l'evento (vecchia e nuova scadenza, chi, quando, perché).
+- **Passo 8 (accesso), riattivazione**: con `unique` sull'email, un cliente disattivato che torna con la stessa email va **riattivato**, non registrato di nuovo.
+- **Passo 13 (pannello)**: gestione dei professionisti da parte dell'admin (D-021), compresa la disattivazione.
 
 ## Problemi aperti
 

@@ -73,7 +73,7 @@ JDK (per sviluppare) contiene il JRE (per eseguire), che contiene la JVM. `PATH`
 - Tutto ciò che è vero per ogni riga, sempre, diventa un vincolo: `not null`, `unique`, `check`, `foreign key`, identity `always`.
 - "Al massimo uno" = `unique` sulla chiave esterna. Un `check` vede solo la propria riga: le regole tra tabelle restano in Java.
 - Vincoli sempre con un nome (`tabella_colonna_tipo`).
-- Email: tre strade (`check` + `unique`, indice su `lower()`, `citext`), scelta di Nicholas da registrare in `decisioni.md`.
+- Email: tre strade (`check` + `unique`, indice su `lower()`, `citext`). Scelta la prima (D-020): il database impone il minuscolo, Java normalizza in un posto solo.
 
 ### Configurazione del backend e `ddl-auto=validate`
 > Spiegazione completa: [`docs/studio/03-configurazione-backend.md`](../studio/03-configurazione-backend.md).
@@ -94,7 +94,7 @@ JDK (per sviluppare) contiene il JRE (per eseguire), che contiene la JVM. `PATH`
 - D-003 (Java 21, Spring Boot): applicata con Spring Boot 4.1.1.
 - D-018: un unico `.env` nella radice, letto da Compose e da Spring.
 - D-019: Open Session In View disattivato.
-- *(da registrare: la scelta per l'email in minuscolo, con V1)*
+- D-020: email in minuscolo imposta dal database (`check` + `unique`), normalizzata in Java da un record `Email`.
 
 ## Errori fatti e come sono stati corretti
 

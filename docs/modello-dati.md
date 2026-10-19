@@ -2,6 +2,9 @@
 
 Le tabelle del sistema e come si collegano. Questa è la **progettazione**: le tabelle vere nascono dalle migrazioni Flyway, che Nicholas scrive nel passo 4 e seguenti. Se una migrazione si discosta da qui, si aggiorna questo file.
 
+Modifiche dovute alle migrazioni:
+- **V1 (passo 4)**: `customer.full_name` e `practitioner.display_name` sostituiti da `first_name` + `last_name`; `phone` spostato in `app_user` (facoltativo, per utenti di ogni ruolo); aggiunto `app_user.active` per la cancellazione morbida; ruolo `ADMIN` (D-021).
+
 Convenzioni:
 - Nomi in inglese, `snake_case`.
 - Chiavi primarie `id bigint` generate dal database (`generated always as identity`).
@@ -40,14 +43,17 @@ Chiunque possa accedere. Separato da cliente e professionista perché l'accesso 
 |---|---|---|
 | id | bigint | |
 | email | text | unica, salvata in minuscolo |
-| role | text | `CUSTOMER` o `PRACTITIONER` |
+| role | text | `CUSTOMER`, `PRACTITIONER` o `ADMIN` (D-021), senza default |
+| active | boolean | default true. Cancellazione morbida (*soft delete*) per ogni ruolo: un account disattivato non può accedere e la sua storia resta. Vuol dire "l'account esiste", non "prenotabile" (per le assenze ci sono le indisponibilità) |
+| phone | text | facoltativo, non unico (unicità, formato e verifica solo se diventerà un modo per accedere: requisiti, punto aperto 7) |
 
 ### `practitioner`
 | Colonna | Tipo | Note |
 |---|---|---|
 | id | bigint | |
-| user_id | bigint | → `app_user` |
-| display_name | text | |
+| user_id | bigint | → `app_user`, unico (un utente è al massimo un professionista) |
+| first_name | text | |
+| last_name | text | |
 | cancellation_notice_hours | int | default 24 |
 | single_credit_validity_days | int | default 90 |
 | slot_step_minutes | int | ogni quanto può iniziare una seduta, default 30 (punto aperto) |
@@ -56,9 +62,9 @@ Chiunque possa accedere. Separato da cliente e professionista perché l'accesso 
 | Colonna | Tipo | Note |
 |---|---|---|
 | id | bigint | |
-| user_id | bigint | → `app_user` |
-| full_name | text | |
-| phone | text | facoltativo |
+| user_id | bigint | → `app_user`, unico (un utente è al massimo un cliente) |
+| first_name | text | |
+| last_name | text | |
 
 ### `login_code`
 | Colonna | Tipo | Note |

@@ -10,6 +10,7 @@ I clienti prenotano e poi cancellano all'ultimo momento senza conseguenze, perch
 
 - **Professionisti** (2 nello stesso studio): ognuno ha il proprio calendario, i propri servizi, i propri pacchetti e le proprie impostazioni. Gestiscono tutto da un pannello.
 - **Clienti**: prenotano, pagano, vedono le proprie sedute e i crediti rimasti.
+- **Amministratore** (Nicholas, gestore della piattaforma): crea, modifica e disattiva i professionisti (D-021). Un professionista non si cancella mai, per conservarne la storia.
 
 ## Regole
 
@@ -69,4 +70,7 @@ Da decidere prima del passo indicato.
 2. **Se è lo studio a cancellare una seduta**, il cliente riceve sempre il credito, a prescindere dal preavviso. Proposta da confermare.
 3. **Ogni quanto possono iniziare le sedute?** (prima del passo del calendario) — Ogni 30 minuti, ogni ora, o subito dopo la seduta precedente? Proposta: uno "scatto" modificabile per professionista, iniziale 30 minuti.
 4. **Aliquota IVA corretta**: da chiedere al commercialista dello studio.
-5. **Servizio per l'invio delle email** (prima del passo dell'accesso): da scegliere.
+5. **Servizio per l'invio delle email** (prima del passo dell'accesso): orientamento verso **Brevo** (proposto da Nicholas), da confermare verificando i limiti del piano gratuito. Stima del volume: con 2 professionisti e ~16 prenotazioni al giorno, al massimo una trentina di email al giorno (codice di accesso + conferma). Per ridurre i codici di accesso: sessioni lunghe che si rinnovano a ogni visita (decisione del passo 8), non password (D-014 resta valida).
+6. **Concessioni discrezionali del professionista** (prima del passo dei crediti) — Proposta di Nicholas: il professionista deve poter decidere caso per caso, per esempio concedere comunque il credito per una cancellazione oltre il preavviso, o regalare sedute. Perimetro deciso da Nicholas (2026-10-16): **credito su una cancellazione oltre il preavviso**, **sedute in omaggio**, **proroga della scadenza** di un credito; ogni professionista le decide per i propri clienti e i propri servizi. Da definire: eventuali limiti e la traccia (chi, quando, perché, con una nota). Nota: si tratta sempre di **crediti**, mai di rimborsi in denaro (D-015). Analisi in `stato.md`, note per i passi futuri.
+7. **Codice di accesso anche via SMS** (da decidere: passo dell'accesso o dopo la prima versione) — Proposta di Nicholas: se l'utente ha un numero di telefono verificato, inviare il codice via SMS come prima opzione (Brevo offre anche SMS transazionali). Da valutare: costo per messaggio (gli SMS sono a pagamento, a differenza delle email nel piano gratuito), verifica del numero, protezione dagli abusi, consenso. Oggi "SMS e WhatsApp" sono tra le cose fuori dalla prima versione, ma solo per i promemoria.
+8. **Richiesta di cancellazione dei dati di un cliente (GDPR)** (prima della messa online) — Disattivare l'account (`app_user.active = false`) non basta: i dati personali restano. Le prenotazioni e i pagamenti vanno però conservati per obblighi fiscali. Soluzione abituale da valutare: **anonimizzazione** (sovrascrivere email, nome, telefono) mantenendo la storia economica. Da verificare con chi segue la privacy dello studio.
