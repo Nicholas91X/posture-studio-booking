@@ -77,7 +77,7 @@ La chiave della domanda è **in quale momento interviene ciascuna strada**:
 
 ✅ **Ordine.** Giusto: A lo scopre per primo (alla registrazione), C per ultimo (mai, in pratica). B sta in mezzo, ed è il caso peggiore: il bug si manifesta tardi e lontano dalla causa.
 
-**Collegamento:** A è lo stesso principio della password senza default (passo 4, errore 3): meglio un errore immediato nel posto giusto che un dato sbagliato che esplode altrove.
+**Collegamento:** A è lo stesso principio della password senza default (passo 4, errore 3): meglio un errore immediato nel posto giusto che un dato sbagliato che esplode altrove. *(Nota del 2026-10-19: il paragone con la password è impreciso. Verificato che senza `.env` Spring non si ferma con un errore sul segnaposto, ma più avanti con `password authentication failed`: guida 03, 1.6.)*
 
 **Da ripassare:** guida 04, 3.2–3.4.
 

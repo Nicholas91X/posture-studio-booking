@@ -146,8 +146,14 @@ Dentro `application.properties` il valore di una proprietà può fare riferiment
 
 | Sintassi | Significato |
 |---|---|
-| `${NOME}` | Il valore di `NOME`. Se non esiste da nessuna parte, **l'applicazione non parte** ("Could not resolve placeholder") |
+| `${NOME}` | Il valore di `NOME`. Se non esiste da nessuna parte: vedi sotto, dipende da chi legge la proprietà |
 | `${NOME:valore}` | Il valore di `NOME`; se non esiste, usa `valore` |
+
+**Se il valore non esiste, e non c'è default: attenzione, il comportamento cambia.**
+- Nelle **proprietà di Spring Boot** (come `spring.datasource.password`), il segnaposto **resta com'è**: la password diventa letteralmente il testo `${POSTGRES_PASSWORD}`. L'avvio non si ferma lì; si ferma più avanti, quando PostgreSQL rifiuta quella password: `password authentication failed`. Verificato sul nostro backend.
+- In un'annotazione **`@Value("${NOME}")`** nel codice Java, invece, l'avvio si ferma subito con `Could not resolve placeholder 'NOME'`.
+
+*(Corretto il 2026-10-19: una prima versione diceva che l'avvio si ferma con "Could not resolve placeholder". Verificato sul backend: non è così.)*
 
 Attenzione alla differenza con Compose: in Spring il default si scrive con **due punti** (`${NOME:5432}`), in Compose con **due punti e trattino** (`${NOME:-5432}`).
 
@@ -217,7 +223,7 @@ Dopo l'importazione, `POSTGRES_USER`, `POSTGRES_PASSWORD` ecc. diventano proprie
 | `.\mvnw.cmd spring-boot:run` dentro `backend/` | `backend/` | `../.env` |
 | "Run" sulla classe `main` in VS Code | la radice del repository (la cartella aperta in VS Code) | `.env` |
 
-E siccome hai scritto `optional:`, se il percorso è sbagliato **Spring non ti avvisa**: semplicemente non trova le variabili. Per fortuna i placeholder senza default bloccano subito l'avvio con "Could not resolve placeholder", e capisci dove guardare.
+E siccome hai scritto `optional:`, se il percorso è sbagliato **Spring non ti avvisa**: semplicemente non trova le variabili. Il sintomo arriva dopo, ed è ingannevole: `password authentication failed` (la password usata è letteralmente `${POSTGRES_PASSWORD}`, vedi 1.6). Regola pratica: **se compare `password authentication failed` e non hai cambiato nessuna password, il primo sospettato è il `.env` non trovato.** *(Corretto il 2026-10-19: una prima versione diceva che l'avvio si ferma con "Could not resolve placeholder". Verificato sul backend: non è così.)*
 
 Due soluzioni:
 - `spring.config.import` accetta **più file separati da virgola**: puoi elencare entrambi i percorsi, ognuno con `optional:`. Ne esiste solo uno, e viene trovato da entrambe le cartelle;
@@ -249,9 +255,9 @@ La prima è più robusta.
 | Porta | ✅ `5432` | È la porta standard di PostgreSQL |
 | Nome del database | ⚠️ meglio di no | Viene già dal `.env`, e un default che non coincide sarebbe solo confusione |
 | Utente | ⚠️ meglio di no | Come sopra |
-| **Password** | ❌ **mai** | Un default sarebbe una password scritta nel repository pubblico. E se la variabile manca, l'applicazione deve **fermarsi** con un errore chiaro, non partire con una password inventata |
+| **Password** | ❌ **mai** | Un default sarebbe una password scritta nel repository pubblico. E se la variabile manca, l'applicazione non deve collegarsi con una password inventata: senza default non c'è nessuna password valida, e l'avvio si ferma (con `password authentication failed`, vedi 1.6) |
 
-È lo stesso principio di `${...:?}` nel file Compose: **fallire subito, e in modo chiaro**, quando manca un valore obbligatorio. Si chiama *fail fast*.
+Il principio è quello di `${...:?}` nel file Compose: **fallire subito**, quando manca un valore obbligatorio. Si chiama *fail fast*. Compose lo fa in modo chiaro (dice quale variabile manca); Spring Boot, per le sue proprietà, fallisce ma con un messaggio meno diretto (vedi 1.6).
 
 ### Domanda 3 — L'URL JDBC e cosa viene dall'ambiente
 
@@ -381,13 +387,14 @@ Cosa **non** serve scrivere, anche se lo vedrai in molti tutorial:
 4. Leggi tutti i `WARN`. Con `open-in-view` impostato esplicitamente, quello della parte 2 sparisce.
 5. `Ctrl+C` per fermare.
 6. **Prova dall'IDE**: avvia `BookingApplication` anche da VS Code. Deve partire allo stesso modo, ed è la prova che l'importazione del `.env` funziona da entrambe le cartelle di lavoro.
-7. **Prova del fail fast**: rinomina per un momento il `.env` (es. `.env.off`) e riavvia. L'applicazione deve **fermarsi** con "Could not resolve placeholder". Poi rimetti il nome giusto.
+7. **Prova del fail fast**: rinomina per un momento il `.env` (es. `.env.off`) e riavvia. L'applicazione deve **fermarsi**, con `password authentication failed` (vedi 1.6). Poi rimetti il nome giusto.
 
 ### Errori tipici
 
 | Sintomo | Causa probabile |
 |---|---|
-| `Could not resolve placeholder 'POSTGRES_...'` | Il `.env` non è stato trovato: percorso sbagliato rispetto alla cartella di lavoro (domanda 1), o il file non esiste |
+| `password authentication failed`, senza aver cambiato password | Il `.env` non è stato trovato (percorso sbagliato rispetto alla cartella di lavoro, domanda 1, o file assente): la password usata è letteralmente `${POSTGRES_PASSWORD}` |
+| `Could not resolve placeholder '...'` | Un `@Value("${...}")` nel codice Java punta a un valore che non esiste |
 | `Failed to configure a DataSource: 'url' attribute is not specified` | Manca `spring.datasource.url`, o ha un nome sbagliato (attenzione agli errori di battitura: Spring ignora in silenzio le proprietà che non conosce) |
 | `Connection refused` / `Connection to localhost:5432 refused` | Il container non è acceso, oppure la porta è diversa da quella pubblicata |
 | `password authentication failed for user` | Password diversa da quella con cui è stato **inizializzato** il volume (guida 02, 1.6), oppure virgolette nel `.env` |

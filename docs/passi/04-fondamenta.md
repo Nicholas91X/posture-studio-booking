@@ -85,10 +85,16 @@ JDK (per sviluppare) contiene il JRE (per eseguire), che contiene la JVM. `PATH`
 - `open-in-view=false` (D-019).
 
 ### JPA: mapping dell'entità, e perché un'entità non può essere un record
-*(da completare durante il passo)*
+> Spiegazione completa: [`docs/studio/05-entita-jpa-e-test.md`](../studio/05-entita-jpa-e-test.md).
+
+- Entità = oggetto gestito dal contesto di persistenza (*dirty checking*). `IDENTITY` → l'`insert` parte subito al `save`. `EnumType.STRING`, mai `ORDINAL`.
+- `created_at` riempito dal database: `insertable = false, updatable = false` + `@Generated` di Hibernate.
+- Un'entità non può essere un `record` (final, campi final, niente costruttore vuoto, uguaglianza per valore); un `record` va bene per DTO, proiezioni, value object come `Email`.
 
 ### Testcontainers e `@ServiceConnection`
-*(da completare durante il passo)*
+- `@DataJpaTest` (Boot 4: `org.springframework.boot.data.jpa.test.autoconfigure`): solo JPA + Flyway, ogni test annullato con `rollback`, non sostituisce il database del container.
+- `@Container @ServiceConnection static PostgreSQLContainer` con `postgres:17`: connessione presa dal container, nessun `.env` necessario (anche in CI).
+- Un vincolo violato → `DataIntegrityViolationException` al `save`; verificare anche il **nome** del vincolo, per non far passare il test per il motivo sbagliato.
 
 ## Decisioni
 - D-003 (Java 21, Spring Boot): applicata con Spring Boot 4.1.1.
@@ -102,7 +108,7 @@ JDK (per sviluppare) contiene il JRE (per eseguire), che contiene la JVM. `PATH`
 |---|---|---|---|---|---|
 | 1 | Volume montato su `/var/lib/postgresql` | Nessuno, all'inizio: tutto sembrava funzionare | È il percorso di PostgreSQL **18**; con l'immagine 17 Docker crea un volume anonimo su `/var/lib/postgresql/data` e i dati finiscono lì | Montare il named volume su `/var/lib/postgresql/data` | Leggere la documentazione dell'immagine **per la versione usata**; verificare la persistenza con `down`/`up` |
 | 2 | `spring.config.import=../.env` | `File extension is not known to any PropertySourceLoader` | Spring sceglie il lettore dall'estensione, e `.env` non ne ha una che conosca | Indicare il formato tra parentesi quadre: `...env[.properties]` | Il formato si dichiara con una sintassi apposita |
-| 3 | `optional:file:../.env.properties` | `password authentication failed` | Senza parentesi, `.properties` diventa parte del nome: il file non esiste, `optional:` lo salta in silenzio, e i placeholder usano il default della password | Parentesi quadre; password **senza default** | `optional:` + default = errore silenzioso nel posto sbagliato. Senza default l'errore diventa `Could not resolve placeholder`, che punta alla causa vera |
+| 3 | `optional:file:../.env.properties` | `password authentication failed` | Senza parentesi, `.properties` diventa parte del nome: il file non esiste, `optional:` lo salta in silenzio, e i placeholder usano il default della password | Parentesi quadre; password **senza default** | `optional:` nasconde il file mancante, e il sintomo arriva lontano dalla causa (`password authentication failed`). Senza default almeno nessuna password inventata è nel repository. *(Corretto il 2026-10-19: prima diceva che senza default l'errore diventa `Could not resolve placeholder`; verificato che resta `authentication failed`)* |
 | 4 | Secondo percorso `../../../.env` | Da VS Code, `.env` non trovato | Pensato come relativo alla cartella di `application.properties`, ma i percorsi `file:` sono relativi alla **cartella di lavoro** del processo | `.env` (dalla radice) accanto a `../.env` (da `backend/`) | Relativo a cosa? Sempre alla cartella da cui parte il processo |
 | 5 | Spazio dopo `localhost` nel `.env` | `UnknownHostException: localhost` | Nel formato `.properties` gli spazi finali fanno parte del valore; Compose invece li toglie | Togliere lo spazio | Lo stesso file letto da due programmi può essere interpretato in modo diverso (PD-01). Nel `.env`: niente virgolette, niente `\`, niente spazi finali |
 

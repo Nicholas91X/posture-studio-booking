@@ -7,9 +7,10 @@ Ultimo aggiornamento: 2026-10-13
 Progettazione chiusa (passi 1–3). **In corso: passo 4**, creazione del progetto e prime tabelle (dettagli in `passi/04-fondamenta.md`).
 
 Fatto finora: struttura del repository, `.gitignore`, `.env.example`, progetto Spring Boot 4.1.1 generato da Initializr, package vuoti `auth`, `practitioner`, `customer`, PostgreSQL 17 in locale con `infra/docker-compose.dev.yml` (verificata la persistenza sul named volume), configurazione del backend da variabili d'ambiente (D-018, D-019): l'applicazione si avvia da `mvnw` e da VS Code, Flyway si collega (nessuna migrazione ancora).
-Da fare (Nicholas): migrazione V1 (prima: scelta sull'email in minuscolo), entità `AppUser` e repository, test con Testcontainers.
+Migrazione V1 applicata (`app_user`, `customer`, `practitioner`; D-020 email, D-021 ruolo `ADMIN`), vincoli verificati a mano in `psql` (`docs/studio/esperimenti/`).
+Da fare (Nicholas): entità `AppUser` e repository, test con Testcontainers.
 
-Metodo di studio attivo: `docs/metodo-di-studio.md`, comando `/verifica`. Verifiche fatte: 01 (attori del passo 4), 02 (JDBC).
+Metodo di studio attivo: `docs/metodo-di-studio.md`, comando `/verifica`. Verifiche fatte: 01 (attori del passo 4), 02 (JDBC), 03 (Flyway e vincoli).
 
 Avvio del database in locale, dalla radice: `docker compose -f infra/docker-compose.dev.yml --env-file .env up -d`
 
