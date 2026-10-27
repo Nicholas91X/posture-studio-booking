@@ -67,17 +67,17 @@ Gli stati di vita di un'entità:
 
 `created_at` ha `default now()` in V1: la deve riempire il **database**. Ma se Hibernate scrivesse nell'`insert` anche la colonna `created_at`, con il valore `null` del campo Java, il default non scatterebbe (guida 04, 2.7: il default vale solo per le colonne non nominate), e il `not null` rifiuterebbe la riga.
 
-Bisogna quindi dire a Hibernate due cose:
-1. **non nominare** questa colonna negli `insert` e negli `update`: `@Column(insertable = false, updatable = false)`;
-2. **rileggerla** dopo l'`insert`, per avere il valore nel campo Java: l'annotazione di Hibernate `@Generated` (`org.hibernate.annotations.Generated`).
+Bisogna quindi dire a Hibernate due cose: **non nominare** questa colonna negli `insert` e negli `update`, e **rileggerla** dopo l'`insert`, per avere il valore nel campo Java.
 
-Verificato: con le due insieme, subito dopo `save` il campo contiene l'istante scritto dal database.
+Basta **una sola annotazione** di Hibernate, `@Generated` (`org.hibernate.annotations.Generated`), che fa entrambe le cose. Verificato: con la sola `@Generated` l'`insert` diventa `insert into app_user (active,email,phone,role) values (...) returning id,created_at`. `created_at` non è tra le colonne scritte, ed è nel `returning`, così il valore torna nel campo Java nella stessa istruzione.
+
+Aggiungere `@Column(insertable = false, updatable = false)` non è un errore, ma è **ridondante**: lo si vede nei tutorial, e rende esplicito il "non scrivere". *(Corretto il 2026-10-22 dopo una verifica sul nostro stack.)*
 
 Le alternative, per sapere che esistono:
 
 | Modo | Chi decide l'ora | Nota |
 |---|---|---|
-| `insertable = false` + `@Generated` | Il **database** | La nostra scelta: una sola fonte dell'ora, quella del database |
+| `@Generated` | Il **database** | La nostra scelta: una sola fonte dell'ora, quella del database |
 | `@CreationTimestamp` di Hibernate | La **JVM**, al momento del `save` | Il default del database non serve più. Se l'orologio del server Java e quello del database divergono, le ore non sono confrontabili |
 | Solo `insertable = false` | Il database | Funziona, ma il campo Java resta `null` finché non ricarichi l'entità |
 
@@ -156,11 +156,20 @@ L'architettura dice: le API ricevono e restituiscono `record` dedicati, mai enti
 
 ```
 booking.getCustomer()                → il proxy: nessuna query
-booking.getCustomer().getId()        → l'id lo conosce già: nessuna query
+booking.getCustomer().getId()        → l'id lo conosce già: nessuna query (solo se getId() è PUBBLICO, vedi sotto)
 booking.getCustomer().getLastName()  → ORA il proxy esegue la query e si "riempie"
 ```
 
 È il motivo per cui un'entità non può essere `final` (1.5).
+
+**Attenzione: `getId()` deve essere pubblico.** Verificato il 2026-10-22 su Hibernate 7.4, con un proxy letto **fuori** dalla transazione:
+
+| `getId()` dell'entità | Risultato sul proxy |
+|---|---|
+| `public` (anche se la classe non è pubblica) | Restituisce l'id **senza** query e senza errori |
+| Non pubblico | Il proxy prova a riempirsi: `LazyInitializationException` |
+
+Quindi: l'entità può restare non pubblica per i confini del modulo (3.3), ma il suo `getId()` va dichiarato `public`. *(Corretto il 2026-10-22 dopo una verifica sul nostro stack.)*
 
 **Funziona solo con la sessione aperta.** Per riempirsi, il proxy ha bisogno del contesto di persistenza, cioè della transazione in corso. A transazione chiusa lancia **`LazyInitializationException`**:
 
@@ -268,6 +277,8 @@ Le annotazioni:
 | `@Container` | Su un campo: questo è un container da avviare e fermare. Se il campo è **`static`**, un solo container per tutta la classe (più veloce); altrimenti uno per ogni test |
 | `@ServiceConnection` | Spring Boot legge dal container indirizzo, utente e password, e li usa al posto delle proprietà `spring.datasource.*` (vedi 4.4) |
 
+Una precisazione verificata il 2026-10-22: anche **senza** `@Testcontainers` il test funziona, perché Spring Boot avvia da solo un container dichiarato con `@ServiceConnection` quando gli servono i dati di connessione. Con `@Testcontainers` è invece JUnit a governare avvio e arresto per ogni classe di test: è il modo esplicito e più diffuso, e lo teniamo.
+
 L'immagine va indicata con **lo stesso tag della produzione**: `postgres:17`, non `latest` (guida 02, domanda 1). Initializr genera `postgres:latest`: è il motivo per cui il suo file non è stato copiato così com'era.
 
 Requisito: **Docker Desktop acceso** quando lanci i test.
@@ -297,7 +308,7 @@ Con AssertJ (incluso negli starter di test) si scrive con `assertThatThrownBy(..
 
 **Ma il tipo non basta.** Sia un'email duplicata (`unique`) sia un'email con maiuscole (`check`) producono `DataIntegrityViolationException`. Se il test controlla solo il tipo, potrebbe passare **per il motivo sbagliato**: è la lezione del caso 11 in `psql`. Controlla anche che il messaggio contenga il **nome del vincolo** atteso (`app_user_email_uk`). È il terzo motivo per cui i vincoli hanno un nome (guida 04, 2.8).
 
-**Dopo un errore, la transazione è inutilizzabile.** In PostgreSQL, dopo un errore, la transazione rifiuta ogni altro comando fino al `rollback` (lo hai visto in `psql`). Siccome ogni test è una transazione, **dopo l'errore atteso non fare altre operazioni sul database** in quello stesso test.
+**Dopo un errore, la sessione e la transazione sono inutilizzabili.** Verificato: se dopo il `save` rifiutato il test chiama ancora il repository (per esempio `count()`), Hibernate prima di eseguire la query prova a scrivere le modifiche in sospeso, trova l'entità rimasta a metà, e si ferma con `org.hibernate.AssertionFailure: Entry for instance of '...AppUser' has a null identifier (this can happen if the session is flushed after an exception occurs)`. E anche lato PostgreSQL la transazione rifiuterebbe ogni altro comando fino al `rollback` (lo hai visto in `psql`). Regola: **dopo l'errore atteso non fare altre operazioni sul database** in quello stesso test. *(Corretto il 2026-10-22 dopo una verifica sul nostro stack.)*
 
 ### 4.6 Come provare il `check` sul minuscolo, se `Email` normalizza?
 
@@ -357,7 +368,6 @@ class LibraryMember {
 
     // Filled by the database (default now()): never written by Hibernate, read back after insert.
     @Generated
-    @Column(insertable = false, updatable = false)
     private Instant createdAt;
 
     protected LibraryMember() {
@@ -408,7 +418,7 @@ class LibraryMemberRepositoryTest {
 ```
 
 Note:
-- gli `import` non sono riportati: i package delle annotazioni di test sono nella 4.3, e l'IDE li suggerisce. Attenzione a **`@Generated`**: va importata da `org.hibernate.annotations`, non da `jakarta.annotation` (esiste un'altra annotazione con lo stesso nome, che non c'entra niente). È un errore molto facile;
+- gli `import` non sono riportati: i package delle annotazioni di test sono nella 4.3, e l'IDE li suggerisce. Attenzione a **`@Generated`**: va importata da `org.hibernate.annotations`, non da `jakarta.annotation` (esiste un'altra annotazione con lo stesso nome, che non c'entra niente). Se l'IDE importa quella sbagliata te ne accorgi subito, perché il codice non compila: `annotation @Generated is missing a default value for the element 'value'` (verificato);
 - in Testcontainers 2 `PostgreSQLContainer` sta in `org.testcontainers.postgresql`. Nei tutorial vecchi trovi `org.testcontainers.containers.PostgreSQLContainer<?>`, con il parametro di tipo: è la versione 1.
 
 ### Cosa deve contenere il nostro codice
@@ -417,6 +427,7 @@ Nel modulo `auth` (`src/main/java/com/posturestudio/booking/auth/`):
 - [ ] L'enum dei ruoli, con i tre valori di V1
 - [ ] L'entità `AppUser` mappata su `app_user`: id `IDENTITY`, ruolo `STRING`, email, telefono facoltativo, `active` con default `true` in Java, `createdAt` riempito dal database (1.3)
 - [ ] Costruttore senza argomenti `protected`; un costruttore con i dati obbligatori; nessun setter per `id` e `createdAt`
+- [ ] `getId()` **pubblico**, anche se la classe non lo è (1.8)
 - [ ] Il record `Email` con il *compact constructor*, e la scelta A o B della parte 2
 - [ ] `AppUserRepository` con `findByEmail` che restituisce `Optional`
 - [ ] Entità e repository non pubblici, se vuoi far rispettare D-002 dal compilatore (3.3)
@@ -452,10 +463,10 @@ Nei test (`src/test/java/com/posturestudio/booking/auth/`):
 | `Could not find a valid Docker environment` | Docker Desktop spento |
 | `Schema-validation: missing column [...]` | Un campo dell'entità non corrisponde a una colonna di V1 (nome o tipo) |
 | `Schema-validation: wrong column type encountered` | Tipo Java incompatibile con la colonna (es. `LocalDateTime` invece di `Instant` per `timestamptz`) |
-| `null value in column "created_at" ... violates not-null constraint` | Manca `insertable = false` su `createdAt`: Hibernate scrive `null` e il default non scatta (1.3) |
-| `createdAt` è `null` dopo il `save` | Manca `@Generated`, oppure è stata importata quella sbagliata (`jakarta.annotation`) |
+| `null value in column "created_at" ... violates not-null constraint` | Manca `@Generated` su `createdAt`: Hibernate scrive `null` e il default non scatta (1.3) |
+| `annotation @Generated is missing a default value for the element 'value'` | È stata importata la `@Generated` sbagliata (`jakarta.annotation`): serve `org.hibernate.annotations.Generated` |
 | `No property 'emial' found for type 'AppUser'` | Errore di battitura nel nome di un metodo del repository (3.2) |
-| `current transaction is aborted, commands ignored until end of transaction block` | Nel test c'è un'altra operazione sul database dopo l'errore atteso (4.5) |
+| `AssertionFailure: ... has a null identifier (this can happen if the session is flushed after an exception occurs)` | Nel test c'è un'altra operazione sul database dopo l'errore atteso (4.5) |
 | `No default constructor for entity` | Manca il costruttore senza argomenti (1.5) |
 
 ---

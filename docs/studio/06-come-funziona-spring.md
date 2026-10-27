@@ -783,7 +783,7 @@ JpaTransactionManager : Closing JPA EntityManager after transaction
 
 Tre cose da notare:
 - **lo stesso** `SessionImpl(45020753)` dall'inizio alla fine: un solo contesto di persistenza per tutta la transazione, ritrovato attraverso il thread;
-- `created_at` non compare tra le colonne dell'`insert` (`insertable = false`), ma compare nel `returning`: è così che `@Generated` lo rilegge senza una query in più;
+- `created_at` non compare tra le colonne dell'`insert`, ma compare nel `returning`: è `@Generated` che lo esclude e lo rilegge senza una query in più;
 - nessun `update` e nessun `commit`: il test annulla tutto.
 
 ### 10.3 Configurazione, profili, Actuator
