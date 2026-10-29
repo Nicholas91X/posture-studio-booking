@@ -1,5 +1,7 @@
 # Metodo di studio — le verifiche di comprensione
 
+> **Sospeso dal 2026-10-29 per scelta di Nicholas; la skill `/verifica` resta disponibile su richiesta.**
+
 Come Nicholas verifica di aver capito, non solo letto. Nato il 2026-10-14 dal primo test sul passo 4 (`studio/verifiche/01-...`).
 
 Il principio: **una definizione si può ripetere senza capirla; una catena di cause no.** Le verifiche non chiedono "cos'è X", ma "chi fa cosa, in che ordine, e cosa succede se qualcosa cambia".

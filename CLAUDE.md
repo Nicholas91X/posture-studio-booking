@@ -75,9 +75,8 @@ Quando Nicholas dice "chiudiamo", o quando un pezzo è completo:
 1. **Aggiorna `docs/stato.md`**: cosa è finito, cosa resta, eventuali problemi aperti.
 2. **Registra le decisioni**: se in sessione è stata presa una scelta importante, aggiungi una scheda in `docs/decisioni.md`.
 3. **Scrivi o aggiorna `docs/passi/NN-nome-passo.md`** seguendo lo schema qui sotto.
-4. **Se il passo è completo, proponi la verifica di fine passo** (`/verifica colloquio passo NN`).
-5. **Proponi il messaggio di commit.**
-6. **Scrivi un riepilogo di 5–10 righe** che Nicholas riporterà nella chat di pianificazione.
+4. **Proponi il messaggio di commit.**
+5. **Scrivi un riepilogo di 5–10 righe** che Nicholas riporterà nella chat di pianificazione.
 
 ### Schema dei documenti di passo (`docs/passi/`)
 
@@ -102,3 +101,7 @@ Gli errori reali della sessione. Sono la parte più utile da ristudiare.
 
 ## Domande da colloquio
 5–6 domande che un intervistatore potrebbe fare su questo passo.
+Per ognuna, una **Risposta modello**: breve, con il perché.
+
+### Domanda N: ...
+**Risposta modello.** ...

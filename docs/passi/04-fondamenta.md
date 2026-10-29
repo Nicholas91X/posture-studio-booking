@@ -1,6 +1,6 @@
 # Passo 04 — Fondamenta
 
-> **Stato: completo** (2026-10-29). Restano le risposte di Nicholas alle domande da colloquio e la verifica di fine passo.
+> **Stato: chiuso** (2026-10-29). Le domande da colloquio hanno le risposte modello; la verifica di fine passo non si fa più, perché le verifiche sono sospese (`metodo-di-studio.md`).
 
 ## Obiettivo
 Creare l'impianto del backend: un progetto Spring Boot che si avvia, si collega a PostgreSQL in Docker e crea le prime tabelle (`app_user`, `practitioner`, `customer`) con Flyway. Nessuna funzionalità per lo studio ancora.
@@ -134,31 +134,40 @@ JDK (per sviluppare) contiene il JRE (per eseguire), che contiene la JVM. `PATH`
 ## Domande da colloquio
 
 ### Domanda 1: In un progetto con Flyway, perché `spring.jpa.hibernate.ddl-auto=validate` e non `update`? E cosa succede se modifichi una migrazione già applicata?
-**La mia risposta:**
+**Risposta modello.** Lo schema deve avere **un solo padrone**, Flyway: ogni modifica è un file SQL versionato, rivisto e applicato nello stesso ordine in ogni ambiente. Con `update` Hibernate modificherebbe lo schema da solo all'avvio, senza traccia nel repository, in modo diverso da ambiente ad ambiente, e solo in parte (aggiunge colonne, ma non rinomina, non cancella e non crea i `check`). Con `validate` Hibernate non tocca niente: controlla che le entità corrispondano alle tabelle e, se no, l'applicazione non parte (es. `Schema validation: missing column [last_login_at]`). Il difetto emerge subito, non in produzione. Boot fa partire Flyway **prima** di Hibernate, quindi la validazione avviene sullo schema già migrato.
 
-**Correzione:**
+Se modifichi una migrazione già applicata, al successivo avvio Flyway confronta il **checksum** del file con quello salvato in `flyway_schema_history`, trova la differenza e si ferma: l'applicazione non parte. È voluto: altrimenti due database "alla versione 1" avrebbero schemi diversi, perché quello vecchio non rieseguirebbe il file cambiato. La correzione è una **migrazione nuova** (V2). `flyway repair` riallinea solo i checksum senza rieseguire niente: è un rimedio d'emergenza in locale, non il modo di correggere.
 
 ### Domanda 2: Come gestisci configurazione e segreti tra sviluppo e produzione in Spring Boot? Perché la password non ha un valore di default?
-**La mia risposta:**
+**Risposta modello.** Un solo `application.properties`, uguale ovunque, con **placeholder** al posto dei valori: `${POSTGRES_HOST:localhost}`. I valori arrivano da variabili d'ambiente. In locale stanno in un `.env` nella radice, non versionato (nel repository c'è solo `.env.example`), che Spring importa con `spring.config.import=optional:file:../.env[.properties]` e Compose legge con `--env-file`. In produzione il file non c'è (`optional:` evita l'errore) e le variabili arrivano dall'ambiente del container, che comunque ha la precedenza. Così lo stesso artefatto gira ovunque e nessun segreto finisce in git (D-018).
 
-**Correzione:**
+Host e porta hanno un default comodo; la password **no**, per due motivi. Un default sarebbe una password scritta nel repository. E senza default una configurazione sbagliata si vede subito (*fail fast*): l'applicazione non si collega e l'avvio si ferma, invece di collegarsi con una password inventata, magari a un database che ce l'ha davvero. Attenzione al sintomo: il placeholder non risolto resta testo, la password diventa letteralmente `${POSTGRES_PASSWORD}` e l'errore è `password authentication failed`, non un errore di configurazione (errore 3).
 
 ### Domanda 3: Perché un'entità JPA ha bisogno di un costruttore senza argomenti, e perché lo fai `protected`? Perché un'entità non può essere un `record`, mentre `Email` sì?
-**La mia risposta:**
+**Risposta modello.** Quando legge una riga, Hibernate non sa quale costruttore chiamare né con che argomenti: crea l'oggetto **vuoto** con il costruttore senza argomenti, via reflection, e poi riempie i campi. Lo stesso serve per i **proxy** (sottoclassi generate per il caricamento *lazy*). Se scrivi un altro costruttore, Java non crea più quello di default: va scritto a mano, e l'errore (`No default constructor for entity`) arriva solo alla prima lettura dal database, non all'avvio (errore 7).
 
-**Correzione:**
+`protected` perché a Hibernate basta (e anche alle sottoclassi proxy), mentre il nostro codice non può creare un `AppUser` vuoto e invalido: per noi c'è solo il costruttore pubblico con i controlli. Due porte, ognuna per chi deve usarla.
+
+Un `record` non può essere un'entità perché è l'opposto di quello che serve: classe `final` (niente proxy), campi `final` (Hibernate non può riempirli né aggiornarli col *dirty checking*), nessun costruttore vuoto, e `equals`/`hashCode` su **tutti** i campi, mentre un'entità ha un'identità (l'id) e uno stato che cambia nel tempo. `Email` invece è un **value object**: immutabile, conta solo il valore, due email uguali sono la stessa email. Non è un'entità ma il valore di una colonna, convertito da `EmailConverter`.
 
 ### Domanda 4: La colonna `created_at` ha `default now()` nel database. Come la mappi in Hibernate, e cosa succede con il mapping sbagliato all'`insert` e all'`update`?
-**La mia risposta:**
+**Risposta modello.** Due annotazioni: `@Generated` di **Hibernate** (`org.hibernate.annotations.Generated`) e `@Column(updatable = false)`.
+- `@Generated` toglie la colonna dall'`insert` e la rilegge subito: in PostgreSQL `insert ... returning id, created_at`. Il campo Java è valorizzato dopo il `save`, senza una query in più.
+- `updatable = false` la toglie dagli `update`. Senza, ogni `update` riscriverebbe `created_at` con il valore che ha il campo in memoria: oggi è lo stesso, ma che la colonna non cambi mai deve dirlo il mapping, non la fortuna.
 
-**Correzione:**
+Con i mapping sbagliati:
+- **senza annotazioni**, l'`insert` scrive `created_at = null`. Il `default` vale solo per le colonne *non nominate* nell'`insert`, quindi non scatta e il `not null` rifiuta la riga;
+- **`@GeneratedValue`** vale solo per la chiave primaria, insieme a `@Id`: l'applicazione non parte (`AnnotationException ... is not part of an identifier`);
+- **`jakarta.annotation.Generated`** è un'etichetta per il codice prodotto dai tool e non ha effetto su JPA: si torna al caso "senza annotazioni". Lezione: controllare sempre il package dell'import (errore 6, PD-18).
 
 ### Domanda 5: Perché test di integrazione con Testcontainers e non con H2? Cosa fa `@ServiceConnection`? E perché il test di `Email` non ha `@DataJpaTest`?
-**La mia risposta:**
+**Risposta modello.** H2 è un **altro database**: SQL, tipi e vincoli diversi da PostgreSQL. Le migrazioni Flyway sono scritte per PostgreSQL (`timestamptz`, `generated always as identity`, `check`, più avanti l'*exclusion constraint* con `btree_gist`) e su H2 potrebbero non girare, o comportarsi diversamente. Un test verde su H2 non prova che funzioni in produzione. Testcontainers avvia in Docker lo **stesso** `postgres:17` della produzione, ci applica le migrazioni vere e il test prova lo schema vero. Il costo è qualche secondo di avvio (~7 s) e Docker acceso.
 
-**Correzione:**
+`@ServiceConnection` sul campo del container dice a Spring Boot di prendere i dati di connessione (URL, utente, password) **dal container** e di costruirci il `DataSource`. Non servono proprietà né `.env`, e il test gira uguale in CI.
+
+Il test di `Email` non ha `@DataJpaTest` perché `Email` è Java puro: bastano JUnit e AssertJ, in pochi millisecondi. Ogni annotazione di test *accende* qualcosa. `@DataJpaTest` avvia JPA, Flyway e un `DataSource` e, senza un container, prova a sostituirlo con un database in memoria che non c'è: `Failed to load ApplicationContext` (errore 9, PD-20).
 
 ### Domanda 6: L'email deve essere unica. La controlli in Java con `existsByEmail` o nel database? Come scrivi un test che lo provi senza farlo passare per il motivo sbagliato?
-**La mia risposta:**
+**Risposta modello.** **Nel database**, con il vincolo `unique` (`app_user_email_uk`). `existsByEmail` può stare in Java, ma solo per dare un messaggio gentile all'utente, non come garanzia. "Controlla, poi salva" lascia una finestra: due richieste simultanee vedono entrambe `false` e salvano entrambe (*race condition*). Il vincolo invece vale sempre, anche con un bug o con un'altra applicazione sullo stesso database. La violazione si intercetta (`DataIntegrityViolationException`) e si traduce in una risposta chiara. Il `check` `email = lower(email)` più la normalizzazione nel record `Email` garantiscono che "Mario@x.it" e "mario@x.it" siano lo stesso valore, quindi il `unique` normale basta (D-020).
 
-**Correzione:**
+Il test, con Testcontainers su PostgreSQL vero: salvo un utente, ne salvo un secondo con la stessa email, verifico che il `save` lanci `DataIntegrityViolationException` **e** che il messaggio contenga il nome del vincolo, `app_user_email_uk`. Il nome è il punto chiave: un `DataIntegrityViolationException` può nascere da qualunque vincolo (un `not null` su un campo dimenticato, il `check` sul ruolo). Senza il nome il test passerebbe anche se il `unique` mancasse. Una variante più forte: la seconda email con lettere maiuscole, così il test prova anche la normalizzazione. E dopo l'errore atteso nessun'altra operazione sul database, altrimenti Hibernate lancia un `AssertionFailure` che confonde la diagnosi.
