@@ -153,5 +153,24 @@ public class AppUserRepositoryTest {
         // assert
         assertThat(repository.findByEmail(email)).get().extracting(AppUser::isActive).isEqualTo(true);
     }
-    
+
+    @Test
+    void emailWithCapitalLettersInsertedWithSqlIsRejected() {
+        // plain SQL skips the normalization of Email: this proves the database check, not Java
+        var exception = Assertions.assertThrows(
+            DataIntegrityViolationException.class,
+            () -> jdbc.update("insert into app_user (role, email) values ('CUSTOMER', 'John.Doe@Example.com')")
+        );
+        assertThat(exception.getMessage()).contains("app_user_email_ck");
+    }
+
+    @Test
+    void unknownRoleInsertedWithSqlIsRejected() {
+        var exception = Assertions.assertThrows(
+            DataIntegrityViolationException.class,
+            () -> jdbc.update("insert into app_user (role, email) values ('GUEST', 'john.doe@example.com')")
+        );
+        assertThat(exception.getMessage()).contains("app_user_role_ck");
+    }
+
 }

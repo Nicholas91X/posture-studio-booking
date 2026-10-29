@@ -4,6 +4,7 @@ Le tabelle del sistema e come si collegano. Questa è la **progettazione**: le t
 
 Modifiche dovute alle migrazioni:
 - **V1 (passo 4)**: `customer.full_name` e `practitioner.display_name` sostituiti da `first_name` + `last_name`; `phone` spostato in `app_user` (facoltativo, per utenti di ogni ruolo); aggiunto `app_user.active` per la cancellazione morbida; ruolo `ADMIN` (D-021).
+- **V2 (passo 5)**: `service` e `package_offer` come da progettazione, con `created_at`; foreign key composta per il servizio del pacchetto (D-025); indici su `practitioner_id`.
 
 Modifiche di progettazione:
 - **2026-10-29**: niente IVA (D-022), un solo `price_cents` al posto di netto/aliquota/lordo; orizzonte e limite di prenotazioni future in `practitioner` (D-023); prenotazione dal pannello (D-024).
@@ -123,7 +124,7 @@ Il pacchetto "in vendita".
 |---|---|---|
 | id | bigint | |
 | practitioner_id | bigint | |
-| service_id | bigint | i crediti valgono per questo servizio |
+| service_id | bigint | i crediti valgono per questo servizio; deve essere dello stesso professionista del pacchetto (foreign key composta, D-025) |
 | name | text | es. "5 sedute" |
 | sessions_count | int | |
 | price_cents | bigint | prezzo dell'intero pacchetto |

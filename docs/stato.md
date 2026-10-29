@@ -4,11 +4,11 @@ Ultimo aggiornamento: 2026-10-29
 
 ## Dove siamo
 
-Progettazione chiusa (passi 1–3). **Passo 4 chiuso** (dettagli e risposte modello alle domande da colloquio in `passi/04-fondamenta.md`). Prossimo: passo 5, catalogo e professionisti.
+Progettazione chiusa (passi 1–3). **Passo 4 chiuso** (dettagli e risposte modello alle domande da colloquio in `passi/04-fondamenta.md`). **Passo 5 in corso** (catalogo e professionisti, `passi/05-catalogo.md`). Pezzo 1 di 5 **fatto**: migrazione V2 (`service`, `package_offer`, foreign key composta D-025) e test dei vincoli con SQL diretto, compresi i `check` di V1 rimasti dal passo 4; 33 test verdi. Codice scritto da Claude su richiesta esplicita di Nicholas. Prossimo: pezzo 2, modulo `practitioner` (impostazioni, `@Transactional`, *dirty checking*).
 
 Fatto nel passo 4: struttura del repository, progetto Spring Boot 4.1.1 su Java 21, PostgreSQL 17 in locale con `infra/docker-compose.dev.yml`, configurazione da variabili d'ambiente (D-018, D-019) con `ddl-auto=validate`, migrazione V1 (`app_user`, `customer`, `practitioner`; D-020, D-021), prima entità `AppUser` con `Email`, `EmailConverter`, `Role` e `AppUserRepository`. Test: `EmailTest` (12 unitari, senza Spring) e `AppUserRepositoryTest` (9 di integrazione con Testcontainers su `postgres:17`), tutti verdi.
 
-**Verifiche di comprensione sospese** dal 2026-10-29 per scelta di Nicholas (`docs/metodo-di-studio.md`); `/verifica` resta disponibile su richiesta. Verifiche fatte: 01 (attori del passo 4), 02 (JDBC), 03 (Flyway e vincoli); 04 e 05 abbandonate. Guide di studio: 01–07 in `docs/studio/` (06 come funziona Spring, 07 costruttori).
+**Verifiche di comprensione sospese** dal 2026-10-29 per scelta di Nicholas (`docs/metodo-di-studio.md`); `/verifica` resta disponibile su richiesta. Verifiche fatte: 01 (attori del passo 4), 02 (JDBC), 03 (Flyway e vincoli); 04 e 05 abbandonate. Guide di studio: 01–08 in `docs/studio/` (06 come funziona Spring, 07 costruttori, 08 migrazione V2).
 
 Decisioni del 2026-10-29 (solo documentazione): niente IVA perché entrambi i professionisti sono forfettari (D-022, modifica D-011 e D-012); calendario non pubblico (requisiti, "Riservatezza del calendario"); orizzonte di prenotazione e limite di sedute future (D-023); prenotazione dal pannello per conto di un cliente (D-024).
 
