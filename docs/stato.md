@@ -8,8 +8,6 @@ Progettazione chiusa (passi 1–3). **Passo 4 completo** (dettagli in `passi/04-
 
 Fatto nel passo 4: struttura del repository, progetto Spring Boot 4.1.1 su Java 21, PostgreSQL 17 in locale con `infra/docker-compose.dev.yml`, configurazione da variabili d'ambiente (D-018, D-019) con `ddl-auto=validate`, migrazione V1 (`app_user`, `customer`, `practitioner`; D-020, D-021), prima entità `AppUser` con `Email`, `EmailConverter`, `Role` e `AppUserRepository`. Test: `EmailTest` (12 unitari, senza Spring) e `AppUserRepositoryTest` (9 di integrazione con Testcontainers su `postgres:17`), tutti verdi.
 
-Resta del passo 4 (Nicholas): risposte alle 6 domande da colloquio nel documento del passo, verifica di fine passo (`/verifica colloquio passo 4`), `git push`.
-
 Metodo di studio attivo: `docs/metodo-di-studio.md`, comando `/verifica`. Verifiche fatte: 01 (attori del passo 4), 02 (JDBC), 03 (Flyway e vincoli); 04 (entità JPA e Testcontainers) **interrotta**, da riprendere o assorbire nella verifica di fine passo. Guide di studio: 01–07 in `docs/studio/` (06 come funziona Spring, 07 costruttori).
 
 Avvio del database in locale, dalla radice: `docker compose -f infra/docker-compose.dev.yml --env-file .env up -d`
