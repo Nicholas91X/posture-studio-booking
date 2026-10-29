@@ -7,20 +7,15 @@ import static org.assertj.core.api.Assertions.assertThat;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.data.jpa.test.autoconfigure.DataJpaTest;
-import org.springframework.boot.testcontainers.service.connection.ServiceConnection;
-import org.testcontainers.junit.jupiter.Container;
-import org.testcontainers.junit.jupiter.Testcontainers;
-import org.testcontainers.postgresql.PostgreSQLContainer;
+import org.springframework.context.annotation.Import;
 import org.junit.jupiter.api.Assertions;
 import org.springframework.dao.DataIntegrityViolationException;
 
-@DataJpaTest 
-@Testcontainers 
-public class AppUserRepositoryTest {
+import com.posturestudio.booking.TestcontainersConfiguration;
 
-    @Container 
-    @ServiceConnection
-    static PostgreSQLContainer postgres = new PostgreSQLContainer("postgres:17");
+@DataJpaTest
+@Import(TestcontainersConfiguration.class)
+public class AppUserRepositoryTest {
 
     @Autowired
     AppUserRepository repository;

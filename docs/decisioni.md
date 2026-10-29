@@ -312,7 +312,7 @@ Le due regole valgono solo quando **prenota il cliente**. Le prenotazioni fatte 
 ---
 
 ## D-025 — Il servizio di un pacchetto è dello stesso professionista: foreign key composta
-**Stato:** accettata · 2026-10-29
+**Stato:** accettata · 2026-10-29 · **modificata da D-026** (2026-10-29): in Java il professionista è un `Long practitionerId`, non un `@ManyToOne`; il vincolo nel database non cambia
 
 **Contesto.** `package_offer` ha sia `practitioner_id` sia `service_id`. Ognuna delle due foreign key, presa da sola, accetta un pacchetto di un professionista costruito sul servizio dell'altro: i dati sarebbero incoerenti. Un `check` non può impedirlo, perché vede solo la propria riga. Confronto completo: `docs/studio/08-migrazione-v2-catalogo.md`, parte 2.
 
@@ -328,3 +328,22 @@ Restano anche le foreign key semplici verso `practitioner` e `service`: implicat
 - *Solo in Java*: non protegge da bug, scritture esterne e richieste concorrenti (PD-17).
 
 **Conseguenze.** La regola vale anche con un bug in Java o con un `insert` a mano (provato da `CatalogSchemaTest`). Entrambe le colonne sono `not null`: con un `NULL`, una foreign key composta non verrebbe controllata (`MATCH SIMPLE`). JPA non conosce il vincolo: le entità avranno due `@ManyToOne` separati. Lo stesso schema è candidato per `credit_lot` al passo 10, che ha le stesse due colonne.
+
+---
+
+## D-026 — Tra moduli ci si riferisce per id; una sola `NotFoundException`
+**Stato:** accettata · 2026-10-29 · modifica una conseguenza di D-025
+
+**Contesto.** Le tabelle di un modulo hanno chiavi esterne verso tabelle di altri moduli (`practitioner.user_id` → `app_user` di `auth`; `service.practitioner_id` → `practitioner`). In JPA una chiave esterna si può mappare come oggetto (`@ManyToOne`, `@OneToOne`) o come semplice id. Confronto completo: `docs/studio/09-modulo-practitioner.md`, parte 2.
+
+**Decisione.**
+- **Tra moduli diversi** l'entità tiene solo l'id (`Long userId`, `Long practitionerId`). Per sapere qualcosa dell'altro modulo si chiama il suo servizio pubblico, che restituisce `record`.
+- **Dentro lo stesso modulo** si usano le relazioni JPA (es. `PackageOffer` → `Service`, entrambe di `catalog`).
+- Entità e repository restano **non pubblici**: D-002 la fa rispettare il compilatore.
+- Per "non esiste" (e, dalle API, "non è tuo") c'è **una sola** `NotFoundException` (`RuntimeException`), nel package `shared`. Diventa un 404 nel `@RestControllerAdvice`.
+
+**Alternative scartate.**
+- *Oggetti anche tra moduli*: navigazione comoda, ma entità pubbliche, caricamento *lazy* che attraversa i moduli (con `LazyInitializationException` fuori dalla transazione, D-019) e la possibilità per un modulo di modificare le entità di un altro saltando le sue regole.
+- *Un'eccezione per modulo*: più precisa, ma per chi chiama l'API la differenza non esiste (sempre 404), e il gestore degli errori dovrebbe conoscerle tutte.
+
+**Conseguenze.** Niente join JPQL tra entità di moduli diversi: se servono dati di più moduli, li combina un servizio. È lo stesso principio degli aggregati del Domain-Driven Design e di Spring Modulith. La coerenza tra id di moduli diversi la garantiscono le foreign key del database (D-025 resta identica nello schema).

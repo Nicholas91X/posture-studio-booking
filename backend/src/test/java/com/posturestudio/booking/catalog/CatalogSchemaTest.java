@@ -8,21 +8,16 @@ import org.junit.jupiter.api.Assertions;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.data.jpa.test.autoconfigure.DataJpaTest;
-import org.springframework.boot.testcontainers.service.connection.ServiceConnection;
+import org.springframework.context.annotation.Import;
 import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.jdbc.core.JdbcTemplate;
-import org.testcontainers.junit.jupiter.Container;
-import org.testcontainers.junit.jupiter.Testcontainers;
-import org.testcontainers.postgresql.PostgreSQLContainer;
+
+import com.posturestudio.booking.TestcontainersConfiguration;
 
 // Tests the constraints of V2 with plain SQL: no entities involved, it is the database that defends itself.
 @DataJpaTest
-@Testcontainers
+@Import(TestcontainersConfiguration.class)
 public class CatalogSchemaTest {
-
-    @Container
-    @ServiceConnection
-    static PostgreSQLContainer postgres = new PostgreSQLContainer("postgres:17");
 
     @Autowired
     JdbcTemplate jdbc;
