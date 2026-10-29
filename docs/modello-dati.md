@@ -5,11 +5,13 @@ Le tabelle del sistema e come si collegano. Questa è la **progettazione**: le t
 Modifiche dovute alle migrazioni:
 - **V1 (passo 4)**: `customer.full_name` e `practitioner.display_name` sostituiti da `first_name` + `last_name`; `phone` spostato in `app_user` (facoltativo, per utenti di ogni ruolo); aggiunto `app_user.active` per la cancellazione morbida; ruolo `ADMIN` (D-021).
 
+Modifiche di progettazione:
+- **2026-10-29**: niente IVA (D-022), un solo `price_cents` al posto di netto/aliquota/lordo; orizzonte e limite di prenotazioni future in `practitioner` (D-023); prenotazione dal pannello (D-024).
+
 Convenzioni:
 - Nomi in inglese, `snake_case`.
 - Chiavi primarie `id bigint` generate dal database (`generated always as identity`).
-- Soldi in centesimi (`bigint`, suffisso `_cents`).
-- Aliquote IVA in punti base (`int`, suffisso `_bp`): 22% = `2200`.
+- Soldi in centesimi (`bigint`, suffisso `_cents`). Nessuna IVA (D-022): il prezzo salvato è quello mostrato e incassato.
 - Istanti nel tempo in `timestamptz` (UTC). Orari settimanali in `time` (ora locale).
 - Ogni tabella ha `created_at timestamptz not null default now()`.
 
@@ -57,6 +59,10 @@ Chiunque possa accedere. Separato da cliente e professionista perché l'accesso 
 | cancellation_notice_hours | int | default 24 |
 | single_credit_validity_days | int | default 90 |
 | slot_step_minutes | int | ogni quanto può iniziare una seduta, default 30 (punto aperto) |
+| booking_horizon_days | int | quanti giorni avanti può prenotare il cliente, default 21 (D-023, da confermare). Migrazione del passo 7 |
+| max_future_bookings | int | prenotazioni future aperte al massimo per cliente con questo professionista, default 2 (D-023, da confermare). Migrazione del passo 7 |
+
+Orizzonte e limite valgono solo quando prenota il cliente, non per le prenotazioni fatte dal pannello (D-024), che però contano nel limite. Nel conteggio entrano le prenotazioni `PENDING_PAYMENT` e `CONFIRMED` con `starts_at` nel futuro.
 
 ### `customer`
 | Colonna | Tipo | Note |
@@ -107,8 +113,7 @@ Più righe per lo stesso giorno = fasce separate (es. mattina e pomeriggio).
 | practitioner_id | bigint | |
 | name | text | es. "Seduta posturale" |
 | duration_minutes | int | |
-| net_price_cents | bigint | 3000 = 30 € |
-| vat_rate_bp | int | |
+| price_cents | bigint | 3000 = 30 €, mostrato e incassato (D-022) |
 | active | boolean | un servizio non si cancella mai, si disattiva |
 
 ### `package_offer`
@@ -121,8 +126,7 @@ Il pacchetto "in vendita".
 | service_id | bigint | i crediti valgono per questo servizio |
 | name | text | es. "5 sedute" |
 | sessions_count | int | |
-| net_price_cents | bigint | prezzo dell'intero pacchetto |
-| vat_rate_bp | int | |
+| price_cents | bigint | prezzo dell'intero pacchetto |
 | validity_days | int | es. 90 |
 | active | boolean | |
 
@@ -138,13 +142,13 @@ Il pacchetto "in vendita".
 | starts_at | timestamptz | |
 | ends_at | timestamptz | |
 | status | text | vedi sotto |
-| paid_with | text | `CARD` o `CREDIT` |
-| net_price_cents | bigint | fotografato al momento della prenotazione |
-| vat_rate_bp | int | fotografato |
-| gross_price_cents | bigint | fotografato, quello mostrato al cliente |
+| paid_with | text | `CARD` o `CREDIT`. Possibile nuovo valore (es. `IN_STUDIO`) per le prenotazioni dal pannello, se il pagamento in studio sarà confermato (D-024, punto aperto 10) |
+| price_cents | bigint | fotografato al momento della prenotazione |
 | hold_expires_at | timestamptz | solo per `PENDING_PAYMENT` |
 | cancelled_at | timestamptz | |
 | version | bigint | per il blocco ottimistico di JPA |
+
+**Da definire al passo 7 (D-024):** serve sapere **chi ha creato** la prenotazione (il cliente o il professionista dal pannello), per esempio con una colonna che punta ad `app_user`. Serve per escluderla da orizzonte e limite (D-023) e come traccia.
 
 **Stati:**
 
@@ -176,9 +180,7 @@ Un gruppo di crediti con la stessa origine e la stessa scadenza. **Un pacchetto 
 | origin_booking_id | bigint | solo se `CANCELLATION` o `LATE_PAYMENT` |
 | initial_credits | int | |
 | expires_at | timestamptz | |
-| net_price_cents | bigint | fotografato, solo se `PACKAGE` |
-| vat_rate_bp | int | fotografato, solo se `PACKAGE` |
-| gross_price_cents | bigint | fotografato, solo se `PACKAGE` |
+| price_cents | bigint | fotografato, solo se `PACKAGE` |
 
 ### `credit_movement`
 Il registro. Non si modifica e non si cancella mai una riga: si aggiungono solo movimenti nuovi.
@@ -202,7 +204,7 @@ Il registro. Non si modifica e non si cancella mai una riga: si aggiungono solo 
 | package_offer_id | bigint | se `PACKAGE` |
 | credit_lot_id | bigint | se `PACKAGE`, valorizzato dopo la conferma |
 | customer_id | bigint | |
-| amount_cents | bigint | importo lordo pagato |
+| amount_cents | bigint | importo pagato |
 | status | text | `PENDING`, `SUCCEEDED`, `EXPIRED` |
 | stripe_checkout_session_id | text | unico |
 | stripe_payment_intent_id | text | valorizzato dopo il pagamento |
@@ -215,7 +217,3 @@ Il registro. Non si modifica e non si cancella mai una riga: si aggiungono solo 
 | received_at | timestamptz | |
 
 Se un evento con lo stesso `event_id` è già presente, si ignora.
-
-## Calcolo del prezzo lordo
-
-`gross = net + arrotondamento(net × vat_bp / 10000)`, con arrotondamento al centesimo "half up". Il calcolo vive in un solo punto del backend e il risultato viene salvato, mai ricalcolato sullo storico.
