@@ -32,7 +32,7 @@ public class AppUser {
     @Enumerated(EnumType.STRING)
     private Role role;
 
-    @Column
+    @Column(updatable = false)
     @Generated
     private Instant createdAt;
 
