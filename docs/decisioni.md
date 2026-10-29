@@ -125,7 +125,7 @@ Formato: contesto → decisione → alternative scartate → conseguenze.
 ---
 
 ## D-011 — Prezzo fotografato
-**Stato:** accettata · 2026-10-13
+**Stato:** accettata · 2026-10-13 · **modificata da D-022** (2026-10-29): niente IVA, si fotografa solo `price_cents`
 
 **Decisione.** Prenotazioni, lotti da pacchetto e pagamenti salvano prezzo netto, aliquota e prezzo lordo del momento.
 
@@ -134,7 +134,7 @@ Formato: contesto → decisione → alternative scartate → conseguenze.
 ---
 
 ## D-012 — Soldi in centesimi interi, IVA in punti base
-**Stato:** accettata · 2026-10-13
+**Stato:** accettata · 2026-10-13 · **modificata da D-022** (2026-10-29): restano i centesimi interi; aliquote in punti base e calcolo del lordo eliminati
 
 **Decisione.** Importi in `long`/`bigint` di centesimi. Aliquote in punti base (22% = 2200). Un solo punto del codice calcola il lordo, con arrotondamento half up.
 
@@ -251,3 +251,60 @@ In Java la conversione in minuscolo avviene **in un posto solo**, prima di salva
 **Alternative scartate.** *Nessun ruolo, professionisti inseriti con uno script SQL*: più semplice per due professionisti, ma ogni modifica richiederebbe un intervento sul database. *Ruoli multipli per utente* (es. una titolare che è anche admin): non serve finché l'admin è Nicholas.
 
 **Conseguenze.** Il `check` sul ruolo ammette tre valori. Un professionista non si cancella mai: si disattiva, per conservare la sua storia (prenotazioni, pagamenti, crediti). Le chiavi esterne verso `app_user` non usano `on delete cascade`. Se in futuro la piattaforma servirà più studi, o un admin dovrà essere anche professionista, il modello dei ruoli andrà rivisto con una nuova decisione.
+
+---
+
+## D-022 — Niente IVA: un solo prezzo, in centesimi
+**Stato:** accettata · 2026-10-29 · modifica D-011 e D-012
+
+**Contesto.** Entrambi i professionisti sono in regime forfettario: sulle loro prestazioni l'IVA non si applica. Il modello dati prevedeva prezzo netto, aliquota in punti base e prezzo lordo calcolato (D-011, D-012).
+
+**Decisione.** Ogni servizio e ogni pacchetto hanno **un solo prezzo**, `price_cents`, che è insieme quello mostrato al cliente e quello incassato. Restano valide le parti di D-011 e D-012 che non riguardano l'IVA:
+- il prezzo si **fotografa** su prenotazioni, lotti da pacchetto e pagamenti (cambiare un prezzo non altera lo storico);
+- i soldi sono **centesimi interi** (`long`/`bigint`), mai `double`.
+
+Spariscono aliquote, punti base e il calcolo del lordo con arrotondamento.
+
+**Alternative scartate.** Tenere `vat_rate_bp` fisso a 0: una colonna che non corrisponde a niente di reale, più un calcolo del lordo che restituisce sempre il netto. Codice da scrivere, testare e mantenere senza alcun beneficio.
+
+**Conseguenze.** Schema e codice più semplici: nessun arrotondamento, nessuna differenza tra prezzo mostrato e prezzo salvato. Se un professionista uscirà dal forfettario, l'IVA si aggiunge con una **migrazione nuova** e una nuova decisione (le migrazioni già eseguite non si toccano). Resta aperta la questione della marca da bollo (requisiti, punto aperto 9).
+
+---
+
+## D-023 — Orizzonte di prenotazione e limite di sedute future
+**Stato:** accettata · 2026-10-29
+
+**Contesto.** Un cliente, soprattutto con un pacchetto da molte sedute, potrebbe prenotarle tutte in una volta e occupare il calendario del professionista per settimane, togliendo spazio agli altri clienti.
+
+**Decisione.** Due impostazioni **per professionista**, modificabili dal pannello:
+- **orizzonte di prenotazione**: quanti giorni avanti si può prenotare;
+- **limite di prenotazioni future**: quante prenotazioni future può avere aperte un cliente con quel professionista. Contano quelle in `PENDING_PAYMENT` e `CONFIRMED` con inizio nel futuro.
+
+Valori iniziali proposti: **21 giorni** e **2 sedute**, da confermare con lo studio (requisiti, punto aperto 11).
+
+Le due regole valgono solo quando **prenota il cliente**. Le prenotazioni fatte dal professionista dal pannello (D-024) non le rispettano, ma **contano** nel limite quando poi il cliente prenota da solo.
+
+**Alternative scartate.** Nessun limite: il problema resta. Limite unico per tutto lo studio: ogni professionista ha il proprio calendario e le proprie impostazioni (requisiti, "Chi usa il sistema").
+
+**Conseguenze.** Due colonne in `practitioner`, introdotte dalla migrazione del passo 7, dove le regole vengono fatte rispettare dal servizio di prenotazione. Il limite si controlla in Java contando le prenotazioni: non è un vincolo del database come la non sovrapposizione (D-013), quindi due prenotazioni simultanee dello stesso cliente vanno considerate al passo 7.
+
+---
+
+## D-024 — Il professionista può prenotare per un cliente dal pannello
+**Stato:** accettata · 2026-10-29 · modo di pagamento da confermare (requisiti, punto aperto 10)
+
+**Contesto.** Non tutti i clienti prenoteranno da soli: alcuni chiedono la seduta di persona o al telefono. Il professionista deve poterla inserire lui.
+
+**Decisione.** Dal pannello il professionista prenota **a nome di un suo cliente**, senza orizzonte né limite di sedute future (D-023).
+- Se il cliente ha **crediti validi** per quel servizio, si usano (lotto che scade prima, D-010).
+- Altrimenti, proposta: **pagamento in studio**. La seduta è confermata subito; se cancellata in tempo **non genera credito**, perché non è stato pagato niente (coerente con D-015: il credito restituisce un valore già versato).
+- Se il cliente non esiste ancora, il professionista lo **crea dal pannello** con nome, cognome ed email.
+
+**Alternative scartate.** Obbligare il cliente a prenotare da solo: scarica sul cliente un passaggio che oggi lo studio fa per lui. Inviare al cliente un link di pagamento Stripe: possibile, ma va deciso insieme al modo di pagamento (punto aperto 10).
+
+**Conseguenze.**
+- `booking.paid_with` potrebbe avere un nuovo valore (es. `IN_STUDIO`), e serve sapere **chi ha creato** la prenotazione (cliente o professionista).
+- La regola di D-007 (validità solo con il webhook) riguarda i pagamenti con carta: una prenotazione con credito o in studio non passa da Stripe.
+- Il pagamento in studio reintroduce il rischio da cui nasce il progetto (seduta non pagata in anticipo): è una scelta del professionista per i propri clienti, non un'opzione per chi prenota da solo.
+- Creare un cliente dal pannello segue le regole già decise: email normalizzata (D-020), un solo ruolo per utente (D-021), riattivazione se l'account esiste ma è disattivato.
+- Da chiarire al passo 7/13: cosa rende un cliente "suo" (cosa può cercare e vedere un professionista nell'elenco dei clienti), coerentemente con la regola "il professionista vede solo le proprie prenotazioni".
