@@ -1,16 +1,16 @@
 # Stato del progetto
 
-Ultimo aggiornamento: 2026-10-13
+Ultimo aggiornamento: 2026-10-29
 
 ## Dove siamo
 
-Progettazione chiusa (passi 1–3). **In corso: passo 4**, creazione del progetto e prime tabelle (dettagli in `passi/04-fondamenta.md`).
+Progettazione chiusa (passi 1–3). **Passo 4 completo** (dettagli in `passi/04-fondamenta.md`). Prossimo: passo 5, catalogo e professionisti.
 
-Fatto finora: struttura del repository, `.gitignore`, `.env.example`, progetto Spring Boot 4.1.1 generato da Initializr, package vuoti `auth`, `practitioner`, `customer`, PostgreSQL 17 in locale con `infra/docker-compose.dev.yml` (verificata la persistenza sul named volume), configurazione del backend da variabili d'ambiente (D-018, D-019): l'applicazione si avvia da `mvnw` e da VS Code, Flyway si collega (nessuna migrazione ancora).
-Migrazione V1 applicata (`app_user`, `customer`, `practitioner`; D-020 email, D-021 ruolo `ADMIN`), vincoli verificati a mano in `psql` (`docs/studio/esperimenti/`).
-Da fare (Nicholas): entità `AppUser` e repository, test con Testcontainers.
+Fatto nel passo 4: struttura del repository, progetto Spring Boot 4.1.1 su Java 21, PostgreSQL 17 in locale con `infra/docker-compose.dev.yml`, configurazione da variabili d'ambiente (D-018, D-019) con `ddl-auto=validate`, migrazione V1 (`app_user`, `customer`, `practitioner`; D-020, D-021), prima entità `AppUser` con `Email`, `EmailConverter`, `Role` e `AppUserRepository`. Test: `EmailTest` (12 unitari, senza Spring) e `AppUserRepositoryTest` (9 di integrazione con Testcontainers su `postgres:17`), tutti verdi.
 
-Metodo di studio attivo: `docs/metodo-di-studio.md`, comando `/verifica`. Verifiche fatte: 01 (attori del passo 4), 02 (JDBC), 03 (Flyway e vincoli).
+Resta del passo 4 (Nicholas): risposte alle 6 domande da colloquio nel documento del passo, verifica di fine passo (`/verifica colloquio passo 4`), `git push`.
+
+Metodo di studio attivo: `docs/metodo-di-studio.md`, comando `/verifica`. Verifiche fatte: 01 (attori del passo 4), 02 (JDBC), 03 (Flyway e vincoli); 04 (entità JPA e Testcontainers) **interrotta**, da riprendere o assorbire nella verifica di fine passo. Guide di studio: 01–07 in `docs/studio/` (06 come funziona Spring, 07 costruttori).
 
 Avvio del database in locale, dalla radice: `docker compose -f infra/docker-compose.dev.yml --env-file .env up -d`
 
@@ -21,7 +21,7 @@ Avvio del database in locale, dalla radice: `docker compose -f infra/docker-comp
 | 1 | Regole e requisiti | — | ✅ fatto → `requisiti.md` |
 | 2 | Architettura e scelte tecniche | — | ✅ fatto → `architettura.md` |
 | 3 | Modello dei dati | — | ✅ fatto → `modello-dati.md` |
-| 4 | Fondamenta: repository, Spring Boot, PostgreSQL in Docker, Flyway, prime tabelle | Nicholas | ⏳ in corso |
+| 4 | Fondamenta: repository, Spring Boot, PostgreSQL in Docker, Flyway, prime tabelle | Nicholas | ✅ fatto → `passi/04-fondamenta.md` |
 | 5 | Catalogo e professionisti: servizi, prezzi, impostazioni | Nicholas | |
 | 6 | Calendario: orari di lavoro, indisponibilità, calcolo degli orari liberi | Nicholas | |
 | 7 | Prenotazione: blocco dell'orario, vincolo di non sovrapposizione, lavori programmati | Nicholas | |
@@ -56,4 +56,6 @@ Elencati in `requisiti.md`, sezione "Punti aperti". Da chiudere prima del passo 
 
 ## Problemi aperti
 
-Nessuno.
+- **Aliquota IVA** (punto aperto 4): va chiusa prima del passo 5, che è il prossimo.
+- Test rimandati di proposito, da riprendere quando arrivano altri vincoli: i `check` di V1 provati con SQL diretto (`app_user_role_ck`, `app_user_email_ck`) e il *dirty checking* di `deactivate()` su un'entità *managed* (oggi il test passa da un *merge*).
+- Avviso di Mockito sul *self-attaching* nei test: innocuo oggi, da sistemare quando lo richiederà una versione futura del JDK.

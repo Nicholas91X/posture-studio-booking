@@ -1,6 +1,6 @@
 # Passo 04 — Fondamenta
 
-> **Stato: in corso.** Le sezioni "Errori fatti" e "Domande da colloquio" si completano a fine passo.
+> **Stato: completo** (2026-10-29). Restano le risposte di Nicholas alle domande da colloquio e la verifica di fine passo.
 
 ## Obiettivo
 Creare l'impianto del backend: un progetto Spring Boot che si avvia, si collega a PostgreSQL in Docker e crea le prime tabelle (`app_user`, `practitioner`, `customer`) con Flyway. Nessuna funzionalità per lo studio ancora.
@@ -20,14 +20,17 @@ Creare l'impianto del backend: un progetto Spring Boot che si avvia, si collega 
 | `backend/mvnw`, `mvnw.cmd`, `.mvn/` | Initializr | Maven Wrapper |
 | `backend/.gitattributes` | Initializr | Forza i fine riga corretti per `mvnw` (LF) e `mvnw.cmd` (CRLF), altrimenti lo script si rompe passando tra Windows e Linux |
 | `backend/.../BookingApplication.java` | Initializr | Punto di avvio dell'applicazione |
-| `backend/.../{auth,practitioner,customer}/package-info.java` | Claude | Package vuoti dei moduli, con i TODO |
-| `backend/src/main/resources/db/migration/` | — | Cartella dove Flyway cerca le migrazioni (per ora vuota) |
-| `infra/`, `frontend/` | — | Cartelle vuote (il `.gitkeep` serve solo perché git non salva cartelle vuote) |
-| `infra/docker-compose.dev.yml` | Nicholas | *da fare* |
-| `backend/src/main/resources/application.properties` | Nicholas | *da completare* (connessione al DB, Hibernate `validate`) |
-| `V1__...sql` | Nicholas | *da fare* |
-| `AppUser`, `AppUserRepository` | Nicholas | *da fare* |
-| Test di integrazione | Nicholas | *da fare* |
+| `backend/.../{practitioner,customer}/package-info.java` | Claude | Package dei moduli non ancora scritti, con i TODO (quello di `auth` è stato tolto: il package ora ha le sue classi) |
+| `frontend/` | — | Cartella vuota (il `.gitkeep` serve solo perché git non salva cartelle vuote) |
+| `infra/docker-compose.dev.yml` | Nicholas | PostgreSQL 17 in locale: porta solo su `127.0.0.1`, named volume sui dati, segreti dal `.env` della radice (D-018) |
+| `backend/src/main/resources/application.properties` | Nicholas | Importa il `.env`, connessione con placeholder (password senza default), `ddl-auto=validate`, `open-in-view=false` |
+| `db/migration/V1__create_app_user_customer_practitioner.sql` | Nicholas | Tabelle `app_user`, `customer`, `practitioner` con vincoli con nome (D-020, D-021) |
+| `auth/AppUser.java` | Nicholas | Prima entità: costruttore `protected` per Hibernate e pubblico con i controlli; `createdAt` scritto dal database |
+| `auth/Email.java`, `auth/EmailConverter.java` | Nicholas | Value object `record` che normalizza e valida l'email; converter JPA verso la colonna `text` |
+| `auth/Role.java` | Nicholas | `CUSTOMER`, `PRACTITIONER`, `ADMIN`, salvati come testo |
+| `auth/AppUserRepository.java` | Nicholas | `JpaRepository` con `findByEmail` (`Optional`) ed `existsByEmail` |
+| `test/.../auth/EmailTest.java` | Nicholas | 12 test unitari, senza Spring: normalizzazione, spazi, uguaglianza, valori rifiutati (~0,07 s) |
+| `test/.../auth/AppUserRepositoryTest.java` | Nicholas | 9 test di integrazione su PostgreSQL 17 con Testcontainers: lettura dalla riga, colonne generate, ruolo come testo, `unique` sull'email (~7 s) |
 
 Initializr genera anche tre file di test (`TestcontainersConfiguration`, `TestBookingApplication`, `BookingApplicationTests`). **Non sono stati copiati di proposito**: contengono proprio `@ServiceConnection` e la configurazione di Testcontainers, che sono un argomento di questo passo e li scrive Nicholas.
 
@@ -47,6 +50,8 @@ JDK (per sviluppare) contiene il JRE (per eseguire), che contiene la JVM. `PATH`
 - Maven Wrapper: versione di Maven fissata nel repository, nessuna installazione.
 
 ### Spring Boot e auto-configurazione
+> Come funziona Spring dentro (contenitore, bean, proxy): [`docs/studio/06-come-funziona-spring.md`](../studio/06-come-funziona-spring.md).
+
 `@SpringBootApplication` = configurazione + auto-configurazione + component scan dal package della classe principale in giù. L'auto-configurazione si attiva in base a condizioni (`@ConditionalOnClass`, `@ConditionalOnMissingBean`, ...) e si fa da parte se definisci tu il bean. Report con `--debug`.
 
 ### Da Boot 2.x a 4.x
@@ -102,6 +107,9 @@ JDK (per sviluppare) contiene il JRE (per eseguire), che contiene la JVM. `PATH`
 - `@DataJpaTest` (Boot 4: `org.springframework.boot.data.jpa.test.autoconfigure`): solo JPA + Flyway, ogni test annullato con `rollback`, non sostituisce il database del container.
 - `@Container @ServiceConnection static PostgreSQLContainer` con `postgres:17`: connessione presa dal container, nessun `.env` necessario (anche in CI).
 - Un vincolo violato → `DataIntegrityViolationException` al `save`; verificare anche il **nome** del vincolo, per non far passare il test per il motivo sbagliato.
+- Per leggere davvero dal database dopo un `save`: `flush()` + `clear()`, altrimenti torna l'oggetto in memoria (errore 7). Per sapere cosa c'è **nella colonna**: SQL con `JdbcTemplate`.
+- Un test di un oggetto Java puro (`Email`) non ha annotazioni sulla classe: niente Spring, niente Docker (errore 9, PD-20).
+- Criterio per ogni test: deve poter diventare rosso se il codice si rompe. Un test che legge l'oggetto creato da noi invece della riga non prova niente.
 
 ## Decisioni
 - D-003 (Java 21, Spring Boot): applicata con Spring Boot 4.1.1.
@@ -124,4 +132,33 @@ JDK (per sviluppare) contiene il JRE (per eseguire), che contiene la JVM. `PATH`
 | 9 | `EmailTest` (test unitario di un record) annotato con `@DataJpaTest` e `@Testcontainers`, copiate dal test del repository | Tutti i test della classe falliscono prima di partire: `Failed to load ApplicationContext`, in fondo alla catena `Failed to replace DataSource with an embedded database for tests` | `@DataJpaTest` avvia una parte di Spring con JPA, Flyway e un `DataSource`. Senza un container con `@ServiceConnection` prova a sostituire il database con uno in memoria (H2), che non c'è | Nessuna annotazione sulla classe: `Email` è Java puro, bastano JUnit e AssertJ | Ogni annotazione di test **accende** qualcosa: prima di copiarla chiedersi cosa serve al test. Leggere la causa in fondo alla catena (PD-05, PD-20) |
 
 ## Domande da colloquio
-*(a fine passo)*
+
+### Domanda 1: In un progetto con Flyway, perché `spring.jpa.hibernate.ddl-auto=validate` e non `update`? E cosa succede se modifichi una migrazione già applicata?
+**La mia risposta:**
+
+**Correzione:**
+
+### Domanda 2: Come gestisci configurazione e segreti tra sviluppo e produzione in Spring Boot? Perché la password non ha un valore di default?
+**La mia risposta:**
+
+**Correzione:**
+
+### Domanda 3: Perché un'entità JPA ha bisogno di un costruttore senza argomenti, e perché lo fai `protected`? Perché un'entità non può essere un `record`, mentre `Email` sì?
+**La mia risposta:**
+
+**Correzione:**
+
+### Domanda 4: La colonna `created_at` ha `default now()` nel database. Come la mappi in Hibernate, e cosa succede con il mapping sbagliato all'`insert` e all'`update`?
+**La mia risposta:**
+
+**Correzione:**
+
+### Domanda 5: Perché test di integrazione con Testcontainers e non con H2? Cosa fa `@ServiceConnection`? E perché il test di `Email` non ha `@DataJpaTest`?
+**La mia risposta:**
+
+**Correzione:**
+
+### Domanda 6: L'email deve essere unica. La controlli in Java con `existsByEmail` o nel database? Come scrivi un test che lo provi senza farlo passare per il motivo sbagliato?
+**La mia risposta:**
+
+**Correzione:**
