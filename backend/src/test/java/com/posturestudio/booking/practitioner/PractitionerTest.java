@@ -48,6 +48,20 @@ public class PractitionerTest {
     }
 
     @Test
+    void invalidChangeLeavesSettingsUnchanged() {
+        // arrange
+        Practitioner practitioner = new Practitioner();
+        practitioner.changeSettings(new PractitionerSettings(24, 90, 30));
+
+        // act: the first two values are valid, the last one is not
+        Assertions.assertThrows(IllegalArgumentException.class,
+                () -> practitioner.changeSettings(new PractitionerSettings(48, 60, 0)));
+
+        // assert
+        assertThat(practitioner.settings()).isEqualTo(new PractitionerSettings(24, 90, 30));
+    }
+
+    @Test
     void nullSettingsAreRejected() {
         Practitioner practitioner = new Practitioner();
 

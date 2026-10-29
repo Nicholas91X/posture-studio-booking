@@ -1,5 +1,7 @@
 package com.posturestudio.booking.practitioner;
 
+import static com.posturestudio.booking.shared.Checks.requirePositive;
+
 import java.time.Instant;
 import java.util.Objects;
 
@@ -46,23 +48,20 @@ class Practitioner {
     // ***** METHODS *****
 
     // The entity protects its own state, whoever calls it.
-    // Invalid values should be stopped earlier by request validation: here they are a programming error
+    // Invalid values should be stopped earlier by request validation: here they are a programming error.
+    // All values are checked before any field changes: an invalid change leaves the entity as it was
     void changeSettings(PractitionerSettings settings) {
         Objects.requireNonNull(settings, "settings must not be null");
-        this.cancellationNoticeHours = requirePositive(settings.cancellationNoticeHours(), "cancellationNoticeHours");
-        this.singleCreditValidityDays = requirePositive(settings.singleCreditValidityDays(), "singleCreditValidityDays");
-        this.slotStepMinutes = requirePositive(settings.slotStepMinutes(), "slotStepMinutes");
+        int notice = requirePositive(settings.cancellationNoticeHours(), "cancellationNoticeHours");
+        int validity = requirePositive(settings.singleCreditValidityDays(), "singleCreditValidityDays");
+        int step = requirePositive(settings.slotStepMinutes(), "slotStepMinutes");
+        this.cancellationNoticeHours = notice;
+        this.singleCreditValidityDays = validity;
+        this.slotStepMinutes = step;
     }
 
     PractitionerSettings settings() {
         return new PractitionerSettings(cancellationNoticeHours, singleCreditValidityDays, slotStepMinutes);
-    }
-
-    private static int requirePositive(int value, String field) {
-        if (value <= 0) {
-            throw new IllegalArgumentException(field + " must be positive, was " + value);
-        }
-        return value;
     }
 
     Long getId() {

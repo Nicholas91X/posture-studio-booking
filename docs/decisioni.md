@@ -347,3 +347,18 @@ Restano anche le foreign key semplici verso `practitioner` e `service`: implicat
 - *Un'eccezione per modulo*: più precisa, ma per chi chiama l'API la differenza non esiste (sempre 404), e il gestore degli errori dovrebbe conoscerle tutte.
 
 **Conseguenze.** Niente join JPQL tra entità di moduli diversi: se servono dati di più moduli, li combina un servizio. È lo stesso principio degli aggregati del Domain-Driven Design e di Spring Modulith. La coerenza tra id di moduli diversi la garantiscono le foreign key del database (D-025 resta identica nello schema).
+
+---
+
+## D-027 — Regole violate: una `BusinessRuleException` con codice, risposta 409
+**Stato:** accettata · 2026-10-29
+
+**Contesto.** Alcune richieste falliscono non perché una cosa manca (404, D-026) né perché sono scritte male (400), ma perché una regola lo impedisce nello stato attuale: un pacchetto su un servizio disattivato oggi, un orario già preso o un credito scaduto domani. L'architettura chiede errori con un codice leggibile che il frontend traduce in italiano. Confronto: `docs/studio/10-modulo-catalog.md`, 1.3.
+
+**Decisione.**
+- Una sola `BusinessRuleException` (`RuntimeException`) nel package `shared`, con un codice preso dall'`enum` `ErrorCode` (primo valore: `SERVICE_NOT_ACTIVE`).
+- Il gestore degli errori la trasforma in **409 Conflict**, con il codice nel `ProblemDetail`.
+
+**Alternative scartate.** *Una classe per ogni regola*: diventerebbero decine, e il gestore degli errori dovrebbe conoscerle tutte. *Codice come `String`*: errori di battitura possibili, nessun elenco unico. *422 Unprocessable Content*: adatto quando è il contenuto della richiesta a non avere senso; le nostre regole dipendono quasi sempre dallo stato delle risorse.
+
+**Conseguenze.** Ogni nuova regola aggiunge un valore a `ErrorCode`, e il frontend aggiunge la sua traduzione. Il codice è parte del contratto delle API: una volta pubblicato, non si rinomina.
