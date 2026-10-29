@@ -52,8 +52,3 @@ Elencati in `requisiti.md`, sezione "Punti aperti". Da chiudere prima del passo 
 - **Passo 8 (accesso), riattivazione**: con `unique` sull'email, un cliente disattivato che torna con la stessa email va **riattivato**, non registrato di nuovo.
 - **Passo 13 (pannello)**: gestione dei professionisti da parte dell'admin (D-021), compresa la disattivazione.
 
-## Problemi aperti
-
-- **Aliquota IVA** (punto aperto 4): va chiusa prima del passo 5, che è il prossimo.
-- Test rimandati di proposito, da riprendere quando arrivano altri vincoli: i `check` di V1 provati con SQL diretto (`app_user_role_ck`, `app_user_email_ck`) e il *dirty checking* di `deactivate()` su un'entità *managed* (oggi il test passa da un *merge*).
-- Avviso di Mockito sul *self-attaching* nei test: innocuo oggi, da sistemare quando lo richiederà una versione futura del JDK.
