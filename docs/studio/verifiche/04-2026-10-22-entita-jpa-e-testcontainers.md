@@ -2,7 +2,7 @@
 
 2026-10-22 · modalità: argomento indicato ("entità jpa e testcontainers") · guide di riferimento: [05](../05-entita-jpa-e-test.md), [06](../06-come-funziona-spring.md)
 
-> Premesse verificate prima del test su una copia del progetto (Hibernate 7.4, Testcontainers 2). La verifica ha anche corretto tre punti della guida 05 (`@Generated` da sola basta; `getId()` deve essere pubblico perché il proxy risponda senza query; l'errore dopo un vincolo violato è un `AssertionFailure` di Hibernate).
+> Premesse verificate prima del test su una copia del progetto (Hibernate 7.4, Testcontainers 2). La verifica ha anche corretto tre punti della guida 05 (`@Generated` da sola basta per l'`insert` — *corretto il 2026-10-29: per l'`update` serve anche `@Column(updatable = false)`, vedi guida 05, 1.3*; `getId()` deve essere pubblico perché il proxy risponda senza query; l'errore dopo un vincolo violato è un `AssertionFailure` di Hibernate).
 
 ## Esito in breve
 
