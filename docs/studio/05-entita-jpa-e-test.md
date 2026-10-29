@@ -69,9 +69,11 @@ Gli stati di vita di un'entità:
 
 Bisogna quindi dire a Hibernate due cose: **non nominare** questa colonna negli `insert` e negli `update`, e **rileggerla** dopo l'`insert`, per avere il valore nel campo Java.
 
-Basta **una sola annotazione** di Hibernate, `@Generated` (`org.hibernate.annotations.Generated`), che fa entrambe le cose. Verificato: con la sola `@Generated` l'`insert` diventa `insert into app_user (active,email,phone,role) values (...) returning id,created_at`. `created_at` non è tra le colonne scritte, ed è nel `returning`, così il valore torna nel campo Java nella stessa istruzione.
+Servono **due annotazioni**:
+- **`@Generated`** di Hibernate (`org.hibernate.annotations.Generated`) per l'**`insert`**. Verificato: l'`insert` diventa `insert into app_user (active,email,phone,role) values (...) returning id,created_at`. `created_at` non è tra le colonne scritte, ed è nel `returning`, così il valore torna nel campo Java nella stessa istruzione;
+- **`@Column(updatable = false)`** per gli **`update`**. `@Generated` vale per default solo per l'`insert`: senza `updatable = false`, ogni `update` riscrive anche `created_at` con il valore che ha il campo Java. Verificato: `update library_member set card_code=?,created_at=?,status=? where id=?` senza, `update library_member set card_code=?,status=? where id=?` con. Oggi il valore riscritto è lo stesso letto, quindi nessun danno visibile; ma la colonna "non cambia mai" deve dirlo il mapping, non la fortuna.
 
-Aggiungere `@Column(insertable = false, updatable = false)` non è un errore, ma è **ridondante**: lo si vede nei tutorial, e rende esplicito il "non scrivere". *(Corretto il 2026-10-22 dopo una verifica sul nostro stack.)*
+`insertable = false` invece è **ridondante**: all'`insert` ci pensa già `@Generated`. *(Corretto il 2026-10-22 dopo una verifica sul nostro stack; corretto di nuovo il 2026-10-29: la versione precedente diceva che `@Generated` da sola bastava anche per gli `update`, ed era sbagliato. Lo ha mostrato il log del test di `AppUser`.)*
 
 Le alternative, per sapere che esistono:
 
@@ -368,6 +370,7 @@ class LibraryMember {
 
     // Filled by the database (default now()): never written by Hibernate, read back after insert.
     @Generated
+    @Column(updatable = false)
     private Instant createdAt;
 
     protected LibraryMember() {
@@ -420,6 +423,247 @@ class LibraryMemberRepositoryTest {
 Note:
 - gli `import` non sono riportati: i package delle annotazioni di test sono nella 4.3, e l'IDE li suggerisce. Attenzione a **`@Generated`**: va importata da `org.hibernate.annotations`, non da `jakarta.annotation` (esiste un'altra annotazione con lo stesso nome, che non c'entra niente). Se l'IDE importa quella sbagliata te ne accorgi subito, perché il codice non compila: `annotation @Generated is missing a default value for the element 'value'` (verificato);
 - in Testcontainers 2 `PostgreSQLContainer` sta in `org.testcontainers.postgresql`. Nei tutorial vecchi trovi `org.testcontainers.containers.PostgreSQLContainer<?>`, con il parametro di tipo: è la versione 1.
+
+### 5.2 Due classi di test complete, sulla biblioteca
+
+*(Aggiunta il 2026-10-29.)* Lo scheletro qui sopra mostra la forma; questa sezione mostra **tutto**, import compresi, su un esempio costruito apposta per somigliare al nostro senza esserlo. **Verificato**: le due classi girano su una copia del progetto (Spring Boot 4.1.1, Testcontainers 2.0.5, `postgres:17`), `Tests run: 17, Failures: 0, Errors: 0`.
+
+**Il dominio dell'esempio.** Un socio della biblioteca (`LibraryMember`) ha un codice tessera (`CardCode`): un value object che, al contrario di `Email`, converte in **maiuscolo**. La tabella:
+
+```sql
+create table library_member (
+    id          bigint       generated always as identity primary key,
+    card_code   text         not null,
+    status      text         not null default 'ACTIVE',
+    created_at  timestamptz  not null default now(),
+
+    constraint library_member_card_code_uk  unique (card_code),
+    constraint library_member_card_code_ck  check (card_code = upper(card_code)),
+    constraint library_member_status_ck     check (status in ('ACTIVE', 'SUSPENDED'))
+);
+```
+
+Il value object:
+
+```java
+record CardCode(String value) {
+
+    private static final Pattern FORMAT = Pattern.compile("[A-Z0-9]{8}");
+
+    CardCode {
+        if (value == null || value.isBlank()) {
+            throw new IllegalArgumentException("Card code is required");
+        }
+        value = value.strip().toUpperCase(Locale.ROOT);
+        if (!FORMAT.matcher(value).matches()) {
+            throw new IllegalArgumentException("Invalid card code");
+        }
+    }
+}
+```
+
+L'entità è quella della parte 5 con `CardCode` al posto della stringa (e un `CardCodeConverter` come il tuo `EmailConverter`); il repository ha `Optional<LibraryMember> findByCardCode(CardCode cardCode)`.
+
+#### La classe 1: il test unitario del value object
+
+Niente Spring, niente Docker: solo JUnit e AssertJ. Gira in millisecondi.
+
+```java
+// src/test/java/com/posturestudio/booking/library/CardCodeTest.java
+package com.posturestudio.booking.library;
+
+import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
+
+import org.junit.jupiter.api.Test;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.NullAndEmptySource;
+import org.junit.jupiter.params.provider.ValueSource;
+
+class CardCodeTest {
+
+    @Test
+    void validCodeIsKeptAsIs() {
+        CardCode code = new CardCode("ABC12345");
+
+        assertThat(code.value()).isEqualTo("ABC12345");
+    }
+
+    @Test
+    void codeIsNormalizedToUppercase() {
+        CardCode code = new CardCode("abc12345");
+
+        assertThat(code.value()).isEqualTo("ABC12345");
+    }
+
+    @Test
+    void surroundingSpacesAreRemoved() {
+        CardCode code = new CardCode("  ABC12345 ");
+
+        assertThat(code.value()).isEqualTo("ABC12345");
+    }
+
+    @Test
+    void sameCodeWithDifferentCaseIsEqual() {
+        assertThat(new CardCode("abc12345")).isEqualTo(new CardCode("ABC12345"));
+    }
+
+    @ParameterizedTest
+    @NullAndEmptySource
+    @ValueSource(strings = {"   "})
+    void missingCodeIsRejected(String input) {
+        assertThatThrownBy(() -> new CardCode(input))
+                .isInstanceOf(IllegalArgumentException.class)
+                .hasMessage("Card code is required");
+    }
+
+    @ParameterizedTest
+    @ValueSource(strings = {"ABC1234", "ABC123456", "ABC-1234", "ÀBC12345"})
+    void malformedCodeIsRejected(String input) {
+        assertThatThrownBy(() -> new CardCode(input))
+                .isInstanceOf(IllegalArgumentException.class)
+                .hasMessage("Invalid card code");
+    }
+}
+```
+
+Cosa c'è di nuovo:
+
+| Elemento | Cosa fa |
+|---|---|
+| `@ParameterizedTest` | Lo **stesso** test eseguito più volte, una per ogni valore. Nel report compare una riga per valore: per questo i test della classe risultano 11, non 6 |
+| `@NullAndEmptySource` | Fornisce `null` e `""` come valori |
+| `@ValueSource(strings = {...})` | Fornisce i valori elencati. Combinati con la riga sopra: `null`, `""`, `"   "` |
+| `assertThatThrownBy(() -> ...)` | Esegue il codice nella *lambda* e verifica che lanci un'eccezione, di quel tipo e con quel messaggio. Controllare il **messaggio** distingue "manca" da "formato sbagliato", come il nome del vincolo nel test di integrazione |
+| `sameCodeWithDifferentCaseIsEqual` | Prova che due record con lo stesso valore normalizzato sono **uguali** (`equals` generato dal record): è ciò che rende sicuro `findByCardCode` |
+
+I valori di `malformedCodeIsRejected` sono scelti per coprire un motivo ciascuno: troppo corto, troppo lungo, carattere non ammesso, lettera accentata.
+
+#### La classe 2: il test di integrazione del repository
+
+```java
+// src/test/java/com/posturestudio/booking/library/LibraryMemberRepositoryTest.java
+package com.posturestudio.booking.library;
+
+import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
+
+import org.junit.jupiter.api.Test;
+import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.boot.data.jpa.test.autoconfigure.DataJpaTest;
+import org.springframework.boot.jpa.test.autoconfigure.TestEntityManager;
+import org.springframework.boot.testcontainers.service.connection.ServiceConnection;
+import org.springframework.dao.DataIntegrityViolationException;
+import org.springframework.jdbc.core.JdbcTemplate;
+import org.testcontainers.junit.jupiter.Container;
+import org.testcontainers.junit.jupiter.Testcontainers;
+import org.testcontainers.postgresql.PostgreSQLContainer;
+
+@DataJpaTest
+@Testcontainers
+class LibraryMemberRepositoryTest {
+
+    @Container
+    @ServiceConnection
+    static PostgreSQLContainer postgres = new PostgreSQLContainer("postgres:17");
+
+    @Autowired
+    LibraryMemberRepository repository;
+
+    @Autowired
+    TestEntityManager entityManager;
+
+    @Autowired
+    JdbcTemplate jdbc;
+
+    @Test
+    void savedMemberIsReadBackFromTheDatabase() {
+        // arrange
+        LibraryMember saved = repository.save(new LibraryMember(new CardCode("ABC12345")));
+        entityManager.flush();   // every pending change goes to the database
+        entityManager.clear();   // forget every object: the next read must hit the database
+
+        // act
+        var found = repository.findByCardCode(new CardCode("abc12345"));
+
+        // assert
+        assertThat(found).isPresent();
+        LibraryMember member = found.get();
+        assertThat(member).isNotSameAs(saved);   // a new object, built by Hibernate from the row
+        assertThat(member.getId()).isEqualTo(saved.getId());
+        assertThat(member.getCardCode()).isEqualTo(new CardCode("ABC12345"));
+        assertThat(member.getStatus()).isEqualTo(MemberStatus.ACTIVE);
+    }
+
+    @Test
+    void databaseGeneratedColumnsAreFilledRightAfterSave() {
+        LibraryMember saved = repository.save(new LibraryMember(new CardCode("ABC12345")));
+
+        assertThat(saved.getId()).isNotNull();
+        assertThat(saved.getCreatedAt()).isNotNull();
+    }
+
+    @Test
+    void statusIsStoredAsText() {
+        LibraryMember saved = repository.save(new LibraryMember(new CardCode("ABC12345")));
+
+        String stored = jdbc.queryForObject(
+                "select status from library_member where id = ?", String.class, saved.getId());
+
+        assertThat(stored).isEqualTo("ACTIVE");
+    }
+
+    @Test
+    void unknownCardCodeFindsNothing() {
+        assertThat(repository.findByCardCode(new CardCode("ZZZ99999"))).isEmpty();
+    }
+
+    @Test
+    void duplicateCardCodeIsRejected() {
+        // arrange
+        repository.save(new LibraryMember(new CardCode("ABC12345")));
+
+        // act + assert: nothing else touches the database after the expected failure
+        assertThatThrownBy(() -> repository.save(new LibraryMember(new CardCode("abc12345"))))
+                .isInstanceOf(DataIntegrityViolationException.class)
+                .hasMessageContaining("library_member_card_code_uk");
+    }
+
+    @Test
+    void lowercaseCardCodeIsRejectedByTheDatabase() {
+        // below Java: CardCode would normalize it, so plain SQL is the only way to try
+        assertThatThrownBy(() -> jdbc.update("insert into library_member (card_code) values ('abc12345')"))
+                .isInstanceOf(DataIntegrityViolationException.class)
+                .hasMessageContaining("library_member_card_code_ck");
+    }
+}
+```
+
+Test per test, cosa prova e perché è scritto così:
+
+| Test | Cosa prova | Il dettaglio che conta |
+|---|---|---|
+| `savedMemberIsReadBackFromTheDatabase` | Il giro completo: scrittura, lettura dalla riga, conversione, enum | `flush()` + `clear()`: senza, `findByCardCode` restituirebbe l'oggetto già in memoria (guida 07, 11.1). `isNotSameAs(saved)` lo dimostra: è un oggetto **nuovo**. La ricerca usa `"abc12345"` minuscolo: prova anche la normalizzazione nel percorso vero |
+| `databaseGeneratedColumnsAreFilledRightAfterSave` | `id` e `createdAt` valorizzati subito dopo il `save` | È il test di `@Generated` (1.3): senza, `createdAt` resterebbe `null` (o il `save` fallirebbe sul `not null`) |
+| `statusIsStoredAsText` | Nella colonna c'è `'ACTIVE'`, non `0` | Si legge con SQL diretto, perché attraverso JPA l'enum tornerebbe enum comunque. `JdbcTemplate` lavora **nella stessa transazione** del test: vede la riga anche senza commit |
+| `unknownCardCodeFindsNothing` | Il caso "zero" di `Optional` | `isEmpty()` di AssertJ sugli `Optional` |
+| `duplicateCardCodeIsRejected` | Il vincolo `unique` | Il nome del vincolo nel messaggio (4.5). Il secondo codice è scritto in minuscolo: dopo la normalizzazione è **lo stesso**, e il test lo prova. Nessuna operazione sul database dopo l'errore atteso |
+| `lowercaseCardCodeIsRejectedByTheDatabase` | Il `check` sul maiuscolo | Passa **sotto** Java (4.6), e controlla il nome `..._ck`: così non passa per il motivo sbagliato |
+
+**La controprova, verificata.** Togliendo il costruttore `protected` senza argomenti da `LibraryMember`, fallisce **solo** `savedMemberIsReadBackFromTheDatabase`, con `InstantiationException: No default constructor for entity`. Un test aggiunto per prova, che rileggeva **senza** `clear()`, restava verde. È la dimostrazione che `flush()` + `clear()` non sono una formalità.
+
+**Come tradurlo nel nostro progetto.** È qui che lavori tu: le corrispondenze, non il codice.
+
+| Biblioteca | Il nostro `auth` |
+|---|---|
+| `CardCode`, maiuscolo, `[A-Z0-9]{8}` | `Email`, minuscolo, la tua regex |
+| `CardCodeTest` | `EmailTest`: quali valori scegli per `malformed...`? Uno per motivo (senza `@`, senza dominio, ...) |
+| `library_member_card_code_uk` / `_ck` | `app_user_email_uk` / `app_user_email_ck` |
+| `status` (`MemberStatus`) | `role` (`Role`) |
+| `new LibraryMember(code)` | `new AppUser(email, role)`: il costruttore ha **due** argomenti |
+| L'`insert` con SQL diretto ha solo `card_code` | In `app_user` sono obbligatori anche `role` (e cosa altro?): rileggi V1 |
+
+**Convenzioni dei nomi.** Le classi si chiamano come la classe provata più `Test` (`EmailTest`, `AppUserRepositoryTest`): Maven Surefire, il plugin che esegue i test, trova da solo le classi che finiscono in `Test`. Stanno nello **stesso package** della classe provata, ma sotto `src/test/java`: così vedono anche ciò che è package-private, come `AppUserRepository`.
 
 ### Cosa deve contenere il nostro codice
 
