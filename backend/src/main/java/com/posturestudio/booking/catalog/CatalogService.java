@@ -5,6 +5,7 @@ import java.util.List;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
+import com.posturestudio.booking.practitioner.PractitionerService;
 import com.posturestudio.booking.shared.BusinessRuleException;
 import com.posturestudio.booking.shared.ErrorCode;
 import com.posturestudio.booking.shared.NotFoundException;
@@ -19,10 +20,12 @@ public class CatalogService {
 
     private final ServiceOfferRepository services;
     private final PackageOfferRepository packages;
+    private final PractitionerService practitioners;
 
-    CatalogService(ServiceOfferRepository services, PackageOfferRepository packages) {
+    CatalogService(ServiceOfferRepository services, PackageOfferRepository packages, PractitionerService practitioners) {
         this.services = services;
         this.packages = packages;
+        this.practitioners = practitioners;
     }
 
     // ***** SERVICES (panel) *****
@@ -108,10 +111,11 @@ public class CatalogService {
 
     // ***** PUBLIC CATALOG *****
 
-    // Unknown practitioner → empty catalog: this module does not know practitioners.
-    // Whether the practitioner exists and is active is checked by the public API (step 5, piece 5)
+    // Only for an active practitioner: missing or deactivated → NotFoundException (404), whatever
+    // services they have. No cascade: if the practitioner is reactivated, the catalog comes back as it was
     @Transactional(readOnly = true)
     public PublicCatalog publicCatalog(long practitionerId) {
+        practitioners.requireActive(practitionerId);
         List<PublicCatalog.ServiceItem> onSaleServices = services.findByPractitionerIdAndActiveTrueOrderById(practitionerId)
                 .stream()
                 .map(PublicCatalog.ServiceItem::from)

@@ -1,5 +1,8 @@
 package com.posturestudio.booking.auth;
 
+import java.util.List;
+import java.util.Set;
+
 import jakarta.persistence.EntityManager;
 import org.junit.jupiter.api.Test;
 import static org.assertj.core.api.Assertions.assertThat;
@@ -147,6 +150,24 @@ public class AppUserRepositoryTest {
 
         // assert
         assertThat(repository.findByEmail(email)).get().extracting(AppUser::isActive).isEqualTo(true);
+    }
+
+    @Test
+    void findActiveIdsAmongReturnsOnlyActiveUsersAmongTheRequested() {
+        // arrange: one active, one deactivated, one active but not asked for
+        long active = repository.save(new AppUser(new Email("active@example.com"), Role.PRACTITIONER)).getId();
+        AppUser deactivated = repository.save(new AppUser(new Email("off@example.com"), Role.PRACTITIONER));
+        deactivated.deactivate();
+        long notAsked = repository.save(new AppUser(new Email("other@example.com"), Role.PRACTITIONER)).getId();
+        repository.flush();
+        entityManager.clear();
+
+        // act
+        Set<Long> result = repository.findActiveIdsAmong(List.of(active, deactivated.getId(), 999999L));
+
+        // assert
+        assertThat(result).containsExactly(active);
+        assertThat(result).doesNotContain(notAsked);
     }
 
     @Test

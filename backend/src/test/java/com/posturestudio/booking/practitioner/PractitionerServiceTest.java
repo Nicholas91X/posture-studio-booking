@@ -2,6 +2,7 @@ package com.posturestudio.booking.practitioner;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
+import java.util.List;
 import java.util.Map;
 
 import jakarta.persistence.EntityManager;
@@ -13,11 +14,13 @@ import org.springframework.context.annotation.Import;
 import org.springframework.jdbc.core.JdbcTemplate;
 
 import com.posturestudio.booking.TestcontainersConfiguration;
+import com.posturestudio.booking.auth.AccountService;
 import com.posturestudio.booking.shared.NotFoundException;
 
-// @DataJpaTest starts only JPA: services are not there, so PractitionerService is imported by hand
+// @DataJpaTest starts only JPA: services are not there, so PractitionerService is imported by hand,
+// with the AccountService of auth it asks about active accounts
 @DataJpaTest
-@Import({TestcontainersConfiguration.class, PractitionerService.class})
+@Import({TestcontainersConfiguration.class, PractitionerService.class, AccountService.class})
 public class PractitionerServiceTest {
 
     @Autowired
@@ -82,6 +85,51 @@ public class PractitionerServiceTest {
                 () -> service.updateSettings(999999, new PractitionerSettings(48, 60, 15)));
     }
 
+    // ***** PUBLIC *****
+
+    @Test
+    void listActiveHidesDeactivatedAccountsAndSortsByLastNameThenFirstName() {
+        // arrange
+        long rossiMarta = insertPractitioner("marta@example.com", "Marta", "Rossi", true);
+        long bianchi = insertPractitioner("luca@example.com", "Luca", "Bianchi", true);
+        long rossiAnna = insertPractitioner("anna@example.com", "Anna", "Rossi", true);
+        insertPractitioner("marco@example.com", "Marco", "Verdi", false);
+
+        // act
+        List<PublicPractitioner> listed = service.listActive();
+
+        // assert
+        assertThat(listed).extracting(PublicPractitioner::id).containsExactly(bianchi, rossiAnna, rossiMarta);
+        assertThat(listed.getFirst()).isEqualTo(new PublicPractitioner(bianchi, "Luca", "Bianchi"));
+    }
+
+    @Test
+    void listActiveWithNoPractitionersIsEmpty() {
+        assertThat(service.listActive()).isEmpty();
+    }
+
+    @Test
+    void requireActiveAcceptsAnActivePractitioner() {
+        long anna = insertPractitioner("anna@example.com");
+
+        Assertions.assertDoesNotThrow(() -> service.requireActive(anna));
+    }
+
+    @Test
+    void deactivatedAndMissingPractitionerGiveTheSameNotFound() {
+        // arrange
+        long marco = insertPractitioner("marco@example.com", "Marco", "Verdi", false);
+        long neverUsed = marco + 1000;
+
+        // act
+        var deactivated = Assertions.assertThrows(NotFoundException.class, () -> service.requireActive(marco));
+        var missing = Assertions.assertThrows(NotFoundException.class, () -> service.requireActive(neverUsed));
+
+        // assert: nothing in the message tells the two apart, apart from the id itself
+        assertThat(deactivated.getMessage().replace(String.valueOf(marco), "ID"))
+                .isEqualTo(missing.getMessage().replace(String.valueOf(neverUsed), "ID"));
+    }
+
     private PractitionerSettings readRow(long practitionerId) {
         Map<String, Object> row = jdbc.queryForMap(
                 "select cancellation_notice_hours, single_credit_validity_days, slot_step_minutes from practitioner where id = ?",
@@ -93,11 +141,15 @@ public class PractitionerServiceTest {
     }
 
     private long insertPractitioner(String email) {
+        return insertPractitioner(email, "Test", "Practitioner", true);
+    }
+
+    private long insertPractitioner(String email, String firstName, String lastName, boolean active) {
         Long userId = jdbc.queryForObject(
-                "insert into app_user (role, email) values ('PRACTITIONER', ?) returning id",
-                Long.class, email);
+                "insert into app_user (role, email, active) values ('PRACTITIONER', ?, ?) returning id",
+                Long.class, email, active);
         return jdbc.queryForObject(
-                "insert into practitioner (user_id, first_name, last_name) values (?, 'Test', 'Practitioner') returning id",
-                Long.class, userId);
+                "insert into practitioner (user_id, first_name, last_name) values (?, ?, ?) returning id",
+                Long.class, userId, firstName, lastName);
     }
 }

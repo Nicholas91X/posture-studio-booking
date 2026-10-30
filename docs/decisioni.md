@@ -380,3 +380,21 @@ Nella guida l'interfaccia era proposta in `auth`; spostata in `practitioner` dur
 **Alternative scartate.** *Valore fisso nella configurazione*: un solo professionista per contesto, il test "A non tocca le cose di B" non si può scrivere. *Id nella URL*: la stessa identità dichiarata, sparsa in ogni indirizzo, da riscrivere al passo 8. *Spring Security subito con un utente finto*: anticipa a metà il passo 8.
 
 **Conseguenze.** L'identità è **dichiarata dal client, non verificata**: l'implementazione non deve mai arrivare in produzione (il sistema non va online prima del passo 14). Scelte collegate dello stesso pezzo: URL sotto `/api/panel/...`, creazione con `POST` (201 + `Location`), modifica con `PUT`, disattivazione e riattivazione come azioni `POST .../deactivate` e `.../activate`; annotazioni di Bean Validation sui `record` di ingresso dei moduli.
+
+---
+
+## D-029 — "Professionista attivo" si chiede ad `auth`, con una domanda su un insieme di id
+**Stato:** accettata · 2026-10-30
+
+**Contesto.** L'elenco pubblico dei professionisti mostra solo quelli attivi, e il catalogo pubblico di un professionista disattivato non deve esistere. Ma `practitioner` non ha una colonna `active`: la disattivazione è quella dell'account, `app_user.active` (D-021), che appartiene al modulo `auth`. Confronto completo: `docs/studio/12-api-pubbliche.md`, parte 2.
+
+**Decisione.**
+- `auth` espone il suo primo servizio pubblico, `AccountService`, con `Set<Long> activeAmong(Collection<Long> userIds)`: riceve un **insieme** di id utente e restituisce quelli attivi (una sola query, che legge solo gli id).
+- `PractitionerService.listActive()` legge tutti i professionisti ordinati per cognome e nome, chiede ad `auth` in un colpo solo, e filtra in Java: due query, qualunque sia il numero dei professionisti. `requireActive(id)` lancia la stessa `NotFoundException` per "inesistente" e "disattivato".
+- Il controllo sta nel servizio: `CatalogService.publicCatalog` chiama `requireActive`, il controller non ha logica.
+- Dipendenze tra moduli in un verso solo: `catalog` → `practitioner` → `auth`. `auth` non dipende da nessuno.
+- API pubbliche sotto `/api/public/...`, con `record` dedicati: il professionista espone solo `id`, `firstName`, `lastName` (`PublicPractitioner`); il nome da mostrare lo compone il frontend.
+
+**Alternative scartate.** *Join su `app_user` nel repository di `practitioner`*: una query sola, ma è proprio ciò che D-002 vieta, e richiederebbe SQL nativo (con D-026 non c'è una relazione JPA su cui fare la join); se `auth` cambia la tabella, si rompe solo a runtime. *Colonna `active` anche in `practitioner`*: due verità sullo stesso fatto, che prima o poi divergono. *Un metodo `isActive(userId)` per un id alla volta*: un N+1 tra moduli, che nessun `join fetch` può risolvere.
+
+**Conseguenze.** I test di `practitioner` e `catalog` con `@DataJpaTest` importano anche i servizi da cui dipendono. Un "nascosto dal sito ma attivo nel pannello" (ferie, pausa) sarebbe un concetto diverso da "account attivo", con un nome suo: se servirà, nuova decisione. Al passo 8: `/api/public/**` aperto e tutto il resto chiuso con una regola per prefisso; il login rifiuta un account disattivato (oggi `DevHeaderCurrentPractitioner` controlla solo che il professionista esista).

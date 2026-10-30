@@ -14,12 +14,15 @@ import org.springframework.context.annotation.Import;
 import org.springframework.jdbc.core.JdbcTemplate;
 
 import com.posturestudio.booking.TestcontainersConfiguration;
+import com.posturestudio.booking.auth.AccountService;
+import com.posturestudio.booking.practitioner.PractitionerService;
 import com.posturestudio.booking.shared.BusinessRuleException;
 import com.posturestudio.booking.shared.ErrorCode;
 import com.posturestudio.booking.shared.NotFoundException;
 
+// CatalogService asks PractitionerService whether a practitioner is active, which asks AccountService
 @DataJpaTest
-@Import({TestcontainersConfiguration.class, CatalogService.class})
+@Import({TestcontainersConfiguration.class, CatalogService.class, PractitionerService.class, AccountService.class})
 public class CatalogServiceTest {
 
     @Autowired
@@ -247,11 +250,19 @@ public class CatalogServiceTest {
     }
 
     @Test
-    void publicCatalogOfUnknownPractitionerIsEmpty() {
-        PublicCatalog result = catalog.publicCatalog(999999);
+    void publicCatalogOfUnknownPractitionerIsNotFound() {
+        // until piece 5 this was an empty catalog: now the practitioner must exist and be active
+        Assertions.assertThrows(NotFoundException.class, () -> catalog.publicCatalog(999999));
+    }
 
-        assertThat(result.services()).isEmpty();
-        assertThat(result.packages()).isEmpty();
+    @Test
+    void publicCatalogOfDeactivatedPractitionerIsNotFoundEvenWithActiveServices() {
+        // arrange: the account is deactivated, the services are not touched (no cascade)
+        catalog.createService(marco, SEDUTA);
+        jdbc.update("update app_user set active = false where id = (select user_id from practitioner where id = ?)", marco);
+
+        // act + assert
+        Assertions.assertThrows(NotFoundException.class, () -> catalog.publicCatalog(marco));
     }
 
     private long insertPractitioner(String email) {
