@@ -31,8 +31,8 @@ public class CatalogServiceTest {
     @Autowired
     JdbcTemplate jdbc;
 
-    private static final ServiceOfferDetails SEDUTA = new ServiceOfferDetails("Seduta posturale", 60, 3000);
-    private static final PackageOfferDetails CINQUE = new PackageOfferDetails("5 sedute", 5, 14000, 90);
+    private static final ServiceOfferDetails SEDUTA = new ServiceOfferDetails("Seduta posturale", 60, 3000L);
+    private static final PackageOfferDetails CINQUE = new PackageOfferDetails("5 sedute", 5, 14000L, 90);
 
     private long anna;
     private long marco;
@@ -64,7 +64,7 @@ public class CatalogServiceTest {
         long serviceId = catalog.createService(anna, SEDUTA).id();
 
         // act
-        catalog.updateService(anna, serviceId, new ServiceOfferDetails("Seduta posturale", 60, 3500));
+        catalog.updateService(anna, serviceId, new ServiceOfferDetails("Seduta posturale", 60, 3500L));
         entityManager.flush();
 
         // assert: the row, not the object in memory
@@ -79,7 +79,7 @@ public class CatalogServiceTest {
 
         // act + assert: someone else's service looks exactly like a missing one
         Assertions.assertThrows(NotFoundException.class,
-                () -> catalog.updateService(anna, marcosService, new ServiceOfferDetails("Rubato", 60, 1)));
+                () -> catalog.updateService(anna, marcosService, new ServiceOfferDetails("Rubato", 60, 1L)));
         entityManager.flush();
         Long price = jdbc.queryForObject("select price_cents from service where id = ?", Long.class, marcosService);
         assertThat(price).isEqualTo(3000);
@@ -99,7 +99,7 @@ public class CatalogServiceTest {
     void panelListsOwnServicesIncludingDeactivatedInCreationOrder() {
         // arrange
         long first = catalog.createService(anna, SEDUTA).id();
-        long second = catalog.createService(anna, new ServiceOfferDetails("Valutazione", 90, 5000)).id();
+        long second = catalog.createService(anna, new ServiceOfferDetails("Valutazione", 90, 5000L)).id();
         catalog.deactivateService(anna, first);
         catalog.createService(marco, SEDUTA);
 
@@ -189,7 +189,7 @@ public class CatalogServiceTest {
         // arrange: three packages on three services, then an empty persistence context
         // (otherwise the services already in memory would hide an N+1)
         for (String name : List.of("Seduta posturale", "Valutazione", "Controllo")) {
-            long serviceId = catalog.createService(anna, new ServiceOfferDetails(name, 60, 3000)).id();
+            long serviceId = catalog.createService(anna, new ServiceOfferDetails(name, 60, 3000L)).id();
             catalog.createPackage(anna, serviceId, CINQUE);
         }
         long marcosService = catalog.createService(marco, SEDUTA).id();
@@ -211,9 +211,9 @@ public class CatalogServiceTest {
     void publicCatalogShowsOnlyWhatIsOnSale() {
         // arrange
         long active = catalog.createService(anna, SEDUTA).id();
-        long deactivated = catalog.createService(anna, new ServiceOfferDetails("Vecchio servizio", 60, 2500)).id();
+        long deactivated = catalog.createService(anna, new ServiceOfferDetails("Vecchio servizio", 60, 2500L)).id();
         long onSale = catalog.createPackage(anna, active, CINQUE).id();
-        long packageDeactivated = catalog.createPackage(anna, active, new PackageOfferDetails("10 sedute", 10, 26000, 180)).id();
+        long packageDeactivated = catalog.createPackage(anna, active, new PackageOfferDetails("10 sedute", 10, 26000L, 180)).id();
         long packageOfDeactivatedService = catalog.createPackage(anna, deactivated, CINQUE).id();
         catalog.deactivatePackage(anna, packageDeactivated);
         catalog.deactivateService(anna, deactivated);

@@ -362,3 +362,21 @@ Restano anche le foreign key semplici verso `practitioner` e `service`: implicat
 **Alternative scartate.** *Una classe per ogni regola*: diventerebbero decine, e il gestore degli errori dovrebbe conoscerle tutte. *Codice come `String`*: errori di battitura possibili, nessun elenco unico. *422 Unprocessable Content*: adatto quando è il contenuto della richiesta a non avere senso; le nostre regole dipendono quasi sempre dallo stato delle risorse.
 
 **Conseguenze.** Ogni nuova regola aggiunge un valore a `ErrorCode`, e il frontend aggiunge la sua traduzione. Il codice è parte del contratto delle API: una volta pubblicato, non si rinomina.
+
+---
+
+## D-028 — Professionista corrente provvisorio: interfaccia + header, da rimuovere al passo 8
+**Stato:** accettata · 2026-10-29 · **provvisoria**: l'implementazione va rimossa al passo 8
+
+**Contesto.** Le API del pannello devono sapere quale professionista agisce, ma l'accesso arriva al passo 8. Serve un sostituto che stia in un punto solo, che nei test permetta di agire come due professionisti diversi, e che sia chiaramente provvisorio. Confronto: `docs/studio/11-api-pannello.md`, parte 2.
+
+**Decisione.**
+- Interfaccia pubblica `CurrentPractitioner` (`long id()`) nel modulo **`practitioner`**. I controller dipendono solo da lei.
+- Implementazione provvisoria `DevHeaderCurrentPractitioner` (package-private, stesso modulo): legge l'header `X-Practitioner-Id` e controlla che il professionista esista. Header mancante, non numerico o con un id inesistente → `NotAuthenticatedException` → **401**.
+- **Al passo 8** l'implementazione si cancella e la sostituisce una che chiede ad `auth` l'utente autenticato e lo traduce nel suo professionista (`practitioner.user_id`). Criterio di "fatto" del passo 8.
+
+Nella guida l'interfaccia era proposta in `auth`; spostata in `practitioner` durante l'implementazione per evitare un ciclo tra moduli (il controller di `practitioner` dipenderebbe da `auth`, e `auth` da `practitioner` per sapere se il professionista esiste). Così le dipendenze vanno in un verso solo: `catalog` → `practitioner` → `auth`.
+
+**Alternative scartate.** *Valore fisso nella configurazione*: un solo professionista per contesto, il test "A non tocca le cose di B" non si può scrivere. *Id nella URL*: la stessa identità dichiarata, sparsa in ogni indirizzo, da riscrivere al passo 8. *Spring Security subito con un utente finto*: anticipa a metà il passo 8.
+
+**Conseguenze.** L'identità è **dichiarata dal client, non verificata**: l'implementazione non deve mai arrivare in produzione (il sistema non va online prima del passo 14). Scelte collegate dello stesso pezzo: URL sotto `/api/panel/...`, creazione con `POST` (201 + `Location`), modifica con `PUT`, disattivazione e riattivazione come azioni `POST .../deactivate` e `.../activate`; annotazioni di Bean Validation sui `record` di ingresso dei moduli.

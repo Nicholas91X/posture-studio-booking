@@ -11,7 +11,7 @@ public class ServiceOfferTest {
     @Test
     void newServiceIsActiveWithItsDetails() {
         // arrange + act
-        ServiceOffer service = new ServiceOffer(1L, new ServiceOfferDetails("Seduta posturale", 60, 3000));
+        ServiceOffer service = new ServiceOffer(1L, new ServiceOfferDetails("Seduta posturale", 60, 3000L));
 
         // assert
         assertThat(service.isActive()).isTrue();
@@ -22,7 +22,7 @@ public class ServiceOfferTest {
 
     @Test
     void nameIsStoredWithoutSurroundingSpaces() {
-        ServiceOffer service = new ServiceOffer(1L, new ServiceOfferDetails("  Seduta posturale  ", 60, 3000));
+        ServiceOffer service = new ServiceOffer(1L, new ServiceOfferDetails("  Seduta posturale  ", 60, 3000L));
 
         assertThat(service.getName()).isEqualTo("Seduta posturale");
     }
@@ -30,32 +30,32 @@ public class ServiceOfferTest {
     @Test
     void blankNameIsRejected() {
         var exception = Assertions.assertThrows(IllegalArgumentException.class,
-                () -> new ServiceOffer(1L, new ServiceOfferDetails("   ", 60, 3000)));
+                () -> new ServiceOffer(1L, new ServiceOfferDetails("   ", 60, 3000L)));
         assertThat(exception.getMessage()).contains("name");
     }
 
     @Test
     void zeroDurationIsRejected() {
         var exception = Assertions.assertThrows(IllegalArgumentException.class,
-                () -> new ServiceOffer(1L, new ServiceOfferDetails("Seduta", 0, 3000)));
+                () -> new ServiceOffer(1L, new ServiceOfferDetails("Seduta", 0, 3000L)));
         assertThat(exception.getMessage()).contains("durationMinutes");
     }
 
     @Test
     void zeroPriceIsRejected() {
         var exception = Assertions.assertThrows(IllegalArgumentException.class,
-                () -> new ServiceOffer(1L, new ServiceOfferDetails("Seduta", 60, 0)));
+                () -> new ServiceOffer(1L, new ServiceOfferDetails("Seduta", 60, 0L)));
         assertThat(exception.getMessage()).contains("priceCents");
     }
 
     @Test
     void invalidChangeLeavesServiceUnchanged() {
         // arrange
-        ServiceOffer service = new ServiceOffer(1L, new ServiceOfferDetails("Seduta", 60, 3000));
+        ServiceOffer service = new ServiceOffer(1L, new ServiceOfferDetails("Seduta", 60, 3000L));
 
         // act: the name is valid, the price is not
         Assertions.assertThrows(IllegalArgumentException.class,
-                () -> service.changeDetails(new ServiceOfferDetails("Nuovo nome", 60, 0)));
+                () -> service.changeDetails(new ServiceOfferDetails("Nuovo nome", 60, 0L)));
 
         // assert: nothing changed, not even the valid name
         assertThat(service.getName()).isEqualTo("Seduta");
