@@ -23,15 +23,17 @@ Avvio del database in locale, dalla radice: `docker compose -f infra/docker-comp
 | 3 | Modello dei dati | — | ✅ fatto → `modello-dati.md` |
 | 4 | Fondamenta: repository, Spring Boot, PostgreSQL in Docker, Flyway, prime tabelle | Nicholas | ✅ fatto → `passi/04-fondamenta.md` |
 | 5 | Catalogo e professionisti: servizi, prezzi, impostazioni | Claude, su richiesta di Nicholas | ✅ fatto → `passi/05-catalogo.md` |
-| 6 | Calendario: orari di lavoro, indisponibilità, calcolo degli orari liberi | Nicholas | |
-| 7 | Prenotazione: blocco dell'orario, vincolo di non sovrapposizione, lavori programmati | Nicholas | |
-| 8 | Accesso: codice via email, sessioni, ruoli (Spring Security) | Nicholas | |
-| 9 | Pagamenti: Stripe Checkout e webhook | Nicholas | |
-| 10 | Crediti e pacchetti: lotti, movimenti, acquisto, prenotazione con credito | Nicholas | |
-| 11 | Cancellazioni | Nicholas | |
+| 6 | Calendario: orari di lavoro, indisponibilità, calcolo degli orari liberi | Nicholas, o Claude su sua richiesta | |
+| 7 | Prenotazione: blocco dell'orario, vincolo di non sovrapposizione, lavori programmati | Nicholas, o Claude su sua richiesta | |
+| 8 | Accesso: codice via email, sessioni, ruoli (Spring Security) | Nicholas, o Claude su sua richiesta | |
+| 9 | Pagamenti: Stripe Checkout e webhook | Nicholas, o Claude su sua richiesta | |
+| 10 | Crediti e pacchetti: lotti, movimenti, acquisto, prenotazione con credito | Nicholas, o Claude su sua richiesta | |
+| 11 | Cancellazioni | Nicholas, o Claude su sua richiesta | |
 | 12 | Frontend cliente: prenotazione e "le mie sedute" | Claude | |
 | 13 | Frontend pannello professionisti | Claude | |
-| 14 | Messa online: Dockerfile, Compose, Caddy, GitHub Actions, backup su Hetzner | Nicholas | |
+| 14 | Messa online: Dockerfile, Compose, Caddy, GitHub Actions, backup su Hetzner | Nicholas, o Claude su sua richiesta | |
+
+**Chi scrive il codice del backend** (CLAUDE.md, dal 2026-10-29): per ogni pezzo Claude scrive prima una guida di studio con le scelte da fare; Nicholas sceglie; il codice lo scrive Claude solo su **richiesta esplicita** di Nicholas, dopo che ha compreso le spiegazioni, altrimenti lo scrive Nicholas. Il passo 4 l'ha scritto Nicholas, il passo 5 Claude su sua richiesta.
 
 Il frontend può partire prima, appena esistono le prime API (dopo il passo 7), se serve mostrare qualcosa allo studio.
 

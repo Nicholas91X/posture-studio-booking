@@ -40,11 +40,12 @@ Vedi "A fine sessione" più sotto.
 
 ### Verifiche di comprensione
 
-Nicholas studia con test interattivi: una domanda alla volta, da punti di vista diversi, con correzione graduata (✅ / 🟡 / ❌). Il metodo completo è in `docs/metodo-di-studio.md` ed è vincolante.
+> **Sospese dal 2026-10-29** per scelta di Nicholas: si fanno solo quando lui le chiede esplicitamente. Finché la sospensione è in vigore, non proporle (né dopo una guida di studio né a fine passo).
+
+Nicholas studia con test interattivi: una domanda alla volta, da punti di vista diversi, con correzione graduata (✅ / 🟡 / ❌). Il metodo completo è in `docs/metodo-di-studio.md` ed è vincolante quando un test si fa.
 
 - Si lanciano con `/verifica [argomento]` (skill in `.claude/skills/verifica/`), quando Nicholas vuole, anche più volte al giorno e sullo stesso argomento.
 - **Ogni test produce sempre la sua documentazione**: il file in `docs/studio/verifiche/` (con le risposte di Nicholas testuali e le correzioni), l'aggiornamento di `docs/studio/punti-deboli.md` e la riga nell'indice `docs/studio/verifiche/README.md`.
-- Proponi un test dopo ogni guida di studio (prima che Nicholas scriva il codice) e a fine passo.
 - Quando Nicholas sbaglia un concetto anche fuori dai test, valuta se aggiungerlo ai punti deboli.
 
 ---

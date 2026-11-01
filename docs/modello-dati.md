@@ -1,6 +1,6 @@
 # Modello dei dati
 
-Le tabelle del sistema e come si collegano. Questa è la **progettazione**: le tabelle vere nascono dalle migrazioni Flyway, che Nicholas scrive nel passo 4 e seguenti. Se una migrazione si discosta da qui, si aggiorna questo file.
+Le tabelle del sistema e come si collegano. Questa è la **progettazione**: le tabelle vere nascono dalle migrazioni Flyway, dal passo 4 in poi. Se una migrazione si discosta da qui, si aggiorna questo file.
 
 Modifiche dovute alle migrazioni:
 - **V1 (passo 4)**: `customer.full_name` e `practitioner.display_name` sostituiti da `first_name` + `last_name`; `phone` spostato in `app_user` (facoltativo, per utenti di ogni ruolo); aggiunto `app_user.active` per la cancellazione morbida; ruolo `ADMIN` (D-021).
