@@ -33,10 +33,11 @@ import com.posturestudio.booking.shared.NotFoundException;
 
 // ScheduleService.freeSlots: the glue around FreeSlots (guide 17, part 6). The calculation itself is
 // tested in FreeSlotsTest; here, that the right data reaches it. Today is Friday 6 November 2026,
-// 10:00 in Rome. Same configuration as ScheduleServiceTest: same Spring context, same container
+// 10:00 in Rome. Same configuration as ScheduleServiceTest: same Spring context, same container.
+// No bookings here (NothingOccupied): free slots with bookings are tested in BookingFreeSlotsTest
 @DataJpaTest
 @Import({TestcontainersConfiguration.class, FixedClockConfiguration.class, ScheduleService.class,
-        CatalogService.class, PractitionerService.class, AccountService.class})
+        CatalogService.class, PractitionerService.class, AccountService.class, NothingOccupied.class})
 public class ScheduleFreeSlotsTest {
 
     private static final LocalDate MONDAY_9_NOVEMBER = LocalDate.of(2026, 11, 9);

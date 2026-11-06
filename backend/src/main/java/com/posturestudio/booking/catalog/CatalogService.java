@@ -126,7 +126,7 @@ public class CatalogService {
         return new PublicCatalog(onSaleServices, onSalePackages);
     }
 
-    // For the other modules (schedule, from step 7 booking): is this service on sale, and how long is it?
+    // For the other modules (schedule, booking): is this service on sale, how long is it, how much does it cost?
     // On sale = an active service of an active practitioner. Missing, someone else's, deactivated, or of a
     // deactivated practitioner: the same NotFoundException, as in the public catalog
     @Transactional(readOnly = true)

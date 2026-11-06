@@ -8,7 +8,7 @@ import org.junit.jupiter.api.Test;
 // Plain Java: no Spring, no database
 public class PackageOfferTest {
 
-    private final ServiceOffer service = new ServiceOffer(1L, new ServiceOfferDetails("Seduta posturale", 60, 3000L));
+    private final ServiceOffer service = new ServiceOffer(1L, new ServiceOfferDetails("Seduta posturale", 60, 3000L, false));
 
     @Test
     void newPackageIsActiveWithItsService() {

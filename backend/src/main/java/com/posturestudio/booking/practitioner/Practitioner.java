@@ -1,5 +1,6 @@
 package com.posturestudio.booking.practitioner;
 
+import static com.posturestudio.booking.shared.Checks.requireBetween;
 import static com.posturestudio.booking.shared.Checks.requireOneOf;
 import static com.posturestudio.booking.shared.Checks.requirePositive;
 
@@ -17,6 +18,10 @@ class Practitioner {
 
     // half-hour starts on or off (D-033): the same values as practitioner_slot_step_minutes_ck
     static final Set<Integer> SLOT_STEPS = Set.of(30, 60);
+
+    // well within the life of the hold on the card, about 7 days (D-031, D-042):
+    // the same limit as practitioner_approval_window_hours_ck and the @Max of PractitionerSettings
+    static final int MAX_APPROVAL_WINDOW_HOURS = 48;
 
     protected Practitioner() {
         // JPA needs a no-arg constructor.
@@ -52,6 +57,16 @@ class Practitioner {
     @Column
     private int bookingHorizonDays;
 
+    @Column
+    private int maxFutureBookings;
+
+    @Column
+    @Enumerated(EnumType.STRING)
+    private BookingApproval bookingApproval;
+
+    @Column
+    private int approvalWindowHours;
+
     @Column(updatable = false)
     @Generated
     private Instant createdAt;
@@ -68,16 +83,24 @@ class Practitioner {
         int step = requireOneOf(settings.slotStepMinutes(), SLOT_STEPS, "slotStepMinutes");
         int bookingNotice = requirePositive(settings.minBookingNoticeHours(), "minBookingNoticeHours");
         int horizon = requirePositive(settings.bookingHorizonDays(), "bookingHorizonDays");
+        int maxFuture = requirePositive(settings.maxFutureBookings(), "maxFutureBookings");
+        BookingApproval approval = Objects.requireNonNull(settings.bookingApproval(), "bookingApproval must not be null");
+        // the answer comes before the session starts (D-030): the same rule as the database check
+        int window = requireBetween(settings.approvalWindowHours(), 1,
+                Math.min(bookingNotice, MAX_APPROVAL_WINDOW_HOURS), "approvalWindowHours");
         this.cancellationNoticeHours = notice;
         this.singleCreditValidityDays = validity;
         this.slotStepMinutes = step;
         this.minBookingNoticeHours = bookingNotice;
         this.bookingHorizonDays = horizon;
+        this.maxFutureBookings = maxFuture;
+        this.bookingApproval = approval;
+        this.approvalWindowHours = window;
     }
 
     PractitionerSettings settings() {
         return new PractitionerSettings(cancellationNoticeHours, singleCreditValidityDays, slotStepMinutes,
-                minBookingNoticeHours, bookingHorizonDays);
+                minBookingNoticeHours, bookingHorizonDays, maxFutureBookings, bookingApproval, approvalWindowHours);
     }
 
     Long getId() {

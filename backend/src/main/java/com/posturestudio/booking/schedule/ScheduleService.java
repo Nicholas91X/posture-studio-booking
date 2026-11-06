@@ -4,6 +4,7 @@ import java.time.Clock;
 import java.time.Duration;
 import java.time.Instant;
 import java.time.LocalDate;
+import java.util.ArrayList;
 import java.util.List;
 import java.util.TreeMap;
 
@@ -26,6 +27,7 @@ import com.posturestudio.booking.shared.TimeRange;
  * someone else's version or absence is reported as not found (404, not 403).
  * "Today" is the date in Rome, from the injected Clock (D-035).
  * Dependencies go one way only (D-029): schedule -> catalog -> practitioner -> auth, schedule -> practitioner.
+ * Booked time comes through OccupiedTime, implemented by booking (D-044): booking -> schedule, never back.
  */
 @Service
 public class ScheduleService {
@@ -34,14 +36,17 @@ public class ScheduleService {
     private final UnavailabilityRepository unavailabilities;
     private final CatalogService catalog;
     private final PractitionerService practitioners;
+    private final OccupiedTime occupiedTime;
     private final Clock clock;
 
     ScheduleService(WorkingScheduleRepository schedules, UnavailabilityRepository unavailabilities,
-                    CatalogService catalog, PractitionerService practitioners, Clock clock) {
+                    CatalogService catalog, PractitionerService practitioners, OccupiedTime occupiedTime,
+                    Clock clock) {
         this.schedules = schedules;
         this.unavailabilities = unavailabilities;
         this.catalog = catalog;
         this.practitioners = practitioners;
+        this.occupiedTime = occupiedTime;
         this.clock = clock;
     }
 
@@ -55,15 +60,15 @@ public class ScheduleService {
         PractitionerSettings settings = practitioners.getSettings(practitionerId);
         Instant now = clock.instant();
 
-        // absences in a window decided by the server, not by the client (guide 17, part 4):
+        // absences and booked time in a window decided by the server, not by the client (guide 17, part 4):
         // from now to the end of the last day of the horizon, whatever from and to say
         LocalDate today = LocalDate.ofInstant(now, StudioTime.ZONE);
         Instant windowEnd = today.plusDays(settings.bookingHorizonDays() + 1L).atStartOfDay(StudioTime.ZONE).toInstant();
-        List<TimeRange> busy = unavailabilities
-                .findByPractitionerIdAndStartsAtBeforeAndEndsAtAfter(practitionerId, windowEnd, now)
-                .stream()
-                .map(absence -> new TimeRange(absence.getStartsAt(), absence.getEndsAt()))
-                .toList();
+        List<TimeRange> busy = new ArrayList<>();
+        unavailabilities.findByPractitionerIdAndStartsAtBeforeAndEndsAtAfter(practitionerId, windowEnd, now)
+                .forEach(absence -> busy.add(new TimeRange(absence.getStartsAt(), absence.getEndsAt())));
+        // FreeSlots does not care why a range is taken: absences and bookings in one list
+        busy.addAll(occupiedTime.between(practitionerId, new TimeRange(now, windowEnd), now));
 
         TreeMap<LocalDate, List<WorkingBand>> versions = new TreeMap<>();
         for (WorkingSchedule version : schedules.findWithBands(practitionerId)) {

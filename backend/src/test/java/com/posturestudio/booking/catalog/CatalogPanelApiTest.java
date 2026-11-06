@@ -67,7 +67,7 @@ public class CatalogPanelApiTest {
     void createdServiceAnswers201WithLocation() throws Exception {
         // act
         MvcTestResult result = createService(anna, """
-                {"name": "Seduta posturale", "durationMinutes": 60, "priceCents": 3000}
+                {"name": "Seduta posturale", "durationMinutes": 60, "priceCents": 3000, "evaluation": false}
                 """);
 
         // assert
@@ -81,7 +81,7 @@ public class CatalogPanelApiTest {
     @Test
     void invalidServiceAnswers400WithTheWrongFields() {
         MvcTestResult result = createService(anna, """
-                {"name": "  ", "durationMinutes": 60, "priceCents": 0}
+                {"name": "  ", "durationMinutes": 60, "priceCents": 0, "evaluation": false}
                 """);
 
         assertThat(result).hasStatus(HttpStatus.BAD_REQUEST).hasContentType("application/problem+json");
@@ -96,13 +96,36 @@ public class CatalogPanelApiTest {
         // with an int component, Jackson 3 fails the whole reading ("Failed to read request", no field):
         // the record uses Integer, so the missing value arrives as null and is reported here
         MvcTestResult result = createService(anna, """
-                {"name": "Seduta posturale", "priceCents": 3000}
+                {"name": "Seduta posturale", "priceCents": 3000, "evaluation": false}
                 """);
 
         assertThat(result).hasStatus(HttpStatus.BAD_REQUEST);
         assertThat(result).bodyJson().extractingPath("$.errors[*].field").asArray()
                 .containsExactly("durationMinutes");
         assertThat(result).bodyJson().extractingPath("$.errors[0].constraint").isEqualTo("NotNull");
+    }
+
+    @Test
+    void evaluationIsSentAndReadBackInThePanel() {
+        MvcTestResult result = createService(anna, """
+                {"name": "Valutazione", "durationMinutes": 30, "priceCents": 3000, "evaluation": true}
+                """);
+
+        assertThat(result).hasStatus(HttpStatus.CREATED);
+        assertThat(result).bodyJson().extractingPath("$.evaluation").isEqualTo(true);
+        assertThat(mvc.get().uri("/api/panel/services").header(HEADER, anna))
+                .bodyJson().extractingPath("$[0].evaluation").isEqualTo(true);
+    }
+
+    @Test
+    void missingEvaluationIsReportedOnItsField() {
+        // a client still sending the three fields of step 5
+        MvcTestResult result = createService(anna, """
+                {"name": "Seduta posturale", "durationMinutes": 60, "priceCents": 3000}
+                """);
+
+        assertThat(result).hasStatus(HttpStatus.BAD_REQUEST);
+        assertThat(result).bodyJson().extractingPath("$.errors[*].field").asArray().containsExactly("evaluation");
     }
 
     @Test
@@ -146,7 +169,7 @@ public class CatalogPanelApiTest {
         MvcTestResult result = mvc.put().uri("/api/panel/services/" + marcosService).header(HEADER, anna)
                 .contentType(MediaType.APPLICATION_JSON)
                 .content("""
-                        {"name": "Rubato", "durationMinutes": 60, "priceCents": 1}
+                        {"name": "Rubato", "durationMinutes": 60, "priceCents": 1, "evaluation": false}
                         """)
                 .exchange();
 
@@ -225,7 +248,7 @@ public class CatalogPanelApiTest {
 
         MvcTestResult notFound = mvc.post().uri("/api/panel/services/" + marcosService + "/deactivate").header(HEADER, anna).exchange();
         MvcTestResult invalid = createService(anna, """
-                {"name": "", "durationMinutes": 0, "priceCents": 0}
+                {"name": "", "durationMinutes": 0, "priceCents": 0, "evaluation": false}
                 """);
 
         for (MvcTestResult result : new MvcTestResult[] {notFound, invalid}) {
@@ -245,7 +268,7 @@ public class CatalogPanelApiTest {
 
     private long createServiceId(String practitioner) throws Exception {
         MvcTestResult result = createService(practitioner, """
-                {"name": "Seduta posturale", "durationMinutes": 60, "priceCents": 3000}
+                {"name": "Seduta posturale", "durationMinutes": 60, "priceCents": 3000, "evaluation": false}
                 """);
         assertThat(result).hasStatus(HttpStatus.CREATED);
         return ((Number) JsonPath.read(result.getResponse().getContentAsString(), "$.id")).longValue();

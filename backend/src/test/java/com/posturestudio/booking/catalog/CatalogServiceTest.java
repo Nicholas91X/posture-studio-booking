@@ -34,7 +34,7 @@ public class CatalogServiceTest {
     @Autowired
     JdbcTemplate jdbc;
 
-    private static final ServiceOfferDetails SEDUTA = new ServiceOfferDetails("Seduta posturale", 60, 3000L);
+    private static final ServiceOfferDetails SEDUTA = new ServiceOfferDetails("Seduta posturale", 60, 3000L, false);
     private static final PackageOfferDetails CINQUE = new PackageOfferDetails("5 sedute", 5, 14000L, 90);
 
     private long anna;
@@ -67,7 +67,7 @@ public class CatalogServiceTest {
         long serviceId = catalog.createService(anna, SEDUTA).id();
 
         // act
-        catalog.updateService(anna, serviceId, new ServiceOfferDetails("Seduta posturale", 60, 3500L));
+        catalog.updateService(anna, serviceId, new ServiceOfferDetails("Seduta posturale", 60, 3500L, false));
         entityManager.flush();
 
         // assert: the row, not the object in memory
@@ -82,7 +82,7 @@ public class CatalogServiceTest {
 
         // act + assert: someone else's service looks exactly like a missing one
         Assertions.assertThrows(NotFoundException.class,
-                () -> catalog.updateService(anna, marcosService, new ServiceOfferDetails("Rubato", 60, 1L)));
+                () -> catalog.updateService(anna, marcosService, new ServiceOfferDetails("Rubato", 60, 1L, false)));
         entityManager.flush();
         Long price = jdbc.queryForObject("select price_cents from service where id = ?", Long.class, marcosService);
         assertThat(price).isEqualTo(3000);
@@ -102,7 +102,7 @@ public class CatalogServiceTest {
     void panelListsOwnServicesIncludingDeactivatedInCreationOrder() {
         // arrange
         long first = catalog.createService(anna, SEDUTA).id();
-        long second = catalog.createService(anna, new ServiceOfferDetails("Valutazione", 90, 5000L)).id();
+        long second = catalog.createService(anna, new ServiceOfferDetails("Valutazione", 90, 5000L, false)).id();
         catalog.deactivateService(anna, first);
         catalog.createService(marco, SEDUTA);
 
@@ -192,7 +192,7 @@ public class CatalogServiceTest {
         // arrange: three packages on three services, then an empty persistence context
         // (otherwise the services already in memory would hide an N+1)
         for (String name : List.of("Seduta posturale", "Valutazione", "Controllo")) {
-            long serviceId = catalog.createService(anna, new ServiceOfferDetails(name, 60, 3000L)).id();
+            long serviceId = catalog.createService(anna, new ServiceOfferDetails(name, 60, 3000L, false)).id();
             catalog.createPackage(anna, serviceId, CINQUE);
         }
         long marcosService = catalog.createService(marco, SEDUTA).id();
@@ -214,7 +214,7 @@ public class CatalogServiceTest {
     void publicCatalogShowsOnlyWhatIsOnSale() {
         // arrange
         long active = catalog.createService(anna, SEDUTA).id();
-        long deactivated = catalog.createService(anna, new ServiceOfferDetails("Vecchio servizio", 60, 2500L)).id();
+        long deactivated = catalog.createService(anna, new ServiceOfferDetails("Vecchio servizio", 60, 2500L, false)).id();
         long onSale = catalog.createPackage(anna, active, CINQUE).id();
         long packageDeactivated = catalog.createPackage(anna, active, new PackageOfferDetails("10 sedute", 10, 26000L, 180)).id();
         long packageOfDeactivatedService = catalog.createPackage(anna, deactivated, CINQUE).id();
@@ -268,10 +268,30 @@ public class CatalogServiceTest {
     // ***** SERVICE ON SALE (for other modules) *****
 
     @Test
-    void serviceOnSaleGivesItsDuration() {
-        long serviceId = catalog.createService(anna, new ServiceOfferDetails("Valutazione", 30, 3000L)).id();
+    void serviceOnSaleGivesItsDurationAndPrice() {
+        long serviceId = catalog.createService(anna, new ServiceOfferDetails("Valutazione", 30, 2500L, true)).id();
 
-        assertThat(catalog.serviceOnSale(anna, serviceId)).isEqualTo(new ServiceOnSale(serviceId, 30));
+        assertThat(catalog.serviceOnSale(anna, serviceId)).isEqualTo(new ServiceOnSale(serviceId, 30, 2500));
+    }
+
+    // ***** EVALUATION (D-043) *****
+
+    @Test
+    void evaluationIsStoredAndCanBeCorrected() {
+        // arrange
+        long serviceId = catalog.createService(anna, new ServiceOfferDetails("Valutazione", 30, 3000L, true)).id();
+        entityManager.flush();
+        Boolean stored = jdbc.queryForObject("select evaluation from service where id = ?", Boolean.class, serviceId);
+        assertThat(stored).isTrue();
+
+        // act: the practitioner marked it by mistake
+        ServiceOfferView corrected = catalog.updateService(anna, serviceId, new ServiceOfferDetails("Valutazione", 30, 3000L, false));
+        entityManager.flush();
+
+        // assert
+        assertThat(corrected.evaluation()).isFalse();
+        Boolean row = jdbc.queryForObject("select evaluation from service where id = ?", Boolean.class, serviceId);
+        assertThat(row).isFalse();
     }
 
     @Test

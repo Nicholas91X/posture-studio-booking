@@ -1,5 +1,7 @@
 package com.posturestudio.booking.practitioner;
 
+import static com.posturestudio.booking.practitioner.BookingApproval.AUTOMATIC;
+import static com.posturestudio.booking.practitioner.BookingApproval.MANUAL;
 import static org.assertj.core.api.Assertions.assertThat;
 
 import java.util.List;
@@ -32,16 +34,20 @@ public class PractitionerServiceTest {
     @Autowired
     JdbcTemplate jdbc;
 
+    // the defaults of V1, V3 and V4
+    private static final PractitionerSettings DEFAULTS = new PractitionerSettings(24, 90, 60, 24, 21, 4, MANUAL, 12);
+    private static final PractitionerSettings CHANGED = new PractitionerSettings(48, 60, 30, 48, 14, 6, AUTOMATIC, 24);
+
     @Test
     void settingsOfNewPractitionerAreTheDatabaseDefaults() {
-        // arrange: inserted with SQL, so the values come from the defaults of V1 and V3, not from Java
+        // arrange: inserted with SQL, so the values come from the defaults of the migrations, not from Java
         long practitionerId = insertPractitioner("anna@example.com");
 
         // act
         PractitionerSettings settings = service.getSettings(practitionerId);
 
         // assert
-        assertThat(settings).isEqualTo(new PractitionerSettings(24, 90, 60, 24, 21));
+        assertThat(settings).isEqualTo(DEFAULTS);
     }
 
     @Test
@@ -50,14 +56,14 @@ public class PractitionerServiceTest {
         long practitionerId = insertPractitioner("anna@example.com");
 
         // act
-        PractitionerSettings returned = service.updateSettings(practitionerId, new PractitionerSettings(48, 60, 30, 48, 14));
+        PractitionerSettings returned = service.updateSettings(practitionerId, CHANGED);
         // the service joins the test transaction, so there is no commit at its end:
         // flush() does what the commit would do. Without it, the row would still have the old values
         entityManager.flush();
 
         // assert: read the row, not the object in memory
-        assertThat(returned).isEqualTo(new PractitionerSettings(48, 60, 30, 48, 14));
-        assertThat(readRow(practitionerId)).isEqualTo(new PractitionerSettings(48, 60, 30, 48, 14));
+        assertThat(returned).isEqualTo(CHANGED);
+        assertThat(readRow(practitionerId)).isEqualTo(CHANGED);
     }
 
     @Test
@@ -67,11 +73,11 @@ public class PractitionerServiceTest {
         long marco = insertPractitioner("marco@example.com");
 
         // act
-        service.updateSettings(anna, new PractitionerSettings(48, 60, 30, 48, 14));
+        service.updateSettings(anna, CHANGED);
         entityManager.flush();
 
         // assert
-        assertThat(readRow(marco)).isEqualTo(new PractitionerSettings(24, 90, 60, 24, 21));
+        assertThat(readRow(marco)).isEqualTo(DEFAULTS);
     }
 
     @Test
@@ -81,8 +87,7 @@ public class PractitionerServiceTest {
 
     @Test
     void updateSettingsOfMissingPractitionerThrowsNotFound() {
-        Assertions.assertThrows(NotFoundException.class,
-                () -> service.updateSettings(999999, new PractitionerSettings(48, 60, 30, 48, 14)));
+        Assertions.assertThrows(NotFoundException.class, () -> service.updateSettings(999999, CHANGED));
     }
 
     // ***** PUBLIC *****
@@ -134,7 +139,8 @@ public class PractitionerServiceTest {
         Map<String, Object> row = jdbc.queryForMap(
                 """
                 select cancellation_notice_hours, single_credit_validity_days, slot_step_minutes,
-                       min_booking_notice_hours, booking_horizon_days
+                       min_booking_notice_hours, booking_horizon_days,
+                       max_future_bookings, booking_approval, approval_window_hours
                 from practitioner where id = ?
                 """,
                 practitionerId);
@@ -143,7 +149,10 @@ public class PractitionerServiceTest {
                 (Integer) row.get("single_credit_validity_days"),
                 (Integer) row.get("slot_step_minutes"),
                 (Integer) row.get("min_booking_notice_hours"),
-                (Integer) row.get("booking_horizon_days"));
+                (Integer) row.get("booking_horizon_days"),
+                (Integer) row.get("max_future_bookings"),
+                BookingApproval.valueOf((String) row.get("booking_approval")),
+                (Integer) row.get("approval_window_hours"));
     }
 
     private long insertPractitioner(String email) {
