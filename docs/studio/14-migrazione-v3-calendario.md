@@ -143,6 +143,8 @@ Quando si **sostituisce** una versione futura (D-034), Java cancella il vecchio 
 
 Fanno eccezione i figli tolti da una collezione con *orphan removal*: per quelli Hibernate prevede, in alcuni casi, la cancellazione **prima** degli `insert`. Non conviene fidarsi di un dettaglio interno. Nel pezzo 2 sceglieremo come sostituire una versione, e un test lo proverà.
 
+> **Verificato nel pezzo 2** (guida 15, 4.5): con il nostro caso, cioè fasce tolte dalla lista e nuove aggiunte nella stessa transazione, Hibernate 7 manda **prima gli `insert`**, e il vincolo rifiuta. Il `flush()` esplicito serve.
+
 La soluzione più semplice e leggibile è un `flush()` esplicito dopo la cancellazione, così i `delete` partono prima. Esiste anche un'alternativa lato database, i vincoli `deferrable initially deferred` controllati solo alla fine della transazione. È più nascosta e ha dei limiti (per esempio, un `unique` differito non può essere la destinazione di una foreign key). La sconsiglio.
 
 ### 2.5 Confronto

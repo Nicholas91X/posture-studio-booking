@@ -1,13 +1,13 @@
 # Passo 06 — Calendario
 
-> **Stato: in corso** (2026-11-06). Pezzo 1 fatto, 141 test verdi.
+> **Stato: in corso** (2026-11-06). Pezzi 1 e 2 fatti, 200 test verdi.
 
 ## Obiettivo
 Il professionista imposta i suoi orari di lavoro, anche da una data futura, e le sue assenze. Il cliente vede gli orari liberi di un servizio: dentro le fasce, fuori dalle assenze, con l'anticipo minimo e l'orizzonte, senza errori al cambio dell'ora.
 
 I pezzi (guida 13, 1.2):
 1. Migrazione V3, impostazioni nuove in `practitioner`, test dei vincoli — ✅ fatto
-2. Modulo `schedule` lato pannello: versioni dello schema settimanale e indisponibilità, API sotto `/api/panel`
+2. Modulo `schedule` lato pannello: versioni dello schema settimanale e indisponibilità, API sotto `/api/panel` — ✅ fatto
 3. Il calcolo degli orari liberi come funzione pura, con i test unitari (compresi i cambi dell'ora)
 4. L'API pubblica degli orari liberi, con il `Clock`, e la chiusura del passo
 
@@ -25,6 +25,22 @@ I pezzi (guida 13, 1.2):
 | `test/.../practitioner/PractitionerSchemaTest.java` | Claude, su richiesta di Nicholas | 5 test: valori iniziali di V3, scatto 30 accettato e 45 rifiutato, anticipo e orizzonte a 0 rifiutati |
 | `test/.../shared/OneOfTest.java` | Claude, su richiesta di Nicholas | 3 test di Bean Validation senza Spring, su un `record` di prova |
 | `test/.../practitioner/PractitionerTest.java`, `PractitionerServiceTest.java`, `PractitionerPanelApiTest.java` | Claude, su richiesta di Nicholas | Aggiornati alle cinque impostazioni (niente più scatto 15, valore iniziale 60). Nuovi casi: scatto 45 → 400 sul campo `slotStepMinutes` con `OneOf` (non 409 dal database); un client con le sole tre impostazioni del passo 5 → 400 sui due campi mancanti |
+| **Pezzo 2** | | |
+| `shared/StudioTime.java`, `shared/TimeConfiguration.java` | Claude, su richiesta di Nicholas | La zona dello studio in un posto solo, "oggi a Roma" e la conversione di un istante in ora di Roma; il bean `Clock` (`systemUTC`), unica fonte di "adesso" |
+| `shared/ErrorCode.java` | Claude, su richiesta di Nicholas | Tre codici nuovi: `SCHEDULE_ALREADY_STARTED`, `SCHEDULE_STARTS_IN_THE_PAST`, `SCHEDULE_DATE_TAKEN` |
+| `schedule/WorkingSchedule.java` | Claude, su richiesta di Nicholas | Entità radice dell'aggregato: `@OneToMany(mappedBy, cascade ALL, orphanRemoval)` verso le fasce; controlla tutte le fasce nuove (anche tra loro) prima di aggiungerne una; `isEditableOn(oggi)` |
+| `schedule/WorkingHours.java` | Claude, su richiesta di Nicholas | Una fascia: `@ManyToOne` verso la versione, giorno con `DayOfWeekConverter`, tutto `updatable = false` (si sostituisce, non si modifica); `requireValid` con le regole di V3 |
+| `schedule/Unavailability.java` | Claude, su richiesta di Nicholas | Un'assenza: istanti, fine dopo l'inizio, motivo ripulito (vuoto → `null`, massimo 200 caratteri) |
+| `schedule/DayOfWeekConverter.java` | Claude, su richiesta di Nicholas | `DayOfWeek` ↔ `smallint` 1–7 |
+| `schedule/WorkingScheduleRepository.java`, `UnavailabilityRepository.java` | Claude, su richiesta di Nicholas | Proprietà nella query; elenco delle versioni con `left join fetch` delle fasce (una query); controlli di data già presa; assenze non ancora finite |
+| `schedule/WorkingBand.java`, `ScheduleVersionRequest.java`, `ScheduleVersionView.java`, `NewUnavailability.java`, `UnavailabilityView.java` | Claude, su richiesta di Nicholas | I `record` delle API: la fascia con `overlaps` (semiaperta) e `isOnTheHalfHour`; la versione in uscita con `current` ed `editable` calcolati dal backend; le assenze con l'offset di Roma |
+| `schedule/OnTheHalfHour.java`, `ValidBands.java`, `NewUnavailability.EndsAfterStart` | Claude, su richiesta di Nicholas | Tre vincoli Bean Validation nostri: orario all'ora piena o alla mezz'ora (campo); fasce valide e non sovrapposte (classe, errore su `bands[i]`); fine dopo l'inizio (classe, errore su `endsAt`) |
+| `schedule/ScheduleService.java` | Claude, su richiesta di Nicholas | La porta del modulo: elenco con versione corrente (`getLast()` delle *sequenced collections*), creazione, sostituzione (svuota, `flush`, riempi), cancellazione; assenze: elenco, creazione, cancellazione |
+| `schedule/SchedulePanelController.java` | Claude, su richiesta di Nicholas | `GET/POST /api/panel/schedules`, `PUT/DELETE /api/panel/schedules/{id}`, `GET/POST /api/panel/unavailabilities`, `DELETE /api/panel/unavailabilities/{id}` |
+| `test/.../FixedClockConfiguration.java` | Claude, su richiesta di Nicholas | Un `Clock` fermo su venerdì 6 novembre 2026, 10:00 a Roma, `@Primary` |
+| `test/.../schedule/WorkingScheduleTest.java`, `DayOfWeekConverterTest.java`, `ScheduleValidationTest.java` | Claude, su richiesta di Nicholas | 25 test unitari: regole dell'aggregato, convertitore, i tre vincoli e i loro percorsi d'errore |
+| `test/.../schedule/ScheduleServiceTest.java` | Claude, su richiesta di Nicholas | 21 test con `Clock` fisso: date passate, oggi, data presa, sostituzione con fasce identiche, versione congelata, corrente ed editabile, **una sola query** per l'elenco (statistiche di Hibernate), proprietà, assenze |
+| `test/.../schedule/SchedulePanelApiTest.java` | Claude, su richiesta di Nicholas | 13 test delle API: 201 e `Location`, JSON esatto, 400 sui percorsi giusti, 409 con codice, 404 per le cose di un altro, 401 senza header, assenze in ora di Roma |
 
 ## Concetti chiave
 
@@ -43,12 +59,27 @@ Generalizza `unique`: per ogni colonna si sceglie l'operatore, e due righe sono 
 ### Un vincolo Bean Validation personalizzato
 Annotazione con `@Constraint(validatedBy = ...)` e i tre attributi obbligatori, più un `ConstraintValidator`. Per convenzione `null` è valido: così `@OneOf` e `@NotNull` restano indipendenti. Guida 14, parte 3; D-037.
 
+### L'aggregato e il primo `@OneToMany`
+Le fasce non hanno vita propria: si salvano, si sostituiscono e spariscono con la loro versione. Per questo, a differenza dei pacchetti di un servizio, qui il `@OneToMany` si mappa (bidirezionale, `mappedBy`, `cascade = ALL`, `orphanRemoval`), c'è un repository solo per la radice, e la regola "nessuna sovrapposizione" la fa rispettare la radice, l'unica che vede tutte le fasce. Guida 15, 5.1.
+
+### L'ordine delle istruzioni al *flush*, verificato
+Sostituendo le fasce nella stessa transazione, Hibernate 7 manda prima gli `insert` delle nuove e poi le cancellazioni delle vecchie: con fasce identiche, l'*exclusion constraint* rifiuta. Provato togliendo per un momento il `flush()` dal servizio. Svuotare, `flush()`, riempire rende l'ordine certo. Guida 15, parte 4.
+
+### Validazione tra più campi
+Un vincolo di classe riceve l'oggetto intero; con `disableDefaultConstraintViolation` e `addPropertyNode(...).addBeanNode().inIterable().atIndex(i)` l'errore esce su `bands[i]`, e il pannello sa quale fascia correggere. Le regole su "oggi" invece restano nel servizio (409 con codice, D-027). Guida 15, parte 3.
+
+### "Oggi" a Roma, da un `Clock`
+`LocalDate.now(clock.withZone(Europe/Rome))`: con l'ora del server, fra mezzanotte e l'una (le due d'estate) "oggi" sarebbe ancora ieri. Nei test un `Clock.fixed` marcato `@Primary`, perché con `@SpringBootTest` esiste anche quello vero.
+
+### Contare le query in un test
+`SessionFactory.getStatistics()`, attivate solo nel test, con `getPrepareStatementCount()`: prova che l'elenco delle versioni con le fasce costa una query, non 1 + N.
+
 ### Dopo un errore, la transazione di PostgreSQL è finita
 In un test `@DataJpaTest` tutte le istruzioni stanno nella stessa transazione. Dopo un vincolo violato PostgreSQL la segna come annullata, e ogni istruzione successiva fallisce con "current transaction is aborted". Per questo ogni test prova **una** sola violazione.
 
 ## Decisioni
 - D-033: scatto 30 o 60, griglia dall'inizio della fascia, fasce all'ora piena o alla mezz'ora.
-- D-034: orari di lavoro in versioni settimanali con data di inizio.
+- D-034: orari di lavoro in versioni settimanali con data di inizio; precisata nel pezzo 2: congelate solo quelle iniziate prima di oggi.
 - D-035: calcolo degli orari liberi come funzione pura, API pubblica, orizzonte anticipato nella V3.
 - D-036: fasce non sovrapposte anche nel database, con un *exclusion constraint*.
 - D-037: "uno tra questi valori" con un vincolo Bean Validation personalizzato.
@@ -58,6 +89,8 @@ In un test `@DataJpaTest` tutte le istruzioni stanno nella stessa transazione. D
 - **Nella prima stesura della guida 14 avevo scritto che Hibernate esegue sempre gli `insert` prima dei `delete`.** Vale per le cancellazioni esplicite. Per i figli tolti con l'*orphan removal* Hibernate in alcuni casi cancella prima. Corretto prima della consegna: nel pezzo 2 la sostituzione di una versione sarà provata da un test.
 - **Il perimetro del pezzo 1 era sbagliato nella guida 13**, che lo descriveva come solo SQL. Tre classi di test usavano uno scatto di 15 e si aspettavano 30 come valore iniziale: con V3 sarebbero fallite. Il pezzo ha compreso anche le impostazioni in Java.
 - **Un test provava due violazioni di fila** (giorno 0 e giorno 8). La seconda sarebbe fallita per la transazione annullata, non per il vincolo. Diviso in due test prima di eseguirlo.
+- **Il testo di D-034 aveva un buco** (pezzo 2): una versione creata "da oggi" con un errore non si poteva più correggere, né sostituire con un'altra "da oggi" per il `unique`. Precisata: congelate solo le versioni iniziate prima di oggi (guida 15, parte 2).
+- **Il test dell'API leggeva l'id con `getContentAsString()`**, che dichiara un'eccezione controllata: non compilava. Sostituito da un piccolo helper che legge i byte della risposta in UTF-8.
 
 ## Domande da colloquio
 
@@ -75,3 +108,9 @@ In un test `@DataJpaTest` tutte le istruzioni stanno nella stessa transazione. D
 
 ### Domanda 5: In un test, dopo un vincolo violato, la query successiva fallisce con "current transaction is aborted". Perché?
 **Risposta modello.** In PostgreSQL un errore dentro una transazione la rende inutilizzabile fino al `rollback`: ogni istruzione successiva viene rifiutata. In un test con `@DataJpaTest`, o comunque `@Transactional`, tutto il test è una sola transazione. Quindi un test deve provare una violazione sola, oppure isolare il tentativo con un *savepoint*.
+
+### Domanda 6: Sostituisci tutti i figli di un'entità nella stessa transazione e il database rifiuta per un vincolo. Perché, e come lo risolvi?
+**Risposta modello.** Al *flush* Hibernate raggruppa le istruzioni per tipo e, nel nostro caso con Hibernate 7, manda gli `insert` dei nuovi figli prima di cancellare i vecchi: per un attimo convivono, e un vincolo unico o di esclusione li vede in conflitto. L'ho verificato togliendo il `flush` e guardando l'SQL nel log. La soluzione affidabile è togliere i vecchi, chiamare `flush()` per mandare subito i `delete`, poi aggiungere i nuovi, con un test sul caso peggiore: figli identici ai precedenti.
+
+### Domanda 7: Quando mappi un `@OneToMany`, e quando no?
+**Risposta modello.** Quando i figli fanno parte del genitore e non hanno vita propria, come le fasce di un orario: si salvano e si cancellano con lui, e le regole su più figli le controlla il genitore. Allora bidirezionale con `mappedBy`, `cascade = ALL`, `orphanRemoval`, e metodi del genitore per modificare la lista. Non lo mappo quando i "figli" hanno un ciclo di vita proprio, come i pacchetti di un servizio: una collezione che nessuno usa porta solo caricamenti e rischi di N+1.

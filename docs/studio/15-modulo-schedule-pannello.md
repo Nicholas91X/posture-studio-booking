@@ -202,6 +202,8 @@ Si tengono quelle uguali, si cancellano quelle sparite, si aggiungono le nuove.
 
 **A**, con un test che sostituisce una versione con **le stesse identiche fasce**: è il caso peggiore, e se passa quello passano tutti. Per curiosità, scriviamo anche lo stesso test senza `flush`, e guardiamo cosa fa la nostra versione di Hibernate. Ma il codice non dipenderà dal risultato.
 
+> **Risultato dell'esperimento (2026-11-06, Hibernate 7 di Spring Boot 4.1).** Senza il `flush()`, Hibernate ha mandato **prima** i quattro `insert` delle fasce nuove, e il primo è stato rifiutato da `working_hours_no_overlap_ex`. Le cancellazioni degli orfani sarebbero arrivate dopo. Quindi la strada B, in questo caso, **non funziona**: la trappola è reale, e il `flush()` serve.
+
 ---
 
 ## Parte 5 — I concetti nuovi
@@ -312,6 +314,8 @@ Le propongo senza chiederti; dimmi se qualcuna non ti torna.
 ---
 
 ## Parte 8 — Cosa devi decidere
+
+> **Decise il 2026-11-06**: versione modificabile da oggi in poi (precisazione di D-034); validazione sulla richiesta con vincoli nostri, entità come seconda difesa; sostituzione con svuota, `flush`, riempi; scelte piccole tutte accettate. Codice scritto da Claude su richiesta di Nicholas.
 
 1. **Quando una versione è modificabile** (parte 2): A (solo se parte dopo oggi) o B (anche se parte oggi)? Io: **B**.
 2. **Dove si controllano le fasce** (parte 3): A (Bean Validation sulla richiesta, entità come seconda difesa), B (servizio, 409) o C (solo database)? Io: **A**.

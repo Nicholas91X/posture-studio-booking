@@ -1,0 +1,147 @@
+package com.posturestudio.booking.schedule;
+
+import java.time.Clock;
+import java.time.LocalDate;
+import java.util.List;
+
+import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Transactional;
+
+import com.posturestudio.booking.shared.BusinessRuleException;
+import com.posturestudio.booking.shared.ErrorCode;
+import com.posturestudio.booking.shared.NotFoundException;
+import com.posturestudio.booking.shared.StudioTime;
+
+/**
+ * The only door of the schedule module (D-002): returns records, never entities.
+ * Every panel method receives the id of the practitioner who acts and finds only what is theirs:
+ * someone else's version or absence is reported as not found (404, not 403).
+ * "Today" is the date in Rome, from the injected Clock (D-035).
+ */
+@Service
+public class ScheduleService {
+
+    private final WorkingScheduleRepository schedules;
+    private final UnavailabilityRepository unavailabilities;
+    private final Clock clock;
+
+    ScheduleService(WorkingScheduleRepository schedules, UnavailabilityRepository unavailabilities, Clock clock) {
+        this.schedules = schedules;
+        this.unavailabilities = unavailabilities;
+        this.clock = clock;
+    }
+
+    // ***** SCHEDULE VERSIONS (panel) *****
+
+    // in order of validFrom; the current one is the last among those already started
+    @Transactional(readOnly = true)
+    public List<ScheduleVersionView> listVersions(long practitionerId) {
+        LocalDate today = StudioTime.today(clock);
+        List<WorkingSchedule> versions = schedules.findForPanel(practitionerId);
+        List<WorkingSchedule> started = versions.stream()
+                .filter(version -> !version.getValidFrom().isAfter(today))
+                .toList();
+        // getLast(): sequenced collections, Java 21
+        Long currentId = started.isEmpty() ? null : started.getLast().getId();
+        return versions.stream()
+                .map(version -> ScheduleVersionView.from(version, version.getId().equals(currentId), today))
+                .toList();
+    }
+
+    @Transactional
+    public ScheduleVersionView createVersion(long practitionerId, ScheduleVersionRequest request) {
+        LocalDate today = StudioTime.today(clock);
+        requireNotInThePast(request.validFrom(), today);
+        if (schedules.existsByPractitionerIdAndValidFrom(practitionerId, request.validFrom())) {
+            throw dateTaken(request.validFrom());
+        }
+        // new entity: save() is needed (persist), and the cascade saves the bands too
+        WorkingSchedule version = schedules.save(new WorkingSchedule(practitionerId, request.validFrom(), request.bands()));
+        return viewOfEditable(version, today);
+    }
+
+    // Replaces date and bands of a version that is still editable
+    @Transactional
+    public ScheduleVersionView replaceVersion(long practitionerId, long versionId, ScheduleVersionRequest request) {
+        LocalDate today = StudioTime.today(clock);
+        WorkingSchedule version = findVersion(practitionerId, versionId);
+        requireEditable(version, today);
+        requireNotInThePast(request.validFrom(), today);
+        if (schedules.existsByPractitionerIdAndValidFromAndIdNot(practitionerId, request.validFrom(), versionId)) {
+            throw dateTaken(request.validFrom());
+        }
+        version.moveTo(request.validFrom());
+        version.removeAllBands();
+        // At flush Hibernate may run the inserts before the deletes. The new bands are often the same
+        // as the old ones (Monday 9-13 before and after), and the exclusion constraint of V3 would see
+        // them overlap. Flushing here sends the deletes first, whatever Hibernate does inside (guide 15, part 4)
+        schedules.flush();
+        version.addBands(request.bands());
+        return viewOfEditable(version, today);
+    }
+
+    @Transactional
+    public void deleteVersion(long practitionerId, long versionId) {
+        WorkingSchedule version = findVersion(practitionerId, versionId);
+        requireEditable(version, StudioTime.today(clock));
+        // the cascade removes the bands (and V3 has on delete cascade as the last defense)
+        schedules.delete(version);
+    }
+
+    // ***** UNAVAILABILITIES (panel) *****
+
+    @Transactional(readOnly = true)
+    public List<UnavailabilityView> listUpcomingUnavailabilities(long practitionerId) {
+        return unavailabilities.findByPractitionerIdAndEndsAtAfterOrderByStartsAt(practitionerId, clock.instant())
+                .stream()
+                .map(UnavailabilityView::from)
+                .toList();
+    }
+
+    // Absences in the past are allowed: they do no harm, and "I record it at the end of the day" is normal
+    @Transactional
+    public UnavailabilityView createUnavailability(long practitionerId, NewUnavailability request) {
+        Unavailability unavailability = unavailabilities.save(new Unavailability(practitionerId,
+                request.startsAt().toInstant(), request.endsAt().toInstant(), request.reason()));
+        return UnavailabilityView.from(unavailability);
+    }
+
+    @Transactional
+    public void deleteUnavailability(long practitionerId, long unavailabilityId) {
+        Unavailability unavailability = unavailabilities.findByIdAndPractitionerId(unavailabilityId, practitionerId)
+                .orElseThrow(() -> new NotFoundException("Unavailability " + unavailabilityId + " not found"));
+        unavailabilities.delete(unavailability);
+    }
+
+    // ***** HELPERS *****
+
+    private WorkingSchedule findVersion(long practitionerId, long versionId) {
+        return schedules.findByIdAndPractitionerId(versionId, practitionerId)
+                .orElseThrow(() -> new NotFoundException("Schedule version " + versionId + " not found"));
+    }
+
+    // An editable version starts today or later, so it is the current one only if it starts today:
+    // any other started version starts before it
+    private static ScheduleVersionView viewOfEditable(WorkingSchedule version, LocalDate today) {
+        return ScheduleVersionView.from(version, version.getValidFrom().equals(today), today);
+    }
+
+    private static void requireEditable(WorkingSchedule version, LocalDate today) {
+        if (!version.isEditableOn(today)) {
+            throw new BusinessRuleException(ErrorCode.SCHEDULE_ALREADY_STARTED,
+                    "Schedule version " + version.getId() + " started on " + version.getValidFrom());
+        }
+    }
+
+    private static void requireNotInThePast(LocalDate validFrom, LocalDate today) {
+        if (validFrom.isBefore(today)) {
+            throw new BusinessRuleException(ErrorCode.SCHEDULE_STARTS_IN_THE_PAST,
+                    "A schedule version cannot start before " + today);
+        }
+    }
+
+    private static BusinessRuleException dateTaken(LocalDate validFrom) {
+        return new BusinessRuleException(ErrorCode.SCHEDULE_DATE_TAKEN,
+                "Another schedule version already starts on " + validFrom);
+    }
+}

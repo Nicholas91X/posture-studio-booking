@@ -495,14 +495,14 @@ Nella guida l'interfaccia era proposta in `auth`; spostata in `practitioner` dur
 ---
 
 ## D-034 — Orari di lavoro in versioni settimanali, ognuna con una data di inizio
-**Stato:** accettata · 2026-11-06 · chiude il punto aperto 13 dei requisiti; modifica la tabella `working_hours` progettata in `modello-dati.md`
+**Stato:** accettata · 2026-11-06 · chiude il punto aperto 13 dei requisiti; modifica la tabella `working_hours` progettata in `modello-dati.md` · **precisata** lo stesso giorno (guida 15, parte 2): "già iniziata" vuol dire con `valid_from` **prima** di oggi; una versione che parte oggi si può ancora modificare o cancellare
 
 **Contesto.** Lo studio vuole cambiare gli orari "quando e come vuole", anche **da una data futura** (es. orario estivo dal 1° giugno). Con uno schema settimanale unico, una modifica vale subito. Confronto completo: guida 13, parte 4.
 
 **Decisione.**
 - Una **versione** è una settimana-tipo completa (`working_schedule`), con una `valid_from` (data locale). Le sue fasce stanno in `working_hours`, che punta alla versione invece che al professionista.
 - **Lettura**: per un giorno D vale la versione con la `valid_from` più recente tra quelle non successive a D. Nessuna versione → nessun orario libero.
-- **Scrittura**: una versione si salva **intera**, con tutte le fasce della settimana, e il servizio rifiuta fasce sovrapposte nello stesso giorno. Una versione **già iniziata non si modifica**: per cambiare "da subito" se ne crea una con `valid_from` di oggi. Una versione **futura** si sostituisce o si cancella.
+- **Scrittura**: una versione si salva **intera**, con tutte le fasce della settimana, e il servizio rifiuta fasce sovrapposte nello stesso giorno. Una versione **già iniziata** (`valid_from` prima di oggi, a Roma) **non si modifica**: per cambiare "da subito" se ne crea una con `valid_from` di oggi, oppure si modifica quella di oggi se esiste già. Una versione da oggi in poi si sostituisce o si cancella. Non si creano versioni retrodatate.
 - `unique (practitioner_id, valid_from)`.
 - Ferie e assenze restano **indisponibilità** (non versioni).
 
@@ -546,7 +546,7 @@ Nella guida l'interfaccia era proposta in `auth`; spostata in `practitioner` dur
 
 **Alternative scartate.** *Solo in Java*: un bug o un `insert` a mano passerebbero; e si rinuncerebbe a provare su un caso semplice lo strumento che al passo 7 sarà indispensabile (D-013).
 
-**Conseguenze.** `btree_gist` è già installata per il passo 7. Una violazione arriva a Java come `DataIntegrityViolationException`, come gli altri vincoli (provato da `ScheduleSchemaTest`). Nel pezzo 2, sostituendo una versione futura, attenzione all'ordine delle istruzioni di Hibernate al *flush*: le cancellazioni esplicite vanno dopo gli `insert` (guida 14, 2.4). Vale anche per `unique (practitioner_id, valid_from)`.
+**Conseguenze.** `btree_gist` è già installata per il passo 7. Una violazione arriva a Java come `DataIntegrityViolationException`, come gli altri vincoli (provato da `ScheduleSchemaTest`). Nel pezzo 2, sostituendo una versione futura, attenzione all'ordine delle istruzioni di Hibernate al *flush*: le cancellazioni esplicite vanno dopo gli `insert` (guida 14, 2.4). Vale anche per `unique (practitioner_id, valid_from)`. **Verificato** (pezzo 2): anche con l'*orphan removal* Hibernate 7 manda prima gli `insert` delle fasce nuove, e il vincolo rifiuta. Per questo `ScheduleService.replaceVersion` svuota le fasce, chiama `flush()` e poi aggiunge le nuove; un test sostituisce una versione con fasce identiche.
 
 ---
 
