@@ -530,7 +530,9 @@ Nella guida l'interfaccia era proposta in `auth`; spostata in `practitioner` dur
 
 **Alternative scartate.** *Calcolo dentro il servizio Spring, con query e `Instant.now()`*: ogni test avrebbe bisogno di un container e dipenderebbe dal giorno in cui gira. *Orari in UTC (`Z`) nelle API*: corretti, ma il frontend dovrebbe convertire ogni orario. *Errore per un intervallo oltre l'orizzonte*: il cliente che sfoglia le settimane non sta sbagliando niente.
 
-**Conseguenze.** Il calcolo ha molti test unitari, compresi i cambi dell'ora di marzo e ottobre (guida 13, parte 7). Le dipendenze tra moduli diventano `schedule` → `catalog` → `practitioner` → `auth`, con `schedule` che usa anche `practitioner` direttamente. Al passo 7 `booking` fornisce gli intervalli occupati e chiede a `schedule` se un orario è libero; il calcolo deve considerare libere le `PENDING_PAYMENT` con blocco scaduto (`modello-dati.md`, `booking`).
+**Conseguenze.** Il calcolo ha molti test unitari, compresi i cambi dell'ora di marzo e ottobre (guida 13, parte 7). Le dipendenze tra moduli diventano `schedule` → `catalog` → `practitioner` → `auth`, con `schedule` che usa anche `practitioner` direttamente. Al passo 7 `booking` fornisce gli intervalli occupati e chiede a `schedule` se un orario è libero; il calcolo deve considerare libere le `PENDING_PAYMENT` con blocco scaduto (`modello-dati.md`, `booking`). Attenzione al ciclo tra moduli che ne nasce (guida 16, 6.1): da risolvere al passo 7, con un'interfaccia dichiarata da `schedule` e implementata da `booking`, oppure spostando l'API pubblica in `booking`.
+
+Implementazione (pezzo 3, guida 16): `FreeSlots.compute(SlotQuery)` nel package `schedule`; un `record` `SlotQuery` con i nove ingressi; dentro una fascia si avanza in istanti (niente aritmetica di `LocalTime`, che gira a mezzanotte); la versione di un giorno con `TreeMap.floorEntry`; `TimeRange` (intervallo semiaperto) pubblico in `shared`.
 
 ---
 

@@ -1,6 +1,6 @@
 # Passo 06 — Calendario
 
-> **Stato: in corso** (2026-11-06). Pezzi 1 e 2 fatti, 200 test verdi.
+> **Stato: in corso** (2026-11-06). Pezzi 1, 2 e 3 fatti, 240 test verdi.
 
 ## Obiettivo
 Il professionista imposta i suoi orari di lavoro, anche da una data futura, e le sue assenze. Il cliente vede gli orari liberi di un servizio: dentro le fasce, fuori dalle assenze, con l'anticipo minimo e l'orizzonte, senza errori al cambio dell'ora.
@@ -8,7 +8,7 @@ Il professionista imposta i suoi orari di lavoro, anche da una data futura, e le
 I pezzi (guida 13, 1.2):
 1. Migrazione V3, impostazioni nuove in `practitioner`, test dei vincoli — ✅ fatto
 2. Modulo `schedule` lato pannello: versioni dello schema settimanale e indisponibilità, API sotto `/api/panel` — ✅ fatto
-3. Il calcolo degli orari liberi come funzione pura, con i test unitari (compresi i cambi dell'ora)
+3. Il calcolo degli orari liberi come funzione pura, con i test unitari (compresi i cambi dell'ora) — ✅ fatto
 4. L'API pubblica degli orari liberi, con il `Clock`, e la chiusura del passo
 
 ## Cosa è stato costruito
@@ -41,6 +41,12 @@ I pezzi (guida 13, 1.2):
 | `test/.../schedule/WorkingScheduleTest.java`, `DayOfWeekConverterTest.java`, `ScheduleValidationTest.java` | Claude, su richiesta di Nicholas | 25 test unitari: regole dell'aggregato, convertitore, i tre vincoli e i loro percorsi d'errore |
 | `test/.../schedule/ScheduleServiceTest.java` | Claude, su richiesta di Nicholas | 21 test con `Clock` fisso: date passate, oggi, data presa, sostituzione con fasce identiche, versione congelata, corrente ed editabile, **una sola query** per l'elenco (statistiche di Hibernate), proprietà, assenze |
 | `test/.../schedule/SchedulePanelApiTest.java` | Claude, su richiesta di Nicholas | 13 test delle API: 201 e `Location`, JSON esatto, 400 sui percorsi giusti, 409 con codice, 404 per le cose di un altro, 401 senza header, assenze in ora di Roma |
+| **Pezzo 3** | | |
+| `shared/TimeRange.java` | Claude, su richiesta di Nicholas | Intervallo semiaperto `[start, end)` con il controllo nel costruttore compatto e `overlaps` (`a1 < b2 && b1 < a2`): lo useranno anche le prenotazioni |
+| `schedule/SlotQuery.java` | Claude, su richiesta di Nicholas | Il *parameter object* del calcolo: nove ingressi con un nome, controlli nel costruttore compatto (scatto 30 o 60, `from` non dopo `to`…), copie difensive (versioni in una `TreeMap` non modificabile) |
+| `schedule/FreeSlots.java` | Claude, su richiesta di Nicholas | La funzione pura: taglio su anticipo e orizzonte prima del ciclo; versione del giorno con `floorEntry`; fasce convertite in istanti con `ZonedDateTime.of` e avanzamento in istanti; esclusione degli occupati; risultato in ordine |
+| `test/.../shared/TimeRangeTest.java` | Claude, su richiesta di Nicholas | 12 test: le sovrapposizioni in una tabella `@CsvSource`, ognuna provata nei due versi; intervalli rovesciati o vuoti rifiutati |
+| `test/.../schedule/FreeSlotsTest.java` | Claude, su richiesta di Nicholas | 28 test: l'esempio di Anna, griglia e durate, assenze e prenotazioni, anticipo al confine (parametrizzato), orizzonte, cambi dell'ora di marzo (anche una fascia notturna il 29) e ottobre, trappola di mezzanotte, versioni, richieste impossibili. Attesi scritti a mano, in UTC o con l'offset |
 
 ## Concetti chiave
 
@@ -71,6 +77,18 @@ Un vincolo di classe riceve l'oggetto intero; con `disableDefaultConstraintViola
 ### "Oggi" a Roma, da un `Clock`
 `LocalDate.now(clock.withZone(Europe/Rome))`: con l'ora del server, fra mezzanotte e l'una (le due d'estate) "oggi" sarebbe ancora ieri. Nei test un `Clock.fixed` marcato `@Primary`, perché con `@SpringBootTest` esiste anche quello vero.
 
+### Il calcolo come funzione pura
+`FreeSlots.compute` non legge database né orologio: riceve tutto in una `SlotQuery`, anche `now`. Per questo 28 casi girano in meno di un secondo, senza Spring, e ognuno si legge come un esempio. Guida 16; D-035.
+
+### La trappola di mezzanotte
+`LocalTime` gira a mezzanotte: `22:00 + 2h = 00:00`, che non è "dopo" le 23:30, e una seduta fuori fascia sembra dentro. Il calcolo converte la fascia in istanti e confronta istanti; fra un giorno e l'altro riparte dall'ora locale, così il cambio dell'ora non sposta niente. Guida 16, parte 3.
+
+### `TreeMap.floorEntry`
+"La versione più recente già iniziata" è esattamente "la chiave più grande minore o uguale al giorno". Una mappa ordinata lo fa in `O(log n)`, senza scrivere a mano il confronto dove si sbaglia un `<` con un `<=`. Guida 16, parte 4.
+
+### Un test che morde
+Per verificare che i test proteggano davvero una regola, si cambia apposta il codice e si guarda se un test diventa rosso (è l'idea del *mutation testing*). Con "almeno 24 ore" al posto di "più di 24 ore" è fallito esattamente il test del confine delle 10:00. Poi il codice è tornato com'era.
+
 ### Contare le query in un test
 `SessionFactory.getStatistics()`, attivate solo nel test, con `getPrepareStatementCount()`: prova che l'elenco delle versioni con le fasce costa una query, non 1 + N.
 
@@ -91,6 +109,7 @@ In un test `@DataJpaTest` tutte le istruzioni stanno nella stessa transazione. D
 - **Un test provava due violazioni di fila** (giorno 0 e giorno 8). La seconda sarebbe fallita per la transazione annullata, non per il vincolo. Diviso in due test prima di eseguirlo.
 - **Il testo di D-034 aveva un buco** (pezzo 2): una versione creata "da oggi" con un errore non si poteva più correggere, né sostituire con un'altra "da oggi" per il `unique`. Precisata: congelate solo le versioni iniziate prima di oggi (guida 15, parte 2).
 - **Il test dell'API leggeva l'id con `getContentAsString()`**, che dichiara un'eccezione controllata: non compilava. Sostituito da un piccolo helper che legge i byte della risposta in UTF-8.
+- **`SlotQuery` aveva un secondo costruttore inutile** (pezzo 3), che accettava una `Map` qualsiasi: il costruttore canonico copiava già tutto in una `TreeMap`. Tolto prima di compilare: due costruttori quasi uguali sono due modi di sbagliare la chiamata.
 
 ## Domande da colloquio
 
@@ -114,3 +133,9 @@ In un test `@DataJpaTest` tutte le istruzioni stanno nella stessa transazione. D
 
 ### Domanda 7: Quando mappi un `@OneToMany`, e quando no?
 **Risposta modello.** Quando i figli fanno parte del genitore e non hanno vita propria, come le fasce di un orario: si salvano e si cancellano con lui, e le regole su più figli le controlla il genitore. Allora bidirezionale con `mappedBy`, `cascade = ALL`, `orphanRemoval`, e metodi del genitore per modificare la lista. Non lo mappo quando i "figli" hanno un ciclo di vita proprio, come i pacchetti di un servizio: una collezione che nessuno usa porta solo caricamenti e rischi di N+1.
+
+### Domanda 8: Scrivi un algoritmo che restituisca gli orari liberi di un calendario.
+**Risposta modello.** Taglio l'intervallo richiesto sui limiti del server (anticipo minimo, orizzonte), così il lavoro non dipende dal client. Per ogni giorno trovo la versione d'orario valida (`TreeMap.floorEntry`), converto le fasce di quel giorno in istanti nella zona dello studio e, dentro ogni fascia, genero un candidato ogni "scatto" finché la seduta finisce entro la fascia, confrontando istanti. Scarto i candidati troppo vicini ad adesso e quelli che si sovrappongono a un intervallo occupato (semiaperto: `a1 < b2 && b1 < a2`), e ordino. Costo `O(candidati × occupati)`: con numeri piccoli va bene, altrimenti ordinerei le due liste e le scorrerei insieme. È una funzione pura, che riceve anche "adesso", con molti test sui confini e sui cambi dell'ora.
+
+### Domanda 9: Come verifichi che un test protegga davvero una regola?
+**Risposta modello.** Cambiandola apposta nel codice e guardando se il test diventa rosso: è l'idea del *mutation testing*, che strumenti come PIT fanno in automatico su tutto il codice. Un test che resta verde con il codice sbagliato non protegge niente. Per i confini (qui "più di 24 ore" contro "almeno 24 ore") serve un caso esattamente sul limite, e l'atteso scritto a mano, non ricalcolato con la stessa logica.
