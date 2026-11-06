@@ -15,4 +15,7 @@ interface ServiceOfferRepository extends JpaRepository<ServiceOffer, Long> {
 
     // public catalog
     List<ServiceOffer> findByPractitionerIdAndActiveTrueOrderById(Long practitionerId);
+
+    // one service on sale: ownership and state in the query
+    Optional<ServiceOffer> findByIdAndPractitionerIdAndActiveTrue(Long id, Long practitionerId);
 }

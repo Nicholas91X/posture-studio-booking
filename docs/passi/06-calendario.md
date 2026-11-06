@@ -1,6 +1,6 @@
 # Passo 06 — Calendario
 
-> **Stato: in corso** (2026-11-06). Pezzi 1, 2 e 3 fatti, 240 test verdi.
+> **Stato: chiuso** (2026-11-06). Quattro pezzi fatti, 259 test verdi (`mvnw clean test`, 7 container). Il lavoro è sul branch `feat/step-5-catalog`, che Nicholas porterà su `main` insieme al passo 5.
 
 ## Obiettivo
 Il professionista imposta i suoi orari di lavoro, anche da una data futura, e le sue assenze. Il cliente vede gli orari liberi di un servizio: dentro le fasce, fuori dalle assenze, con l'anticipo minimo e l'orizzonte, senza errori al cambio dell'ora.
@@ -9,7 +9,7 @@ I pezzi (guida 13, 1.2):
 1. Migrazione V3, impostazioni nuove in `practitioner`, test dei vincoli — ✅ fatto
 2. Modulo `schedule` lato pannello: versioni dello schema settimanale e indisponibilità, API sotto `/api/panel` — ✅ fatto
 3. Il calcolo degli orari liberi come funzione pura, con i test unitari (compresi i cambi dell'ora) — ✅ fatto
-4. L'API pubblica degli orari liberi, con il `Clock`, e la chiusura del passo
+4. L'API pubblica degli orari liberi, con il `Clock`, e la chiusura del passo — ✅ fatto
 
 ## Cosa è stato costruito
 
@@ -47,6 +47,17 @@ I pezzi (guida 13, 1.2):
 | `schedule/FreeSlots.java` | Claude, su richiesta di Nicholas | La funzione pura: taglio su anticipo e orizzonte prima del ciclo; versione del giorno con `floorEntry`; fasce convertite in istanti con `ZonedDateTime.of` e avanzamento in istanti; esclusione degli occupati; risultato in ordine |
 | `test/.../shared/TimeRangeTest.java` | Claude, su richiesta di Nicholas | 12 test: le sovrapposizioni in una tabella `@CsvSource`, ognuna provata nei due versi; intervalli rovesciati o vuoti rifiutati |
 | `test/.../schedule/FreeSlotsTest.java` | Claude, su richiesta di Nicholas | 28 test: l'esempio di Anna, griglia e durate, assenze e prenotazioni, anticipo al confine (parametrizzato), orizzonte, cambi dell'ora di marzo (anche una fascia notturna il 29) e ottobre, trappola di mezzanotte, versioni, richieste impossibili. Attesi scritti a mano, in UTC o con l'offset |
+
+| **Pezzo 4** | | |
+| `catalog/ServiceOnSale.java`, `CatalogService.serviceOnSale` | Claude, su richiesta di Nicholas | La domanda degli altri moduli al catalogo: "questo servizio è in vendita, e quanto dura?". Una query con proprietà e stato (`findByIdAndPractitionerIdAndActiveTrue`), dopo `requireActive` del professionista |
+| `schedule/SlotRange.java` | Claude, su richiesta di Nicholas | `from` e `to` dalla query string (`@ModelAttribute` implicito, costruito con il costruttore), obbligatori, in ISO; vincolo di classe `FromNotAfterTo` con l'errore sul campo `to` |
+| `schedule/PublicSlot.java` | Claude, su richiesta di Nicholas | L'unica cosa che esce: `start` ed `end` in ora di Roma |
+| `schedule/ScheduleService.freeSlots` | Claude, su richiesta di Nicholas | Il collante: servizio in vendita e durata da `catalog`, impostazioni da `practitioner`, versioni con le fasce (una query), assenze nella finestra decisa dal server (da adesso alla fine dell'orizzonte), un solo `clock.instant()`, poi `FreeSlots` |
+| `schedule/SchedulePublicController.java` | Claude, su richiesta di Nicholas | `GET /api/public/practitioners/{id}/services/{serviceId}/slots?from=&to=` |
+| `schedule/UnavailabilityRepository.java`, `WorkingScheduleRepository.java` | Claude, su richiesta di Nicholas | Le assenze che si sovrappongono a una finestra (`StartsAtBefore` + `EndsAtAfter`, la fine della finestra per prima); `findForPanel` rinominato `findWithBands`, perché lo usa anche l'API pubblica |
+| `test/.../schedule/ScheduleFreeSlotsTest.java` | Claude, su richiesta di Nicholas | 7 test del collante: l'esempio di Anna dal database, impostazioni e durata che arrivano davvero, assenza a cavallo dell'inizio della finestra, assenze di un altro, 404 identici per servizio disattivato, di un altro o inesistente, professionista disattivato |
+| `test/.../schedule/SchedulePublicApiTest.java` | Claude, su richiesta di Nicholas | 8 test dall'esterno, senza header: JSON esatto (`start`, `end`, `+01:00`), il motivo di un'assenza non esce mai, settimana oltre l'orizzonte → `[]`, 400 su `to` e su `from`, data non valida → 400, 404 |
+| `test/.../catalog/CatalogServiceTest.java` | Claude, su richiesta di Nicholas | 4 test di `serviceOnSale` |
 
 ## Concetti chiave
 
@@ -92,6 +103,12 @@ Per verificare che i test proteggano davvero una regola, si cambia apposta il co
 ### Contare le query in un test
 `SessionFactory.getStatistics()`, attivate solo nel test, con `getPrepareStatementCount()`: prova che l'elenco delle versioni con le fasce costa una query, non 1 + N.
 
+### Validare i parametri della query string come un corpo JSON
+Un `record` senza `@RequestBody` si riempie dai parametri della richiesta, attraverso il suo costruttore. Con `@Valid` e un vincolo di classe, `from` dopo `to` diventa lo stesso 400 con `errors[].field` dei corpi JSON, invece del 500 che darebbe il costruttore di `SlotQuery`. Guida 17, parte 3.
+
+### Il lavoro lo decide il server
+Sia i giorni del calcolo sia la finestra delle assenze sono tagliati sull'orizzonte prima di qualsiasi ciclo o query: una richiesta fino al 2099 costa quanto una di una settimana. Guida 16, 5.3; guida 17, parte 4.
+
 ### Dopo un errore, la transazione di PostgreSQL è finita
 In un test `@DataJpaTest` tutte le istruzioni stanno nella stessa transazione. Dopo un vincolo violato PostgreSQL la segna come annullata, e ogni istruzione successiva fallisce con "current transaction is aborted". Per questo ogni test prova **una** sola violazione.
 
@@ -101,6 +118,7 @@ In un test `@DataJpaTest` tutte le istruzioni stanno nella stessa transazione. D
 - D-035: calcolo degli orari liberi come funzione pura, API pubblica, orizzonte anticipato nella V3.
 - D-036: fasce non sovrapposte anche nel database, con un *exclusion constraint*.
 - D-037: "uno tra questi valori" con un vincolo Bean Validation personalizzato.
+- D-038: l'API pubblica degli orari liberi: domanda precisa al catalogo, parametri validati come un `record`, assenze nella finestra decisa dal server.
 
 ## Errori fatti e come sono stati corretti
 - **Nella guida 13 avevo scritto che "ora piena o mezz'ora" non doveva essere un vincolo del database.** Era sbagliato: vale per ogni riga, sempre, e non dipende dal tempo né da altre tabelle, quindi è un `check` come `slot_step_minutes in (30, 60)`. Corretto nella guida 14, 1.4.
@@ -109,6 +127,7 @@ In un test `@DataJpaTest` tutte le istruzioni stanno nella stessa transazione. D
 - **Un test provava due violazioni di fila** (giorno 0 e giorno 8). La seconda sarebbe fallita per la transazione annullata, non per il vincolo. Diviso in due test prima di eseguirlo.
 - **Il testo di D-034 aveva un buco** (pezzo 2): una versione creata "da oggi" con un errore non si poteva più correggere, né sostituire con un'altra "da oggi" per il `unique`. Precisata: congelate solo le versioni iniziate prima di oggi (guida 15, parte 2).
 - **Il test dell'API leggeva l'id con `getContentAsString()`**, che dichiara un'eccezione controllata: non compilava. Sostituito da un piccolo helper che legge i byte della risposta in UTF-8.
+- **Pezzo 4, nessun errore nel codice.** Un rischio noto è stato coperto prima di scoprirlo: nella query delle assenze i parametri seguono il nome del metodo, quindi la **fine** della finestra va per prima. Un test con un'assenza a cavallo dell'inizio della finestra fallirebbe se fossero scambiati.
 - **`SlotQuery` aveva un secondo costruttore inutile** (pezzo 3), che accettava una `Map` qualsiasi: il costruttore canonico copiava già tutto in una `TreeMap`. Tolto prima di compilare: due costruttori quasi uguali sono due modi di sbagliare la chiamata.
 
 ## Domande da colloquio
@@ -139,3 +158,6 @@ In un test `@DataJpaTest` tutte le istruzioni stanno nella stessa transazione. D
 
 ### Domanda 9: Come verifichi che un test protegga davvero una regola?
 **Risposta modello.** Cambiandola apposta nel codice e guardando se il test diventa rosso: è l'idea del *mutation testing*, che strumenti come PIT fanno in automatico su tutto il codice. Un test che resta verde con il codice sbagliato non protegge niente. Per i confini (qui "più di 24 ore" contro "almeno 24 ore") serve un caso esattamente sul limite, e l'atteso scritto a mano, non ricalcolato con la stessa logica.
+
+### Domanda 10: Come validi un vincolo tra due parametri della query string in Spring?
+**Risposta modello.** Raccolgo i parametri in un `record` senza `@RequestBody`: Spring lo costruisce dalla query string come `@ModelAttribute`, con il suo costruttore. Ci metto `@Valid` e un vincolo di classe che segnala l'errore su uno dei due campi. L'errore diventa la stessa `MethodArgumentNotValidException` dei corpi JSON, quindi lo stesso 400 con lo stesso formato. Non lo lascio arrivare a un costruttore che lancia `IllegalArgumentException`: diventerebbe un 500, cioè un errore del client presentato come un errore del server.

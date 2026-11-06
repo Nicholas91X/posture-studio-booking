@@ -23,6 +23,9 @@ import org.springframework.jdbc.core.JdbcTemplate;
 
 import com.posturestudio.booking.FixedClockConfiguration;
 import com.posturestudio.booking.TestcontainersConfiguration;
+import com.posturestudio.booking.auth.AccountService;
+import com.posturestudio.booking.catalog.CatalogService;
+import com.posturestudio.booking.practitioner.PractitionerService;
 import com.posturestudio.booking.shared.BusinessRuleException;
 import com.posturestudio.booking.shared.ErrorCode;
 import com.posturestudio.booking.shared.NotFoundException;
@@ -31,7 +34,9 @@ import com.posturestudio.booking.shared.NotFoundException;
 // The service joins the test transaction: flush() does what the commit would do, so that
 // the database constraints really see the rows
 @DataJpaTest
-@Import({TestcontainersConfiguration.class, FixedClockConfiguration.class, ScheduleService.class})
+// ScheduleService also asks catalog and practitioner (free slots), which ask auth
+@Import({TestcontainersConfiguration.class, FixedClockConfiguration.class, ScheduleService.class,
+        CatalogService.class, PractitionerService.class, AccountService.class})
 public class ScheduleServiceTest {
 
     private static final LocalDate MONDAY_9_NOVEMBER = LocalDate.of(2026, 11, 9);

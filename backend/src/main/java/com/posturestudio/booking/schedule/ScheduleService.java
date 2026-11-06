@@ -1,34 +1,79 @@
 package com.posturestudio.booking.schedule;
 
 import java.time.Clock;
+import java.time.Duration;
+import java.time.Instant;
 import java.time.LocalDate;
 import java.util.List;
+import java.util.TreeMap;
 
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
+import com.posturestudio.booking.catalog.CatalogService;
+import com.posturestudio.booking.catalog.ServiceOnSale;
+import com.posturestudio.booking.practitioner.PractitionerService;
+import com.posturestudio.booking.practitioner.PractitionerSettings;
 import com.posturestudio.booking.shared.BusinessRuleException;
 import com.posturestudio.booking.shared.ErrorCode;
 import com.posturestudio.booking.shared.NotFoundException;
 import com.posturestudio.booking.shared.StudioTime;
+import com.posturestudio.booking.shared.TimeRange;
 
 /**
  * The only door of the schedule module (D-002): returns records, never entities.
  * Every panel method receives the id of the practitioner who acts and finds only what is theirs:
  * someone else's version or absence is reported as not found (404, not 403).
  * "Today" is the date in Rome, from the injected Clock (D-035).
+ * Dependencies go one way only (D-029): schedule -> catalog -> practitioner -> auth, schedule -> practitioner.
  */
 @Service
 public class ScheduleService {
 
     private final WorkingScheduleRepository schedules;
     private final UnavailabilityRepository unavailabilities;
+    private final CatalogService catalog;
+    private final PractitionerService practitioners;
     private final Clock clock;
 
-    ScheduleService(WorkingScheduleRepository schedules, UnavailabilityRepository unavailabilities, Clock clock) {
+    ScheduleService(WorkingScheduleRepository schedules, UnavailabilityRepository unavailabilities,
+                    CatalogService catalog, PractitionerService practitioners, Clock clock) {
         this.schedules = schedules;
         this.unavailabilities = unavailabilities;
+        this.catalog = catalog;
+        this.practitioners = practitioners;
         this.clock = clock;
+    }
+
+    // ***** FREE SLOTS (public) *****
+
+    // The glue around the pure calculation (FreeSlots): gather the data, read the clock once, convert.
+    // Not on sale, someone else's, deactivated service or practitioner: NotFoundException (404)
+    @Transactional(readOnly = true)
+    public List<PublicSlot> freeSlots(long practitionerId, long serviceId, LocalDate from, LocalDate to) {
+        ServiceOnSale service = catalog.serviceOnSale(practitionerId, serviceId);
+        PractitionerSettings settings = practitioners.getSettings(practitionerId);
+        Instant now = clock.instant();
+
+        // absences in a window decided by the server, not by the client (guide 17, part 4):
+        // from now to the end of the last day of the horizon, whatever from and to say
+        LocalDate today = LocalDate.ofInstant(now, StudioTime.ZONE);
+        Instant windowEnd = today.plusDays(settings.bookingHorizonDays() + 1L).atStartOfDay(StudioTime.ZONE).toInstant();
+        List<TimeRange> busy = unavailabilities
+                .findByPractitionerIdAndStartsAtBeforeAndEndsAtAfter(practitionerId, windowEnd, now)
+                .stream()
+                .map(absence -> new TimeRange(absence.getStartsAt(), absence.getEndsAt()))
+                .toList();
+
+        TreeMap<LocalDate, List<WorkingBand>> versions = new TreeMap<>();
+        for (WorkingSchedule version : schedules.findWithBands(practitionerId)) {
+            versions.put(version.getValidFrom(), version.bands());
+        }
+
+        SlotQuery query = new SlotQuery(versions, busy, Duration.ofMinutes(service.durationMinutes()),
+                settings.slotStepMinutes(), settings.minBookingNoticeHours(), settings.bookingHorizonDays(),
+                from, to, now);
+        return FreeSlots.compute(query).stream().map(PublicSlot::from).toList();
     }
 
     // ***** SCHEDULE VERSIONS (panel) *****
@@ -37,7 +82,7 @@ public class ScheduleService {
     @Transactional(readOnly = true)
     public List<ScheduleVersionView> listVersions(long practitionerId) {
         LocalDate today = StudioTime.today(clock);
-        List<WorkingSchedule> versions = schedules.findForPanel(practitionerId);
+        List<WorkingSchedule> versions = schedules.findWithBands(practitionerId);
         List<WorkingSchedule> started = versions.stream()
                 .filter(version -> !version.getValidFrom().isAfter(today))
                 .toList();

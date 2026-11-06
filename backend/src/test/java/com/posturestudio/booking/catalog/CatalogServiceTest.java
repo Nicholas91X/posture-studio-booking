@@ -265,6 +265,38 @@ public class CatalogServiceTest {
         Assertions.assertThrows(NotFoundException.class, () -> catalog.publicCatalog(marco));
     }
 
+    // ***** SERVICE ON SALE (for other modules) *****
+
+    @Test
+    void serviceOnSaleGivesItsDuration() {
+        long serviceId = catalog.createService(anna, new ServiceOfferDetails("Valutazione", 30, 3000L)).id();
+
+        assertThat(catalog.serviceOnSale(anna, serviceId)).isEqualTo(new ServiceOnSale(serviceId, 30));
+    }
+
+    @Test
+    void deactivatedServiceIsNotOnSale() {
+        long serviceId = catalog.createService(anna, SEDUTA).id();
+        catalog.deactivateService(anna, serviceId);
+
+        Assertions.assertThrows(NotFoundException.class, () -> catalog.serviceOnSale(anna, serviceId));
+    }
+
+    @Test
+    void someoneElsesServiceIsNotOnSaleUnderAnotherPractitioner() {
+        long marcosService = catalog.createService(marco, SEDUTA).id();
+
+        Assertions.assertThrows(NotFoundException.class, () -> catalog.serviceOnSale(anna, marcosService));
+    }
+
+    @Test
+    void serviceOfDeactivatedPractitionerIsNotOnSale() {
+        long serviceId = catalog.createService(marco, SEDUTA).id();
+        jdbc.update("update app_user set active = false where id = (select user_id from practitioner where id = ?)", marco);
+
+        Assertions.assertThrows(NotFoundException.class, () -> catalog.serviceOnSale(marco, serviceId));
+    }
+
     private long insertPractitioner(String email) {
         Long userId = jdbc.queryForObject(
                 "insert into app_user (role, email) values ('PRACTITIONER', ?) returning id",

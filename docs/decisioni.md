@@ -564,3 +564,20 @@ Implementazione (pezzo 3, guida 16): `FreeSlots.compute(SlotQuery)` nel package 
 **Alternative scartate.** *`@Min(30) @Max(60)` più il controllo nell'entità*: 45 passerebbe la validazione e diventerebbe un 500. *Un metodo `@AssertTrue`*: l'errore uscirebbe su un campo che non esiste. *Un `enum`*: un valore sbagliato fa fallire la lettura del JSON, con un 400 generico senza il nome del campo.
 
 **Conseguenze.** Il valore ammesso compare in tre punti (vincolo del database, annotazione, `Practitioner.SLOT_STEPS`), ognuno con un commento che rimanda agli altri. Al passo 7 la stessa tecnica, in versione "di classe", controllerà `approval_window_hours` ≤ `min_booking_notice_hours` (D-030).
+
+---
+
+## D-038 — API pubblica degli orari liberi: una domanda al catalogo, parametri come un `record`, finestra decisa dal server
+**Stato:** accettata · 2026-11-06
+
+**Contesto.** `GET /api/public/practitioners/{id}/services/{serviceId}/slots?from=&to=` (D-035) deve sapere se il servizio è in vendita e quanto dura (dati di `catalog`), validare due date che arrivano nella query string, e caricare le assenze senza che il lavoro dipenda da cosa chiede il client. Confronto completo: `docs/studio/17-api-orari-liberi.md`.
+
+**Decisione.**
+- `CatalogService.serviceOnSale(practitionerId, serviceId)` restituisce `ServiceOnSale(id, durationMinutes)`; "in vendita" vuol dire servizio attivo di un professionista attivo. In tutti gli altri casi la stessa `NotFoundException` (404).
+- `from` e `to` in un `record` `SlotRange`, costruito dalla query string, entrambi obbligatori, in ISO, con il vincolo di classe `FromNotAfterTo` (400 sul campo `to`). Nessun limite di distanza: lo taglia l'orizzonte.
+- Le assenze caricate sono quelle che si sovrappongono alla finestra **da adesso alla fine dell'ultimo giorno dell'orizzonte**, qualunque siano `from` e `to`.
+- Esce solo `PublicSlot(start, end)` in ora di Roma.
+
+**Alternative scartate.** *Riusare il catalogo pubblico e cercare il servizio nella lista*: carica tutto per usarne uno, e la regola "in vendita" finirebbe fuori da `catalog`. *Controllare `from` e `to` nel servizio*: un 409 per una richiesta sbagliata in sé (D-027). *Lasciarlo a `SlotQuery`*: un 500. *Caricare le assenze dei giorni richiesti*: con `to` nel 2099 la finestra la deciderebbe il client.
+
+**Conseguenze.** Le dipendenze restano in un verso solo: `schedule` → `catalog` → `practitioner` → `auth`, e `schedule` → `practitioner`. Al passo 7 `booking` userà `serviceOnSale` per la durata e il prezzo da fotografare; e il ciclo tra `schedule` e `booking` per gli intervalli occupati va risolto per primo (guida 16, 6.1).

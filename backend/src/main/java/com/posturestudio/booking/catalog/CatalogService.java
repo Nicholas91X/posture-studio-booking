@@ -126,6 +126,17 @@ public class CatalogService {
         return new PublicCatalog(onSaleServices, onSalePackages);
     }
 
+    // For the other modules (schedule, from step 7 booking): is this service on sale, and how long is it?
+    // On sale = an active service of an active practitioner. Missing, someone else's, deactivated, or of a
+    // deactivated practitioner: the same NotFoundException, as in the public catalog
+    @Transactional(readOnly = true)
+    public ServiceOnSale serviceOnSale(long practitionerId, long serviceId) {
+        practitioners.requireActive(practitionerId);
+        return services.findByIdAndPractitionerIdAndActiveTrue(serviceId, practitionerId)
+                .map(ServiceOnSale::from)
+                .orElseThrow(() -> new NotFoundException("Service " + serviceId + " not found"));
+    }
+
     // ***** HELPERS *****
 
     private ServiceOffer findService(long practitionerId, long serviceId) {

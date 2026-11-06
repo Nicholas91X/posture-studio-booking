@@ -13,14 +13,15 @@ interface WorkingScheduleRepository extends JpaRepository<WorkingSchedule, Long>
     // ownership is part of the query: someone else's version and a missing one look the same
     Optional<WorkingSchedule> findByIdAndPractitionerId(Long id, Long practitionerId);
 
-    // panel: all versions with their bands in one query (no N+1). left: a version without bands
-    // is listed too. Since Hibernate 6 no distinct is needed to avoid repeated versions
+    // all versions with their bands in one query (no N+1), for the panel and for free slots.
+    // left: a version without bands is listed too. Since Hibernate 6 no distinct is needed
+    // to avoid repeated versions
     @Query("""
             select s from WorkingSchedule s left join fetch s.bands
             where s.practitionerId = :practitionerId
             order by s.validFrom
             """)
-    List<WorkingSchedule> findForPanel(Long practitionerId);
+    List<WorkingSchedule> findWithBands(Long practitionerId);
 
     // the Java side of working_schedule_practitioner_valid_from_uk, for a clear error
     boolean existsByPractitionerIdAndValidFrom(Long practitionerId, LocalDate validFrom);
