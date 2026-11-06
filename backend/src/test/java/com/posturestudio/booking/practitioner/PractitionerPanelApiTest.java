@@ -43,26 +43,32 @@ public class PractitionerPanelApiTest {
         // read: the defaults of the database
         assertThat(mvc.get().uri("/api/panel/settings").header(DevHeaderCurrentPractitioner.HEADER, anna))
                 .hasStatusOk()
-                .bodyJson().isLenientlyEqualTo("""
-                        {"cancellationNoticeHours": 24, "singleCreditValidityDays": 90, "slotStepMinutes": 30}
+                .bodyJson().isStrictlyEqualTo("""
+                        {"cancellationNoticeHours": 24, "singleCreditValidityDays": 90, "slotStepMinutes": 60,
+                         "minBookingNoticeHours": 24, "bookingHorizonDays": 21}
                         """);
 
         // change
         assertThat(updateSettings(anna, """
-                {"cancellationNoticeHours": 48, "singleCreditValidityDays": 60, "slotStepMinutes": 15}
+                {"cancellationNoticeHours": 48, "singleCreditValidityDays": 60, "slotStepMinutes": 30,
+                 "minBookingNoticeHours": 48, "bookingHorizonDays": 14}
                 """))
                 .hasStatusOk()
                 .bodyJson().extractingPath("$.cancellationNoticeHours").isEqualTo(48);
 
         // read again
         assertThat(mvc.get().uri("/api/panel/settings").header(DevHeaderCurrentPractitioner.HEADER, anna))
-                .bodyJson().extractingPath("$.slotStepMinutes").isEqualTo(15);
+                .bodyJson().isStrictlyEqualTo("""
+                        {"cancellationNoticeHours": 48, "singleCreditValidityDays": 60, "slotStepMinutes": 30,
+                         "minBookingNoticeHours": 48, "bookingHorizonDays": 14}
+                        """);
     }
 
     @Test
     void invalidSettingAnswers400WithTheField() {
         MvcTestResult result = updateSettings(anna, """
-                {"cancellationNoticeHours": 0, "singleCreditValidityDays": 60, "slotStepMinutes": 15}
+                {"cancellationNoticeHours": 0, "singleCreditValidityDays": 60, "slotStepMinutes": 30,
+                 "minBookingNoticeHours": 48, "bookingHorizonDays": 14}
                 """);
 
         assertThat(result).hasStatus(HttpStatus.BAD_REQUEST);
@@ -71,9 +77,36 @@ public class PractitionerPanelApiTest {
     }
 
     @Test
+    void slotStepOtherThan30Or60Answers400OnItsField() {
+        MvcTestResult result = updateSettings(anna, """
+                {"cancellationNoticeHours": 24, "singleCreditValidityDays": 90, "slotStepMinutes": 45,
+                 "minBookingNoticeHours": 24, "bookingHorizonDays": 21}
+                """);
+
+        // 400 from validation, not 409 from the database check
+        assertThat(result).hasStatus(HttpStatus.BAD_REQUEST);
+        assertThat(result).bodyJson().extractingPath("$.errors[*].field").asArray()
+                .containsExactly("slotStepMinutes");
+        assertThat(result).bodyJson().extractingPath("$.errors[0].constraint").isEqualTo("OneOf");
+    }
+
+    @Test
+    void missingNewSettingAnswers400OnItsField() {
+        // a client still sending the three settings of step 5
+        MvcTestResult result = updateSettings(anna, """
+                {"cancellationNoticeHours": 24, "singleCreditValidityDays": 90, "slotStepMinutes": 60}
+                """);
+
+        assertThat(result).hasStatus(HttpStatus.BAD_REQUEST);
+        assertThat(result).bodyJson().extractingPath("$.errors[*].field").asArray()
+                .containsExactlyInAnyOrder("minBookingNoticeHours", "bookingHorizonDays");
+    }
+
+    @Test
     void changingOwnSettingsLeavesTheOtherPractitionerUntouched() {
         updateSettings(anna, """
-                {"cancellationNoticeHours": 48, "singleCreditValidityDays": 60, "slotStepMinutes": 15}
+                {"cancellationNoticeHours": 48, "singleCreditValidityDays": 60, "slotStepMinutes": 30,
+                 "minBookingNoticeHours": 48, "bookingHorizonDays": 14}
                 """);
 
         Integer marcosNotice = jdbc.queryForObject(

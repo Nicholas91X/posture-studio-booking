@@ -531,3 +531,34 @@ Nella guida l'interfaccia era proposta in `auth`; spostata in `practitioner` dur
 **Alternative scartate.** *Calcolo dentro il servizio Spring, con query e `Instant.now()`*: ogni test avrebbe bisogno di un container e dipenderebbe dal giorno in cui gira. *Orari in UTC (`Z`) nelle API*: corretti, ma il frontend dovrebbe convertire ogni orario. *Errore per un intervallo oltre l'orizzonte*: il cliente che sfoglia le settimane non sta sbagliando niente.
 
 **Conseguenze.** Il calcolo ha molti test unitari, compresi i cambi dell'ora di marzo e ottobre (guida 13, parte 7). Le dipendenze tra moduli diventano `schedule` → `catalog` → `practitioner` → `auth`, con `schedule` che usa anche `practitioner` direttamente. Al passo 7 `booking` fornisce gli intervalli occupati e chiede a `schedule` se un orario è libero; il calcolo deve considerare libere le `PENDING_PAYMENT` con blocco scaduto (`modello-dati.md`, `booking`).
+
+---
+
+## D-036 — Fasce di lavoro non sovrapposte anche nel database: *exclusion constraint*
+**Stato:** accettata · 2026-11-06
+
+**Contesto.** Nella stessa versione dello schema (D-034), due fasce dello stesso giorno non devono sovrapporsi: il calcolo offrirebbe gli stessi orari due volte. Un `check` vede una riga sola, e un `unique` non conosce le sovrapposizioni. Confronto completo: `docs/studio/14-migrazione-v3-calendario.md`, parte 2.
+
+**Decisione.**
+- In V3: estensione `btree_gist`, tipo `timerange` (`create type timerange as range (subtype = time)`) e il vincolo `working_hours_no_overlap_ex`: `exclude using gist (schedule_id with =, day_of_week with =, timerange(start_time, end_time) with &&)`.
+- Gli intervalli sono semiaperti `[inizio, fine)`, come vuole D-035: fasce che si toccano (9–13 e 13–14) sono accettate.
+- Java controlla comunque prima (pezzo 2), per dare al professionista un errore chiaro: il vincolo è l'ultima difesa, come per D-025.
+
+**Alternative scartate.** *Solo in Java*: un bug o un `insert` a mano passerebbero; e si rinuncerebbe a provare su un caso semplice lo strumento che al passo 7 sarà indispensabile (D-013).
+
+**Conseguenze.** `btree_gist` è già installata per il passo 7. Una violazione arriva a Java come `DataIntegrityViolationException`, come gli altri vincoli (provato da `ScheduleSchemaTest`). Nel pezzo 2, sostituendo una versione futura, attenzione all'ordine delle istruzioni di Hibernate al *flush*: le cancellazioni esplicite vanno dopo gli `insert` (guida 14, 2.4). Vale anche per `unique (practitioner_id, valid_from)`.
+
+---
+
+## D-037 — "Uno tra questi valori" con un vincolo Bean Validation nostro: `@OneOf`
+**Stato:** accettata · 2026-11-06
+
+**Contesto.** Lo scatto vale solo 30 o 60 (D-033). Il `check` del database rifiuta gli altri valori, ma con un 409 generico. Il pannello deve ricevere un 400 sul campo, come per le altre impostazioni. Bean Validation non ha un vincolo "uno tra questi numeri". Confronto completo: guida 14, parte 3.
+
+**Decisione.**
+- `@OneOf(int[] value)` con `OneOfValidator`, nel package `shared`. L'errore esce sul suo campo con il codice `OneOf`. `null` è valido: lo ferma `@NotNull`.
+- L'entità resta la seconda difesa, con `Checks.requireOneOf`.
+
+**Alternative scartate.** *`@Min(30) @Max(60)` più il controllo nell'entità*: 45 passerebbe la validazione e diventerebbe un 500. *Un metodo `@AssertTrue`*: l'errore uscirebbe su un campo che non esiste. *Un `enum`*: un valore sbagliato fa fallire la lettura del JSON, con un 400 generico senza il nome del campo.
+
+**Conseguenze.** Il valore ammesso compare in tre punti (vincolo del database, annotazione, `Practitioner.SLOT_STEPS`), ognuno con un commento che rimanda agli altri. Al passo 7 la stessa tecnica, in versione "di classe", controllerà `approval_window_hours` ≤ `min_booking_notice_hours` (D-030).

@@ -365,6 +365,8 @@ Il caso 24 ricorda una convenzione di Bean Validation: un validatore **non** rif
 
 ## Cosa devi decidere
 
+> **Decise il 2026-11-06**: strada B, *exclusion constraint* (D-036); annotazione `@OneOf` (D-037); domande di progetto tutte accettate; il codice lo scrive Claude su richiesta di Nicholas.
+
 1. **Fasce sovrapposte** (parte 2): A (solo Java) o B (anche il database, con l'*exclusion constraint*)? Io: **B**.
 2. **Validazione di "30 o 60"** (parte 3): A (annotazione nostra), B, C o D? Io: **A**.
 3. **Le domande di progetto** (parte 4): ok su tutte?

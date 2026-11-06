@@ -1,5 +1,7 @@
 package com.posturestudio.booking.shared;
 
+import java.util.Set;
+
 /**
  * Guards used by entities to protect their own state. A failure here is a programming error:
  * request validation should have stopped the value earlier.
@@ -26,6 +28,13 @@ public final class Checks {
     public static int requireAtLeast(int value, int min, String field) {
         if (value < min) {
             throw new IllegalArgumentException(field + " must be at least " + min + ", was " + value);
+        }
+        return value;
+    }
+
+    public static int requireOneOf(int value, Set<Integer> allowed, String field) {
+        if (!allowed.contains(value)) {
+            throw new IllegalArgumentException(field + " must be one of " + allowed + ", was " + value);
         }
         return value;
     }

@@ -1,9 +1,11 @@
 package com.posturestudio.booking.practitioner;
 
+import static com.posturestudio.booking.shared.Checks.requireOneOf;
 import static com.posturestudio.booking.shared.Checks.requirePositive;
 
 import java.time.Instant;
 import java.util.Objects;
+import java.util.Set;
 
 import org.hibernate.annotations.Generated;
 import jakarta.persistence.*;
@@ -12,6 +14,9 @@ import jakarta.persistence.*;
 @Entity
 @Table(name = "practitioner")
 class Practitioner {
+
+    // half-hour starts on or off (D-033): the same values as practitioner_slot_step_minutes_ck
+    static final Set<Integer> SLOT_STEPS = Set.of(30, 60);
 
     protected Practitioner() {
         // JPA needs a no-arg constructor.
@@ -41,6 +46,12 @@ class Practitioner {
     @Column
     private int slotStepMinutes;
 
+    @Column
+    private int minBookingNoticeHours;
+
+    @Column
+    private int bookingHorizonDays;
+
     @Column(updatable = false)
     @Generated
     private Instant createdAt;
@@ -54,14 +65,19 @@ class Practitioner {
         Objects.requireNonNull(settings, "settings must not be null");
         int notice = requirePositive(settings.cancellationNoticeHours(), "cancellationNoticeHours");
         int validity = requirePositive(settings.singleCreditValidityDays(), "singleCreditValidityDays");
-        int step = requirePositive(settings.slotStepMinutes(), "slotStepMinutes");
+        int step = requireOneOf(settings.slotStepMinutes(), SLOT_STEPS, "slotStepMinutes");
+        int bookingNotice = requirePositive(settings.minBookingNoticeHours(), "minBookingNoticeHours");
+        int horizon = requirePositive(settings.bookingHorizonDays(), "bookingHorizonDays");
         this.cancellationNoticeHours = notice;
         this.singleCreditValidityDays = validity;
         this.slotStepMinutes = step;
+        this.minBookingNoticeHours = bookingNotice;
+        this.bookingHorizonDays = horizon;
     }
 
     PractitionerSettings settings() {
-        return new PractitionerSettings(cancellationNoticeHours, singleCreditValidityDays, slotStepMinutes);
+        return new PractitionerSettings(cancellationNoticeHours, singleCreditValidityDays, slotStepMinutes,
+                minBookingNoticeHours, bookingHorizonDays);
     }
 
     Long getId() {

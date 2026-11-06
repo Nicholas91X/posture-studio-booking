@@ -8,16 +8,19 @@ import org.junit.jupiter.api.Test;
 // Plain Java: no Spring, no database. The protected constructor is visible from the same package.
 public class PractitionerTest {
 
+    // the database defaults after V3
+    private static final PractitionerSettings DEFAULTS = new PractitionerSettings(24, 90, 60, 24, 21);
+
     @Test
     void validSettingsAreApplied() {
         // arrange
         Practitioner practitioner = new Practitioner();
 
         // act
-        practitioner.changeSettings(new PractitionerSettings(48, 60, 15));
+        practitioner.changeSettings(new PractitionerSettings(48, 60, 30, 48, 14));
 
         // assert
-        assertThat(practitioner.settings()).isEqualTo(new PractitionerSettings(48, 60, 15));
+        assertThat(practitioner.settings()).isEqualTo(new PractitionerSettings(48, 60, 30, 48, 14));
     }
 
     @Test
@@ -25,7 +28,7 @@ public class PractitionerTest {
         Practitioner practitioner = new Practitioner();
 
         var exception = Assertions.assertThrows(IllegalArgumentException.class,
-                () -> practitioner.changeSettings(new PractitionerSettings(0, 90, 30)));
+                () -> practitioner.changeSettings(new PractitionerSettings(0, 90, 60, 24, 21)));
         assertThat(exception.getMessage()).contains("cancellationNoticeHours");
     }
 
@@ -34,31 +37,49 @@ public class PractitionerTest {
         Practitioner practitioner = new Practitioner();
 
         var exception = Assertions.assertThrows(IllegalArgumentException.class,
-                () -> practitioner.changeSettings(new PractitionerSettings(24, -1, 30)));
+                () -> practitioner.changeSettings(new PractitionerSettings(24, -1, 60, 24, 21)));
         assertThat(exception.getMessage()).contains("singleCreditValidityDays");
     }
 
     @Test
-    void zeroSlotStepIsRejected() {
+    void slotStepOtherThan30Or60IsRejected() {
         Practitioner practitioner = new Practitioner();
 
         var exception = Assertions.assertThrows(IllegalArgumentException.class,
-                () -> practitioner.changeSettings(new PractitionerSettings(24, 90, 0)));
+                () -> practitioner.changeSettings(new PractitionerSettings(24, 90, 45, 24, 21)));
         assertThat(exception.getMessage()).contains("slotStepMinutes");
+    }
+
+    @Test
+    void zeroMinBookingNoticeIsRejected() {
+        Practitioner practitioner = new Practitioner();
+
+        var exception = Assertions.assertThrows(IllegalArgumentException.class,
+                () -> practitioner.changeSettings(new PractitionerSettings(24, 90, 60, 0, 21)));
+        assertThat(exception.getMessage()).contains("minBookingNoticeHours");
+    }
+
+    @Test
+    void zeroBookingHorizonIsRejected() {
+        Practitioner practitioner = new Practitioner();
+
+        var exception = Assertions.assertThrows(IllegalArgumentException.class,
+                () -> practitioner.changeSettings(new PractitionerSettings(24, 90, 60, 24, 0)));
+        assertThat(exception.getMessage()).contains("bookingHorizonDays");
     }
 
     @Test
     void invalidChangeLeavesSettingsUnchanged() {
         // arrange
         Practitioner practitioner = new Practitioner();
-        practitioner.changeSettings(new PractitionerSettings(24, 90, 30));
+        practitioner.changeSettings(DEFAULTS);
 
-        // act: the first two values are valid, the last one is not
+        // act: the first four values are valid, the last one is not
         Assertions.assertThrows(IllegalArgumentException.class,
-                () -> practitioner.changeSettings(new PractitionerSettings(48, 60, 0)));
+                () -> practitioner.changeSettings(new PractitionerSettings(48, 60, 30, 48, 0)));
 
         // assert
-        assertThat(practitioner.settings()).isEqualTo(new PractitionerSettings(24, 90, 30));
+        assertThat(practitioner.settings()).isEqualTo(DEFAULTS);
     }
 
     @Test

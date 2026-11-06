@@ -34,14 +34,14 @@ public class PractitionerServiceTest {
 
     @Test
     void settingsOfNewPractitionerAreTheDatabaseDefaults() {
-        // arrange: inserted with SQL, so the values come from the defaults of V1, not from Java
+        // arrange: inserted with SQL, so the values come from the defaults of V1 and V3, not from Java
         long practitionerId = insertPractitioner("anna@example.com");
 
         // act
         PractitionerSettings settings = service.getSettings(practitionerId);
 
         // assert
-        assertThat(settings).isEqualTo(new PractitionerSettings(24, 90, 30));
+        assertThat(settings).isEqualTo(new PractitionerSettings(24, 90, 60, 24, 21));
     }
 
     @Test
@@ -50,14 +50,14 @@ public class PractitionerServiceTest {
         long practitionerId = insertPractitioner("anna@example.com");
 
         // act
-        PractitionerSettings returned = service.updateSettings(practitionerId, new PractitionerSettings(48, 60, 15));
+        PractitionerSettings returned = service.updateSettings(practitionerId, new PractitionerSettings(48, 60, 30, 48, 14));
         // the service joins the test transaction, so there is no commit at its end:
         // flush() does what the commit would do. Without it, the row would still have the old values
         entityManager.flush();
 
         // assert: read the row, not the object in memory
-        assertThat(returned).isEqualTo(new PractitionerSettings(48, 60, 15));
-        assertThat(readRow(practitionerId)).isEqualTo(new PractitionerSettings(48, 60, 15));
+        assertThat(returned).isEqualTo(new PractitionerSettings(48, 60, 30, 48, 14));
+        assertThat(readRow(practitionerId)).isEqualTo(new PractitionerSettings(48, 60, 30, 48, 14));
     }
 
     @Test
@@ -67,11 +67,11 @@ public class PractitionerServiceTest {
         long marco = insertPractitioner("marco@example.com");
 
         // act
-        service.updateSettings(anna, new PractitionerSettings(48, 60, 15));
+        service.updateSettings(anna, new PractitionerSettings(48, 60, 30, 48, 14));
         entityManager.flush();
 
         // assert
-        assertThat(readRow(marco)).isEqualTo(new PractitionerSettings(24, 90, 30));
+        assertThat(readRow(marco)).isEqualTo(new PractitionerSettings(24, 90, 60, 24, 21));
     }
 
     @Test
@@ -82,7 +82,7 @@ public class PractitionerServiceTest {
     @Test
     void updateSettingsOfMissingPractitionerThrowsNotFound() {
         Assertions.assertThrows(NotFoundException.class,
-                () -> service.updateSettings(999999, new PractitionerSettings(48, 60, 15)));
+                () -> service.updateSettings(999999, new PractitionerSettings(48, 60, 30, 48, 14)));
     }
 
     // ***** PUBLIC *****
@@ -132,12 +132,18 @@ public class PractitionerServiceTest {
 
     private PractitionerSettings readRow(long practitionerId) {
         Map<String, Object> row = jdbc.queryForMap(
-                "select cancellation_notice_hours, single_credit_validity_days, slot_step_minutes from practitioner where id = ?",
+                """
+                select cancellation_notice_hours, single_credit_validity_days, slot_step_minutes,
+                       min_booking_notice_hours, booking_horizon_days
+                from practitioner where id = ?
+                """,
                 practitionerId);
         return new PractitionerSettings(
                 (Integer) row.get("cancellation_notice_hours"),
                 (Integer) row.get("single_credit_validity_days"),
-                (Integer) row.get("slot_step_minutes"));
+                (Integer) row.get("slot_step_minutes"),
+                (Integer) row.get("min_booking_notice_hours"),
+                (Integer) row.get("booking_horizon_days"));
     }
 
     private long insertPractitioner(String email) {
