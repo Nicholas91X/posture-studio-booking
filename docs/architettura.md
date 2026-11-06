@@ -16,13 +16,14 @@ Come è fatto il sistema e come si muovono le informazioni. Le regole del prodot
           │frontend │  │ backend       ├─────►│          │ (crea pagamenti)
           └─────────┘  └──┬─────────┬──┘      └──────────┘
                           │         │
-                   ┌──────▼───┐  ┌──▼──────────┐
-                   │PostgreSQL│  │ Servizio    │
-                   └──────────┘  │ email       │
-                                 └─────────────┘
+                   ┌──────▼───┐  ┌──▼──────────┐  ┌─────────────────┐
+                   │PostgreSQL│  │ Servizio    │  │ Servizi push dei│
+                   └──────────┘  │ email       │  │ browser (Web    │
+                                 └─────────────┘  │ Push, D-032)    │
+                                                  └─────────────────┘
 ```
 
-Tutto gira con Docker Compose su un server Hetzner. Stripe e il servizio email sono esterni.
+Tutto gira con Docker Compose su un server Hetzner. Stripe, il servizio email e i servizi push dei produttori dei browser (Apple, Google, Mozilla) sono esterni. Le notifiche push partono dal backend.
 
 | Pezzo | Tecnologia | Chi lo scrive | Cosa fa |
 |---|---|---|---|
@@ -31,7 +32,8 @@ Tutto gira con Docker Compose su un server Hetzner. Stripe e il servizio email s
 | Frontend | Next.js, TypeScript | Claude | Pagine per prenotare e pannello dei professionisti. Mostra e invia, non decide |
 | Reverse proxy | Caddy | Nicholas | Certificato HTTPS, indirizza `/api` al backend e il resto al frontend |
 | Pagamenti | Stripe Checkout | — | Pagina di pagamento ospitata da Stripe |
-| Email | da scegliere | — | Codici di accesso e conferme |
+| Email | da scegliere (orientamento: Brevo) | — | Codici di accesso, conferme, riserva delle notifiche push |
+| Notifiche push | Web Push con chiavi VAPID (D-032) | — | Avvisano il professionista delle prenotazioni da approvare |
 
 ## Struttura del repository
 
@@ -59,10 +61,10 @@ Un'unica applicazione, divisa in package per area. Ogni modulo espone verso gli 
 | `auth` | Codici di accesso, sessioni, ruoli |
 | `catalog` | Servizi e pacchetti in vendita, prezzi |
 | `schedule` | Orari di lavoro, indisponibilità, calcolo degli orari liberi |
-| `booking` | Prenotazioni, blocco temporaneo, cancellazioni |
+| `booking` | Prenotazioni, blocco temporaneo, approvazione (D-030), cancellazioni |
 | `credit` | Lotti e movimenti dei crediti |
 | `payment` | Integrazione Stripe, webhook |
-| `notification` | Invio email |
+| `notification` | Invio email e notifiche push, dispositivi registrati (D-032) |
 
 ### Livelli dentro ogni modulo
 
@@ -80,6 +82,7 @@ Un'unica applicazione, divisa in package per area. Ogni modulo espone verso gli 
 ### Lavori programmati
 
 - **Scadenza dei blocchi**: ogni minuto, le prenotazioni in attesa di pagamento con blocco scaduto passano a "scaduta" e l'orario si libera.
+- **Scadenza delle approvazioni** (D-030): ogni minuto, le prenotazioni in attesa di approvazione oltre la scadenza passano ad "approvazione scaduta". Il blocco sulla carta si annulla o il credito torna, l'orario si libera e il cliente riceve un'email.
 - **Sedute passate**: ogni notte, le prenotazioni confermate già avvenute passano a "svolta".
 
 ### Test
@@ -100,7 +103,7 @@ Un'unica applicazione, divisa in package per area. Ogni modulo espone verso gli 
 - Next.js con App Router, TypeScript.
 - Due aree:
   - **Pubblica**: scelta del professionista e del servizio, calendario, accesso con codice, pagamento, "le mie sedute" e crediti.
-  - **Pannello** (solo professionisti): agenda, servizi e prezzi, pacchetti, orari, indisponibilità, impostazioni.
+  - **Pannello** (solo professionisti): agenda, richieste da approvare, servizi e prezzi, pacchetti, orari, indisponibilità, impostazioni. Installabile sul telefono come app (*PWA*), con un *service worker* che riceve le notifiche push (D-032).
 - Nessuna regola di business: il frontend chiede al backend e mostra quello che riceve.
 - Mobile prima di tutto: la maggior parte dei clienti prenoterà dal telefono.
 
@@ -117,17 +120,22 @@ Lo stesso meccanismo vale per i professionisti: la loro email ha il ruolo `PRACT
 
 ### Prenotazione con carta
 
-1. Il cliente sceglie un orario libero.
+1. Il cliente sceglie un orario libero (che inizia più di 24 ore dopo, D-030). Se il professionista approva a mano, il cliente vede il tempo di risposta prima di confermare.
 2. Il backend crea la prenotazione in stato "in attesa di pagamento", con un blocco di 30 minuti. Se l'orario nel frattempo è stato preso, il database rifiuta e il cliente vede "orario non più disponibile".
-3. Il backend crea una sessione Stripe Checkout con scadenza uguale al blocco, e restituisce l'indirizzo della pagina di pagamento.
-4. Il cliente paga sulla pagina di Stripe e torna sul sito, che mostra "pagamento in verifica".
-5. Stripe avvisa il backend con il webhook `checkout.session.completed`.
-6. Il backend conferma la prenotazione e invia l'email di conferma.
+3. Il backend crea una sessione Stripe Checkout con *manual capture* (D-031) e scadenza uguale al blocco, e restituisce l'indirizzo della pagina di pagamento.
+4. Il cliente paga sulla pagina di Stripe e torna sul sito, che mostra "pagamento in verifica". Stripe ha solo **bloccato** l'importo sulla carta.
+5. Stripe avvisa il backend con il webhook `checkout.session.completed`. La prenotazione passa ad "in attesa di approvazione", con la scadenza fotografata.
+6. **Approvazione**:
+   - automatica: il backend approva subito;
+   - manuale: il backend avvisa il professionista con una notifica push (email di riserva), e lui approva o rifiuta dal pannello entro la scadenza.
+7. **Approvata**: il backend chiede a Stripe l'incasso. Quando Stripe risponde che è riuscito, la prenotazione è confermata e il cliente riceve l'email di conferma.
+8. **Rifiutata, scaduta o ritirata dal cliente**: il backend annulla il blocco sulla carta, l'orario si libera, e il cliente riceve un'email. Non è stato addebitato niente.
 
 ### Prenotazione con credito
 
 1. Il cliente sceglie un orario. Il backend vede che ha crediti validi per quel professionista e servizio.
-2. In un'unica transazione: crea la prenotazione confermata e registra un movimento −1 sul lotto che scade prima.
+2. In un'unica transazione: crea la prenotazione in attesa di approvazione e registra un movimento −1 sul lotto che scade prima (il credito è **impegnato**).
+3. Approvazione come per la carta. Approvata: confermata. Rifiutata, scaduta o ritirata: movimento +1 sullo stesso lotto, che mantiene la sua scadenza.
 
 Nessun passaggio su Stripe.
 
@@ -150,12 +158,14 @@ Cosa si usa e cosa va documentato oltre al webhook:
 
 - **Stripe Checkout**: la pagina di pagamento è di Stripe. Il backend crea una *Checkout Session* con importo, descrizione e `metadata` (id della prenotazione o del pagamento interno), e riceve un indirizzo a cui mandare il cliente.
 - **Scadenza della sessione**: Stripe accetta scadenze da un minimo di 30 minuti. Per questo il blocco dell'orario dura 30 minuti, allineato alla sessione.
+- **Manual capture** (D-031): per le sedute, la sessione Checkout blocca l'importo senza incassarlo. Il backend chiama poi Stripe per **incassare**, all'approvazione, o per **annullare** il blocco, al rifiuto, alla scadenza o al ritiro. Il blocco dura in genere circa 7 giorni. I pacchetti si incassano subito.
 - **Webhook**, gli eventi gestiti:
-  - `checkout.session.completed` → conferma prenotazione o crea il lotto del pacchetto
+  - `checkout.session.completed` → seduta: importo bloccato, prenotazione in attesa di approvazione; pacchetto: crea il lotto
   - `checkout.session.expired` → prenotazione scaduta, orario libero
+  - eventi di incasso e annullamento del PaymentIntent: da scegliere al passo 9
 - **Verifica della firma**: ogni webhook arriva firmato. Il backend controlla la firma con il segreto del webhook prima di fidarsi.
 - **Idempotenza**: Stripe può mandare lo stesso evento più volte. Il backend salva l'id di ogni evento elaborato e ignora i doppioni.
-- **Pagamento arrivato tardi**: se un pagamento viene confermato per una prenotazione già scaduta e l'orario è stato preso da altri, il cliente riceve un credito per lo stesso servizio. È coerente con la regola "credito, mai rimborso", ma il cliente va avvisato via email.
+- **Pagamento arrivato tardi**: se un pagamento viene confermato per una prenotazione già scaduta, il backend **annulla il blocco** sulla carta (D-031, prima era un credito) e avvisa il cliente via email.
 - **Modalità test**: in sviluppo si usano le chiavi di test e le carte di prova di Stripe. La Stripe CLI inoltra i webhook al backend in esecuzione sul computer locale.
 - **Rimborsi**: non gestiti dal sistema. In casi eccezionali si fanno a mano dalla dashboard Stripe.
 

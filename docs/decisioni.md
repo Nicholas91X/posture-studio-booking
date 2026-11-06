@@ -79,7 +79,7 @@ Formato: contesto → decisione → alternative scartate → conseguenze.
 ---
 
 ## D-007 — Il pagamento lo conferma il webhook, non il browser
-**Stato:** accettata · 2026-10-13
+**Stato:** accettata · 2026-10-13 · **modificata da D-031** (2026-11-06): per le sedute il webhook conferma il blocco dell'importo, non la prenotazione
 
 **Contesto.** Dopo il pagamento il cliente torna sul sito, ma potrebbe chiudere la finestra prima, oppure l'indirizzo di ritorno potrebbe essere aperto da qualcuno che non ha pagato.
 
@@ -90,7 +90,7 @@ Formato: contesto → decisione → alternative scartate → conseguenze.
 ---
 
 ## D-008 — Blocco temporaneo dell'orario: 30 minuti
-**Stato:** accettata · 2026-10-13
+**Stato:** accettata · 2026-10-13 · conseguenza sul pagamento tardivo **modificata da D-031** (2026-11-06): si annulla il blocco sulla carta invece di creare un credito
 
 **Contesto.** Durante la progettazione si era ipotizzato un blocco di 10 minuti. Stripe però non accetta sessioni Checkout che scadono prima di 30 minuti.
 
@@ -143,7 +143,7 @@ Formato: contesto → decisione → alternative scartate → conseguenze.
 ---
 
 ## D-013 — Le sovrapposizioni le impedisce il database
-**Stato:** accettata · 2026-10-13
+**Stato:** accettata · 2026-10-13 · completata da D-030 (2026-11-06): anche `PENDING_APPROVAL` occupa l'orario
 
 **Contesto.** Due clienti possono provare a prenotare lo stesso orario nello stesso istante. Un controllo solo in Java ("è libero? allora salva") lascia una finestra in cui entrambi passano.
 
@@ -272,7 +272,7 @@ Spariscono aliquote, punti base e il calcolo del lordo con arrotondamento.
 ---
 
 ## D-023 — Orizzonte di prenotazione e limite di sedute future
-**Stato:** accettata · 2026-10-29
+**Stato:** accettata · 2026-10-29 · completata da D-030 (2026-11-06): nel limite contano anche le `PENDING_APPROVAL`
 
 **Contesto.** Un cliente, soprattutto con un pacchetto da molte sedute, potrebbe prenotarle tutte in una volta e occupare il calendario del professionista per settimane, togliendo spazio agli altri clienti.
 
@@ -398,3 +398,80 @@ Nella guida l'interfaccia era proposta in `auth`; spostata in `practitioner` dur
 **Alternative scartate.** *Join su `app_user` nel repository di `practitioner`*: una query sola, ma è proprio ciò che D-002 vieta, e richiederebbe SQL nativo (con D-026 non c'è una relazione JPA su cui fare la join); se `auth` cambia la tabella, si rompe solo a runtime. *Colonna `active` anche in `practitioner`*: due verità sullo stesso fatto, che prima o poi divergono. *Un metodo `isActive(userId)` per un id alla volta*: un N+1 tra moduli, che nessun `join fetch` può risolvere.
 
 **Conseguenze.** I test di `practitioner` e `catalog` con `@DataJpaTest` importano anche i servizi da cui dipendono. Un "nascosto dal sito ma attivo nel pannello" (ferie, pausa) sarebbe un concetto diverso da "account attivo", con un nome suo: se servirà, nuova decisione. Al passo 8: `/api/public/**` aperto e tutto il resto chiuso con una regola per prefisso; il login rifiuta un account disattivato (oggi `DevHeaderCurrentPractitioner` controlla solo che il professionista esista).
+
+---
+
+## D-030 — Approvazione delle prenotazioni: automatica o manuale, per professionista
+**Stato:** accettata · 2026-11-06 · completa D-023 (conteggio del limite) e D-013 (stati che occupano l'orario); sostituisce "non per il giorno stesso" (requisiti, punto aperto 14)
+
+**Contesto.** I professionisti vogliono decidere quali prenotazioni accettare: evitare mezz'ore vuote ora che una seduta può iniziare alla mezz'ora, gestire la stanza unica quando c'è una visita di valutazione, scegliere i clienti, avere il controllo dell'agenda. Il flusso deciso finora confermava la prenotazione appena pagata (D-007).
+
+**Decisione.**
+- Impostazione **per professionista** `booking_approval`, un `enum` con valori `AUTOMATIC` e `MANUAL`. Valore iniziale **`MANUAL`** (scelta di Nicholas): chi non vuole il controllo lo disattiva.
+- **`MANUAL`**: una prenotazione fatta dal cliente, appena pagata (importo bloccato sulla carta, D-031) o con il credito impegnato, passa a `PENDING_APPROVAL`. Il professionista la approva o la rifiuta dal pannello, avvisato con una notifica push (D-032).
+- **Tempo di risposta**: impostazione `approval_window_hours`, modificabile dal professionista. Si conta dal momento della richiesta e si **fotografa** nella prenotazione come scadenza (`approval_deadline`): cambiare l'impostazione non sposta le richieste già in attesa. Il cliente vede questo tempo **prima** di prenotare.
+- **Nessuna risposta entro la scadenza**: la prenotazione si **annulla** da sola, come un rifiuto. Il blocco sulla carta si annulla o il credito torna, e il cliente riceve un'email. È coerente con la scelta del professionista di approvare a mano.
+- Finché è in attesa, il cliente può **ritirare** la richiesta: nessun addebito.
+- **`AUTOMATIC`**: il sistema approva da solo, subito dopo il pagamento o l'impegno del credito. Un solo percorso nel codice per entrambe le modalità.
+- **Anticipo minimo**: il cliente può prenotare solo orari che iniziano **più di 24 ore dopo** il momento della prenotazione. Esempio: alle 10:00 il primo orario prenotabile è alle 10:30 del giorno dopo, o alle 11:00 con la griglia di un'ora. Impostazione per professionista `min_booking_notice_hours`, valore iniziale 24. Vale in entrambe le modalità.
+- Validazione: `approval_window_hours` va da 1 a `min_booking_notice_hours`, così la risposta arriva sempre prima dell'inizio della seduta, e resta molto sotto la durata del blocco sulla carta (D-031). Proposta: al massimo 48.
+- Le prenotazioni dal pannello (D-024) non passano dall'approvazione e non rispettano l'anticipo minimo.
+
+**Alternative scartate.**
+- *Approvazione sempre obbligatoria*: toglie al professionista la conferma immediata quando non gli serve il controllo.
+- *Un booleano* (`requires_approval`): con un `enum` si potrà aggiungere un terzo valore (es. "solo se si sovrappone a una valutazione") senza cambiare il tipo della colonna.
+- *Approvazione automatica alla scadenza*: contraddice la scelta di approvare a mano.
+- *Scadenza a un'ora fissa* (es. "entro le 21 del giorno prima"): più complessa da spiegare e da calcolare di una finestra in ore.
+
+**Conseguenze.**
+- Nuovi stati della prenotazione al passo 7. `PENDING_APPROVAL` occupa l'orario: entra nel vincolo di non sovrapposizione (D-013) e nel limite di prenotazioni future (D-023). Per gli stati finali, nomi proposti `REJECTED`, `APPROVAL_EXPIRED` e `WITHDRAWN` (ritirata dal cliente).
+- Un lavoro programmato, ogni minuto, annulla le richieste scadute.
+- Il calcolo degli orari liberi (passo 6) scarta quelli che iniziano entro l'anticipo minimo.
+- Una conferma che arriva quando mancano meno di 24 ore cade già dentro il preavviso di cancellazione. Esempio: richiesta 25 ore prima, approvata 12 ore dopo. **Accettato** (Nicholas): finché la richiesta è in attesa il cliente può ritirarla gratis, e il tempo di risposta lo conosce prima di prenotare. Il preavviso si conta sempre dall'inizio della seduta, non dalla conferma.
+
+---
+
+## D-031 — Pagamento delle sedute con carta: importo bloccato, incasso all'approvazione
+**Stato:** accettata · 2026-11-06 · **modifica D-007** (il webhook conferma il blocco dei soldi, non la prenotazione) e una conseguenza di D-008 (pagamento arrivato tardi)
+
+**Contesto.** Con l'approvazione (D-030) il professionista può rifiutare una prenotazione già pagata. Incassare e poi rimborsare contraddice "mai rimborso" (D-015) e costa le commissioni di Stripe. Approvare prima e far pagare dopo riapre il problema da cui nasce il progetto: il cliente che non paga.
+
+**Decisione.**
+- Le sessioni Checkout delle **sedute** si creano con *manual capture* (`payment_intent_data.capture_method = manual`). Stripe **blocca** l'importo sulla carta senza incassarlo.
+- `checkout.session.completed` → pagamento `AUTHORIZED`, prenotazione `PENDING_APPROVAL` (D-030).
+- Approvazione → il backend chiede a Stripe l'**incasso** (*capture*) → pagamento `SUCCEEDED`, prenotazione `CONFIRMED`.
+- Rifiuto, scadenza della richiesta o ritiro → il backend **annulla** il blocco (*cancel* del PaymentIntent) → pagamento `CANCELED`. Il cliente non è mai stato addebitato.
+- Con `AUTOMATIC` l'incasso parte subito dopo il webhook: stesso percorso.
+- I **pacchetti** restano con incasso immediato: si comprano crediti, non orari, e non c'è niente da approvare.
+- Pagamento arrivato tardi per una prenotazione già scaduta: si **annulla il blocco** invece di creare un credito.
+
+**Alternative scartate.** *Approvare prima, pagare dopo*: il cliente può non pagare, e l'orario resta occupato per niente. *Pagare e rimborsare al rifiuto*: contro D-015, con commissioni perse.
+
+**Conseguenze.**
+- D-007 resta valida nel principio (a dire che i soldi ci sono è Stripe, mai il browser), ma il webhook ora conferma il **blocco**. La conferma della prenotazione arriva con la risposta di Stripe all'incasso.
+- Due chiamate in uscita verso Stripe (incasso, annullamento), con errori da gestire al passo 9. Un incasso può fallire, per esempio con un blocco scaduto: il professionista ha approvato, ma la prenotazione non si può confermare.
+- Il blocco sulla carta dura in genere circa 7 giorni per i pagamenti online: la finestra di risposta (D-030) deve restare molto più breve. Se un annullamento fallisce, il blocco si scioglie comunque da solo.
+- Il lotto `LATE_PAYMENT` probabilmente non serve più per le sedute: da confermare al passo 10.
+- Da verificare al passo 9 sulla documentazione di Stripe: eventuali commissioni sui blocchi annullati, e la durata esatta del blocco per le carte europee.
+
+---
+
+## D-032 — Notifiche push con Web Push, dal pannello installabile come app
+**Stato:** accettata · 2026-11-06 · modifica l'architettura (modulo `notification`, prima solo email)
+
+**Contesto.** Con l'approvazione manuale (D-030) il professionista deve sapere subito che c'è una richiesta, perché ha un tempo limitato per rispondere. Nicholas: le notifiche push servono in ogni caso. Il pannello è un sito (Next.js), non un'app.
+
+**Decisione.**
+- Il pannello diventa installabile sulla schermata del telefono come app (*PWA*, *Progressive Web App*), con un *service worker*.
+- Notifiche con lo standard **Web Push**, firmate dal backend con una coppia di chiavi **VAPID**. La chiave privata è un segreto e va nel `.env`.
+- Una tabella dei **dispositivi registrati**: un professionista può averne più di uno.
+- **Email di riserva**: se il professionista non ha dispositivi registrati, o l'invio fallisce, la richiesta arriva anche via email.
+- Il testo della notifica **non contiene il nome del cliente**, perché compare sullo schermo bloccato. Esempio: "Nuova prenotazione da approvare: giovedì 12, 9:30". Toccandola si apre il pannello sulla richiesta.
+
+**Alternative scartate.** *App nativa iOS/Android*: due app, gli store, molto lavoro fuori dagli obiettivi del progetto. *Firebase Cloud Messaging*: account Google e SDK in più, senza un vero vantaggio per notifiche a pochi dispositivi. *Solo email*: meno immediata, e più facile da perdere. *Bot Telegram o WhatsApp*: dati e dipendenza presso terzi.
+
+**Conseguenze.**
+- Nessun account presso terzi, ma i messaggi **transitano** dai servizi push dei produttori dei browser (Apple, Google, Mozilla), cifrati: il contenuto non lo leggono.
+- Su iPhone le notifiche arrivano solo se il pannello è **installato** sulla schermata principale, da iOS 16.4 in poi: va spiegato ai professionisti.
+- Un dispositivo registrato può scadere: quando il servizio push risponde che non esiste più, la riga si cancella.
+- Nuova migrazione (tabella dei dispositivi), nuovo segreto in `.env.example`, *service worker* e pagina di attivazione nel frontend. Lato backend al passo 7, insieme all'approvazione; lato frontend al passo 13.
