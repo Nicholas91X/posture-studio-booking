@@ -8,9 +8,9 @@ Progettazione chiusa (passi 1–3). **Passo 4 chiuso** (`passi/04-fondamenta.md`
 
 Fatto nel passo 4: struttura del repository, progetto Spring Boot 4.1.1 su Java 21, PostgreSQL 17 in locale con `infra/docker-compose.dev.yml`, configurazione da variabili d'ambiente (D-018, D-019) con `ddl-auto=validate`, migrazione V1 (`app_user`, `customer`, `practitioner`; D-020, D-021), prima entità `AppUser` con `Email`, `EmailConverter`, `Role` e `AppUserRepository`. Test: `EmailTest` (12 unitari, senza Spring) e `AppUserRepositoryTest` (9 di integrazione con Testcontainers su `postgres:17`), tutti verdi.
 
-**Verifiche di comprensione sospese** dal 2026-10-29 per scelta di Nicholas (`docs/metodo-di-studio.md`); `/verifica` resta disponibile su richiesta. Verifiche fatte: 01 (attori del passo 4), 02 (JDBC), 03 (Flyway e vincoli); 04 e 05 abbandonate. Guide di studio: 01–13 in `docs/studio/` (06 come funziona Spring, 07 costruttori, 08 migrazione V2, 09 modulo `practitioner`, 10 modulo `catalog`, 11 API del pannello, 12 API pubbliche, 13 calendario: panorama e scelte del passo 6).
+**Verifiche di comprensione sospese** dal 2026-10-29 per scelta di Nicholas (`docs/metodo-di-studio.md`); `/verifica` resta disponibile su richiesta. Verifiche fatte: 01 (attori del passo 4), 02 (JDBC), 03 (Flyway e vincoli); 04 e 05 abbandonate. Guide di studio: 01–13 in `docs/studio/` (06 come funziona Spring, 07 costruttori, 08 migrazione V2, 09 modulo `practitioner`, 10 modulo `catalog`, 11 API del pannello, 12 API pubbliche, 13 calendario: panorama e scelte del passo 6, 14 migrazione V3).
 
-**Passo 6 in corso**: guida 13 scritta (2026-11-06), in attesa delle scelte di Nicholas (parte 8 della guida: scatto, aggancio della griglia, versioni degli orari, scelte piccole). Poi la guida del pezzo 1 (migrazione V3).
+**Passo 6 in corso**: guida 13 scritta e scelte fatte (2026-11-06): scatto 30/60 e griglia dall'inizio della fascia (D-033), versioni settimanali degli orari (D-034), calcolo come funzione pura e API pubblica (D-035). Guida 14 (pezzo 1, migrazione V3 e impostazioni in Java) scritta, in attesa delle scelte di Nicholas: fasce sovrapposte (solo Java o *exclusion constraint*), validazione "30 o 60", chi scrive il codice.
 
 Risposte dello studio del 2026-11-02 e 2026-11-06 sul calendario (requisiti, "Calendario"): scatto di un'ora, ma valutazione da 30 minuti e seduta successiva possono iniziare alla mezz'ora; nessuna pausa; seduta sempre dentro la fascia; niente prenotazioni per il giorno stesso (punto 14 chiuso); orari lunedì–venerdì 9–13 e 14–19, modificabili anche per date future; **stanza unica**, ma la sovrapposizione con una valutazione si **segnala**, non si impedisce. Restano aperti: punto 3 (scegliere tra un interruttore e `slot_step_minutes` limitato a 30 e 60) e punto 13 (schema con data di inizio validità).
 
@@ -50,9 +50,9 @@ Il frontend può partire prima, appena esistono le prime API (dopo il passo 7), 
 
 Elencati in `requisiti.md`, sezione "Punti aperti". Da chiudere prima del passo indicato:
 - Uno o due conti Stripe (quasi certamente due: due partite IVA distinte) → prima del passo 9
-- Scatto di inizio delle sedute: inizio alla mezz'ora sì o no a scelta del professionista; resta da scegliere come esprimerlo (proposta: `slot_step_minutes` limitato a 30 e 60) → guida del passo 6
+- ~~Scatto di inizio delle sedute~~ → chiuso il 2026-11-06 (D-033)
 - ~~Approvazione: valore iniziale e conferma dentro il preavviso~~ → chiuso il 2026-11-06: manuale; la conferma tardiva va bene (D-030)
-- Orari di lavoro modificabili da una data futura (schema con data di inizio validità) → guida del passo 6
+- ~~Orari di lavoro modificabili da una data futura~~ → chiuso il 2026-11-06 (D-034)
 - Stanza unica: segnalazione nel pannello (come si riconosce una valutazione, cosa mostra) → prima del passo 7
 - ~~"Non per il giorno stesso" contro il preavviso di 24 ore~~ → chiuso il 2026-11-06 (va bene; credito a mano, punto aperto 6)
 - Cancellazione da parte dello studio → prima del passo 11

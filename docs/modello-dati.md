@@ -8,6 +8,7 @@ Modifiche dovute alle migrazioni:
 
 Modifiche di progettazione:
 - **2026-10-29**: niente IVA (D-022), un solo `price_cents` al posto di netto/aliquota/lordo; orizzonte e limite di prenotazioni future in `practitioner` (D-023); prenotazione dal pannello (D-024).
+- **2026-11-06, passo 6**: versioni dello schema settimanale (`working_schedule`, D-034); scatto solo 30 o 60 con default 60 (D-033); orizzonte e anticipo minimo nella V3 (D-035).
 - **2026-11-06**: approvazione e anticipo minimo in `practitioner`, nuovi stati e scadenza dell'approvazione in `booking` (D-030); stati `AUTHORIZED` e `CANCELED` in `payment` (D-031); tabella `push_subscription` (D-032).
 
 Convenzioni:
@@ -20,7 +21,7 @@ Convenzioni:
 ## Mappa
 
 ```
-practitioner ─┬─< working_hours
+practitioner ─┬─< working_schedule ──< working_hours
               ├─< unavailability
               ├─< service ──────< package_offer
               ├─< booking >───── customer
@@ -60,12 +61,12 @@ Chiunque possa accedere. Separato da cliente e professionista perché l'accesso 
 | last_name | text | |
 | cancellation_notice_hours | int | default 24 |
 | single_credit_validity_days | int | default 90 |
-| slot_step_minutes | int | ogni quanto può iniziare una seduta, default 30 nello schema; lo studio ha scelto 60 (2026-11-02), ma la visita di valutazione e la seduta che la segue possono iniziare alla mezz'ora: modello della griglia ancora aperto (requisiti, punto aperto 3) |
-| booking_horizon_days | int | quanti giorni avanti può prenotare il cliente, default 21 (D-023, da confermare). Migrazione del passo 7 |
+| slot_step_minutes | int | ogni quanto può iniziare una seduta: solo 30 o 60, default 60 (D-033). V1 aveva `> 0` e default 30: li cambia la V3 |
+| booking_horizon_days | int | quanti giorni avanti può prenotare il cliente, default 21 (D-023, da confermare). Migrazione V3, passo 6 (D-035) |
 | max_future_bookings | int | prenotazioni future aperte al massimo per cliente con questo professionista, default 2 (D-023, da confermare). Migrazione del passo 7 |
 | booking_approval | text | `AUTOMATIC` o `MANUAL`, default `MANUAL` (D-030). Migrazione del passo 7 |
 | approval_window_hours | int | tempo di risposta in modalità manuale, da 1 a `min_booking_notice_hours` (D-030). Migrazione del passo 7 |
-| min_booking_notice_hours | int | anticipo minimo per prenotare, default 24: si prenotano solo orari che iniziano più di N ore dopo (D-030). Migrazione del passo 6 o 7 |
+| min_booking_notice_hours | int | anticipo minimo per prenotare, default 24: si prenotano solo orari che iniziano più di N ore dopo (D-030). Migrazione V3, passo 6 |
 
 Orizzonte, limite, anticipo minimo e approvazione valgono solo quando prenota il cliente, non per le prenotazioni fatte dal pannello (D-024), che però contano nel limite. Nel conteggio entrano le prenotazioni `PENDING_PAYMENT`, `PENDING_APPROVAL` (D-030) e `CONFIRMED` con `starts_at` nel futuro.
 
@@ -89,18 +90,29 @@ Orizzonte, limite, anticipo minimo e approvazione valgono solo quando prenota il
 
 ## Quando
 
-### `working_hours`
+### `working_schedule`
+Una versione dello schema settimanale, valida da una data (D-034).
+
 | Colonna | Tipo | Note |
 |---|---|---|
 | id | bigint | |
 | practitioner_id | bigint | |
+| valid_from | date | data locale da cui vale; `unique (practitioner_id, valid_from)` |
+
+Per un giorno D vale la versione con la `valid_from` più recente non successiva a D. Una versione già iniziata non si modifica; una futura si sostituisce o si cancella.
+
+### `working_hours`
+Le fasce di una versione.
+
+| Colonna | Tipo | Note |
+|---|---|---|
+| id | bigint | |
+| schedule_id | bigint | → `working_schedule` (prima della D-034 era `practitioner_id`) |
 | day_of_week | smallint | 1 = lunedì … 7 = domenica (come `java.time.DayOfWeek`) |
-| start_time | time | |
-| end_time | time | maggiore di `start_time` |
+| start_time | time | all'ora piena o alla mezz'ora (D-033) |
+| end_time | time | maggiore di `start_time`, all'ora piena o alla mezz'ora |
 
-Più righe per lo stesso giorno = fasce separate (es. mattina e pomeriggio).
-
-**Da valutare al passo 6 (2026-11-06)**: lo studio vuole poter cambiare lo schema anche **da una data futura** (es. orario estivo). Con questa tabella una modifica vale subito. Possibile soluzione: una data di inizio validità per ogni versione dello schema (requisiti, punto aperto 13).
+Più righe per lo stesso giorno = fasce separate (es. mattina e pomeriggio), che non si sovrappongono.
 
 ### `unavailability`
 | Colonna | Tipo | Note |
@@ -110,6 +122,8 @@ Più righe per lo stesso giorno = fasce separate (es. mattina e pomeriggio).
 | starts_at | timestamptz | |
 | ends_at | timestamptz | |
 | reason | text | facoltativo, visibile solo al professionista |
+
+`ends_at` maggiore di `starts_at`. Possono sovrapporsi tra loro; si cancellano davvero (D-035).
 
 ## Cosa si vende
 

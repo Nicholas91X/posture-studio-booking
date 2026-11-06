@@ -272,7 +272,7 @@ Spariscono aliquote, punti base e il calcolo del lordo con arrotondamento.
 ---
 
 ## D-023 — Orizzonte di prenotazione e limite di sedute future
-**Stato:** accettata · 2026-10-29 · completata da D-030 (2026-11-06): nel limite contano anche le `PENDING_APPROVAL`
+**Stato:** accettata · 2026-10-29 · completata da D-030 (2026-11-06): nel limite contano anche le `PENDING_APPROVAL` · la colonna dell'orizzonte nasce al passo 6 (V3), non al passo 7 (D-035)
 
 **Contesto.** Un cliente, soprattutto con un pacchetto da molte sedute, potrebbe prenotarle tutte in una volta e occupare il calendario del professionista per settimane, togliendo spazio agli altri clienti.
 
@@ -475,3 +475,59 @@ Nella guida l'interfaccia era proposta in `auth`; spostata in `practitioner` dur
 - Su iPhone le notifiche arrivano solo se il pannello è **installato** sulla schermata principale, da iOS 16.4 in poi: va spiegato ai professionisti.
 - Un dispositivo registrato può scadere: quando il servizio push risponde che non esiste più, la riga si cancella.
 - Nuova migrazione (tabella dei dispositivi), nuovo segreto in `.env.example`, *service worker* e pagina di attivazione nel frontend. Lato backend al passo 7, insieme all'approvazione; lato frontend al passo 13.
+
+---
+
+## D-033 — Scatto di 30 o 60 minuti; la griglia parte dall'inizio di ogni fascia
+**Stato:** accettata · 2026-11-06 · chiude il punto aperto 3 dei requisiti
+
+**Contesto.** Le sedute iniziano ogni ora, ma ogni professionista può permettere l'inizio alla mezz'ora (requisiti, "Calendario"). `practitioner.slot_step_minutes` esiste dal V1 e accetta qualsiasi numero positivo, con default 30. Confronto completo: `docs/studio/13-calendario-panorama-e-scelte.md`, parte 3.
+
+**Decisione.**
+- `slot_step_minutes` vale solo **30 o 60**, con default **60**. Il pannello lo mostra come un interruttore "inizio alla mezz'ora sì/no" e invia il numero.
+- La griglia parte dall'**inizio di ogni fascia di lavoro**: inizio, inizio + scatto, e così via, finché la seduta finisce entro la fascia.
+- Le fasce iniziano e finiscono solo **all'ora piena o alla mezz'ora**.
+
+**Alternative scartate.** *Un booleano `allow_half_hour_starts`*: una colonna da eliminare e una da creare, una traduzione in più nel calcolo, e nessuno spazio per un terzo valore. *Griglia agganciata all'orologio*: con una fascia che inizia alle 9:30 e scatto 60, la prima mezz'ora andrebbe persa.
+
+**Conseguenze.** V3 sostituisce il vincolo dello scatto e il suo default. Con fasce a ore piene o mezz'ore, i due agganci danno lo stesso risultato con lo scatto di 30; differiscono solo con scatto 60 e fasce che iniziano alla mezz'ora, e lì vince l'orario scritto dal professionista.
+
+---
+
+## D-034 — Orari di lavoro in versioni settimanali, ognuna con una data di inizio
+**Stato:** accettata · 2026-11-06 · chiude il punto aperto 13 dei requisiti; modifica la tabella `working_hours` progettata in `modello-dati.md`
+
+**Contesto.** Lo studio vuole cambiare gli orari "quando e come vuole", anche **da una data futura** (es. orario estivo dal 1° giugno). Con uno schema settimanale unico, una modifica vale subito. Confronto completo: guida 13, parte 4.
+
+**Decisione.**
+- Una **versione** è una settimana-tipo completa (`working_schedule`), con una `valid_from` (data locale). Le sue fasce stanno in `working_hours`, che punta alla versione invece che al professionista.
+- **Lettura**: per un giorno D vale la versione con la `valid_from` più recente tra quelle non successive a D. Nessuna versione → nessun orario libero.
+- **Scrittura**: una versione si salva **intera**, con tutte le fasce della settimana, e il servizio rifiuta fasce sovrapposte nello stesso giorno. Una versione **già iniziata non si modifica**: per cambiare "da subito" se ne crea una con `valid_from` di oggi. Una versione **futura** si sostituisce o si cancella.
+- `unique (practitioner_id, valid_from)`.
+- Ferie e assenze restano **indisponibilità** (non versioni).
+
+**Alternative scartate.** *Solo lo schema settimanale*: il caso "da una data futura" non si può fare. *Validità `from/to` su ogni fascia*: righe di periodi diversi possono accavallarsi nello stesso giorno, e impedirlo richiede vincoli complicati.
+
+**Conseguenze.** È *effective dating*: la storia degli orari passati resta. Con l'anticipo minimo di più di 24 ore (D-030), una nuova versione da oggi non tocca orari ancora prenotabili. Al passo 7: una nuova versione può lasciare fuori orario prenotazioni già fatte, che restano valide e si segnalano nel pannello (requisiti, punto aperto 13).
+
+---
+
+## D-035 — Calcolo degli orari liberi: funzione pura, orari locali convertiti giorno per giorno
+**Stato:** accettata · 2026-11-06 · anticipa al passo 6 la colonna dell'orizzonte di D-023 (la regola non cambia)
+
+**Contesto.** Il calcolo degli orari liberi è la logica più ricca del sistema, dipende da "adesso" (anticipo minimo, D-030) e attraversa i cambi dell'ora. Confronto completo: guida 13, parti 2, 5 e 6.
+
+**Decisione.**
+- Il calcolo è una **funzione pura**: riceve versioni, indisponibilità, intervalli occupati (vuoti fino al passo 7), durata del servizio, impostazioni e `now` (`Instant`), e restituisce gli orari liberi. Non legge il database né l'ora di sistema.
+- `ScheduleService` carica i dati, chiede l'ora a un bean `Clock` (`Clock.systemUTC()` in produzione, `Clock.fixed` nei test) e chiama il calcolo.
+- Date e orari si generano **in locale** (`Europe/Rome`) e si convertono in `Instant` un giorno alla volta, con `ZonedDateTime.of`. Mai "istante + 24 ore".
+- Intervalli **semiaperti** `[inizio, fine)`, come l'*exclusion constraint* del passo 7: si sovrappongono se `a1 < b2 && b1 < a2`.
+- API pubblica: `GET /api/public/practitioners/{id}/services/{serviceId}/slots?from=…&to=…`, con date locali. L'intervallo si taglia in automatico su anticipo minimo e orizzonte; fuori dall'orizzonte la risposta è un elenco vuoto, non un errore. `from > to` → 400. Servizio non in vendita o professionista disattivato → 404.
+- Orari nelle API in **ISO-8601 con l'offset di Roma** (`2026-11-09T09:00:00+01:00`, `OffsetDateTime`), in ingresso e in uscita. Ogni orario libero espone solo `start` ed `end`.
+- **Orizzonte**: l'ultimo giorno prenotabile è oggi (a Roma) + `booking_horizon_days`, compreso. La colonna nasce nella V3 invece che al passo 7.
+- Anticipo minimo in `practitioner.min_booking_notice_hours` (default 24, V3): sono liberi solo gli orari che iniziano **più di** N ore dopo `now`.
+- Indisponibilità: `ends_at > starts_at`; possono sovrapporsi tra loro; si cancellano davvero; `reason` solo nel pannello, mai nelle API pubbliche.
+
+**Alternative scartate.** *Calcolo dentro il servizio Spring, con query e `Instant.now()`*: ogni test avrebbe bisogno di un container e dipenderebbe dal giorno in cui gira. *Orari in UTC (`Z`) nelle API*: corretti, ma il frontend dovrebbe convertire ogni orario. *Errore per un intervallo oltre l'orizzonte*: il cliente che sfoglia le settimane non sta sbagliando niente.
+
+**Conseguenze.** Il calcolo ha molti test unitari, compresi i cambi dell'ora di marzo e ottobre (guida 13, parte 7). Le dipendenze tra moduli diventano `schedule` → `catalog` → `practitioner` → `auth`, con `schedule` che usa anche `practitioner` direttamente. Al passo 7 `booking` fornisce gli intervalli occupati e chiede a `schedule` se un orario è libero; il calcolo deve considerare libere le `PENDING_PAYMENT` con blocco scaduto (`modello-dati.md`, `booking`).

@@ -404,6 +404,8 @@ Le propongo senza chiederti; dimmi se qualcuna non ti torna.
 
 ## Parte 8 — Cosa devi decidere
 
+> **Decise il 2026-11-06**: scatto 30 o 60 con default 60, griglia dall'inizio della fascia, fasce all'ora piena o alla mezz'ora (D-033); versioni settimanali con data di inizio (D-034); scelte piccole tutte accettate (D-035).
+
 Prima di scrivere la guida del pezzo 1 (migrazione V3), mi servono:
 
 1. **Lo scatto** (parte 3.2): A (`slot_step_minutes` limitato a 30 e 60, default 60) o B (booleano)? Io: **A**.
