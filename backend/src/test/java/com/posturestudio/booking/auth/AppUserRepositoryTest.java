@@ -1,5 +1,8 @@
 package com.posturestudio.booking.auth;
 
+import java.util.List;
+import java.util.Set;
+
 import jakarta.persistence.EntityManager;
 import org.junit.jupiter.api.Test;
 import static org.assertj.core.api.Assertions.assertThat;
@@ -7,20 +10,15 @@ import static org.assertj.core.api.Assertions.assertThat;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.data.jpa.test.autoconfigure.DataJpaTest;
-import org.springframework.boot.testcontainers.service.connection.ServiceConnection;
-import org.testcontainers.junit.jupiter.Container;
-import org.testcontainers.junit.jupiter.Testcontainers;
-import org.testcontainers.postgresql.PostgreSQLContainer;
+import org.springframework.context.annotation.Import;
 import org.junit.jupiter.api.Assertions;
 import org.springframework.dao.DataIntegrityViolationException;
 
-@DataJpaTest 
-@Testcontainers 
-public class AppUserRepositoryTest {
+import com.posturestudio.booking.TestcontainersConfiguration;
 
-    @Container 
-    @ServiceConnection
-    static PostgreSQLContainer postgres = new PostgreSQLContainer("postgres:17");
+@DataJpaTest
+@Import(TestcontainersConfiguration.class)
+public class AppUserRepositoryTest {
 
     @Autowired
     AppUserRepository repository;
@@ -153,5 +151,42 @@ public class AppUserRepositoryTest {
         // assert
         assertThat(repository.findByEmail(email)).get().extracting(AppUser::isActive).isEqualTo(true);
     }
-    
+
+    @Test
+    void findActiveIdsAmongReturnsOnlyActiveUsersAmongTheRequested() {
+        // arrange: one active, one deactivated, one active but not asked for
+        long active = repository.save(new AppUser(new Email("active@example.com"), Role.PRACTITIONER)).getId();
+        AppUser deactivated = repository.save(new AppUser(new Email("off@example.com"), Role.PRACTITIONER));
+        deactivated.deactivate();
+        long notAsked = repository.save(new AppUser(new Email("other@example.com"), Role.PRACTITIONER)).getId();
+        repository.flush();
+        entityManager.clear();
+
+        // act
+        Set<Long> result = repository.findActiveIdsAmong(List.of(active, deactivated.getId(), 999999L));
+
+        // assert
+        assertThat(result).containsExactly(active);
+        assertThat(result).doesNotContain(notAsked);
+    }
+
+    @Test
+    void emailWithCapitalLettersInsertedWithSqlIsRejected() {
+        // plain SQL skips the normalization of Email: this proves the database check, not Java
+        var exception = Assertions.assertThrows(
+            DataIntegrityViolationException.class,
+            () -> jdbc.update("insert into app_user (role, email) values ('CUSTOMER', 'John.Doe@Example.com')")
+        );
+        assertThat(exception.getMessage()).contains("app_user_email_ck");
+    }
+
+    @Test
+    void unknownRoleInsertedWithSqlIsRejected() {
+        var exception = Assertions.assertThrows(
+            DataIntegrityViolationException.class,
+            () -> jdbc.update("insert into app_user (role, email) values ('GUEST', 'john.doe@example.com')")
+        );
+        assertThat(exception.getMessage()).contains("app_user_role_ck");
+    }
+
 }

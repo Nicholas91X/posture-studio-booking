@@ -101,7 +101,7 @@ Oltre a quando Nicholas lo lancia:
 - **a fine passo**, includendo le domande da colloquio del documento di passo;
 - **ripasso misto** ogni tanto, sui passi vecchi.
 
-Claude lo propone in questi momenti, senza imporlo.
+Claude lo propone in questi momenti, senza imporlo. **Finché la sospensione è in vigore, non lo propone**: i test si fanno solo su richiesta esplicita di Nicholas.
 
 ---
 

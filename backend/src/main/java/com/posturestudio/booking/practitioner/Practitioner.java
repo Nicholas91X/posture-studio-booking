@@ -1,0 +1,102 @@
+package com.posturestudio.booking.practitioner;
+
+import static com.posturestudio.booking.shared.Checks.requireOneOf;
+import static com.posturestudio.booking.shared.Checks.requirePositive;
+
+import java.time.Instant;
+import java.util.Objects;
+import java.util.Set;
+
+import org.hibernate.annotations.Generated;
+import jakarta.persistence.*;
+
+// Package-private: other modules use PractitionerService, never the entity (D-002, D-026)
+@Entity
+@Table(name = "practitioner")
+class Practitioner {
+
+    // half-hour starts on or off (D-033): the same values as practitioner_slot_step_minutes_ck
+    static final Set<Integer> SLOT_STEPS = Set.of(30, 60);
+
+    protected Practitioner() {
+        // JPA needs a no-arg constructor.
+        // No public constructor yet: practitioners are created by the admin (D-021, step 8)
+    }
+
+    @Id
+    @GeneratedValue(strategy = GenerationType.IDENTITY)
+    private Long id;
+
+    // app_user belongs to the auth module: only the id, never the entity (D-026)
+    @Column(updatable = false)
+    private Long userId;
+
+    @Column
+    private String firstName;
+
+    @Column
+    private String lastName;
+
+    @Column
+    private int cancellationNoticeHours;
+
+    @Column
+    private int singleCreditValidityDays;
+
+    @Column
+    private int slotStepMinutes;
+
+    @Column
+    private int minBookingNoticeHours;
+
+    @Column
+    private int bookingHorizonDays;
+
+    @Column(updatable = false)
+    @Generated
+    private Instant createdAt;
+
+    // ***** METHODS *****
+
+    // The entity protects its own state, whoever calls it.
+    // Invalid values should be stopped earlier by request validation: here they are a programming error.
+    // All values are checked before any field changes: an invalid change leaves the entity as it was
+    void changeSettings(PractitionerSettings settings) {
+        Objects.requireNonNull(settings, "settings must not be null");
+        int notice = requirePositive(settings.cancellationNoticeHours(), "cancellationNoticeHours");
+        int validity = requirePositive(settings.singleCreditValidityDays(), "singleCreditValidityDays");
+        int step = requireOneOf(settings.slotStepMinutes(), SLOT_STEPS, "slotStepMinutes");
+        int bookingNotice = requirePositive(settings.minBookingNoticeHours(), "minBookingNoticeHours");
+        int horizon = requirePositive(settings.bookingHorizonDays(), "bookingHorizonDays");
+        this.cancellationNoticeHours = notice;
+        this.singleCreditValidityDays = validity;
+        this.slotStepMinutes = step;
+        this.minBookingNoticeHours = bookingNotice;
+        this.bookingHorizonDays = horizon;
+    }
+
+    PractitionerSettings settings() {
+        return new PractitionerSettings(cancellationNoticeHours, singleCreditValidityDays, slotStepMinutes,
+                minBookingNoticeHours, bookingHorizonDays);
+    }
+
+    Long getId() {
+        return id;
+    }
+
+    Long getUserId() {
+        return userId;
+    }
+
+    String getFirstName() {
+        return firstName;
+    }
+
+    String getLastName() {
+        return lastName;
+    }
+
+    Instant getCreatedAt() {
+        return createdAt;
+    }
+}

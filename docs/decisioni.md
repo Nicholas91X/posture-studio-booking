@@ -79,7 +79,7 @@ Formato: contesto → decisione → alternative scartate → conseguenze.
 ---
 
 ## D-007 — Il pagamento lo conferma il webhook, non il browser
-**Stato:** accettata · 2026-10-13
+**Stato:** accettata · 2026-10-13 · **modificata da D-031** (2026-11-06): per le sedute il webhook conferma il blocco dell'importo, non la prenotazione
 
 **Contesto.** Dopo il pagamento il cliente torna sul sito, ma potrebbe chiudere la finestra prima, oppure l'indirizzo di ritorno potrebbe essere aperto da qualcuno che non ha pagato.
 
@@ -90,7 +90,7 @@ Formato: contesto → decisione → alternative scartate → conseguenze.
 ---
 
 ## D-008 — Blocco temporaneo dell'orario: 30 minuti
-**Stato:** accettata · 2026-10-13
+**Stato:** accettata · 2026-10-13 · conseguenza sul pagamento tardivo **modificata da D-031** (2026-11-06): si annulla il blocco sulla carta invece di creare un credito
 
 **Contesto.** Durante la progettazione si era ipotizzato un blocco di 10 minuti. Stripe però non accetta sessioni Checkout che scadono prima di 30 minuti.
 
@@ -143,7 +143,7 @@ Formato: contesto → decisione → alternative scartate → conseguenze.
 ---
 
 ## D-013 — Le sovrapposizioni le impedisce il database
-**Stato:** accettata · 2026-10-13
+**Stato:** accettata · 2026-10-13 · completata da D-030 (2026-11-06): anche `PENDING_APPROVAL` occupa l'orario
 
 **Contesto.** Due clienti possono provare a prenotare lo stesso orario nello stesso istante. Un controllo solo in Java ("è libero? allora salva") lascia una finestra in cui entrambi passano.
 
@@ -272,7 +272,7 @@ Spariscono aliquote, punti base e il calcolo del lordo con arrotondamento.
 ---
 
 ## D-023 — Orizzonte di prenotazione e limite di sedute future
-**Stato:** accettata · 2026-10-29
+**Stato:** accettata · 2026-10-29 · completata da D-030 (2026-11-06): nel limite contano anche le `PENDING_APPROVAL` · la colonna dell'orizzonte nasce al passo 6 (V3), non al passo 7 (D-035)
 
 **Contesto.** Un cliente, soprattutto con un pacchetto da molte sedute, potrebbe prenotarle tutte in una volta e occupare il calendario del professionista per settimane, togliendo spazio agli altri clienti.
 
@@ -308,3 +308,276 @@ Le due regole valgono solo quando **prenota il cliente**. Le prenotazioni fatte 
 - Il pagamento in studio reintroduce il rischio da cui nasce il progetto (seduta non pagata in anticipo): è una scelta del professionista per i propri clienti, non un'opzione per chi prenota da solo.
 - Creare un cliente dal pannello segue le regole già decise: email normalizzata (D-020), un solo ruolo per utente (D-021), riattivazione se l'account esiste ma è disattivato.
 - Da chiarire al passo 7/13: cosa rende un cliente "suo" (cosa può cercare e vedere un professionista nell'elenco dei clienti), coerentemente con la regola "il professionista vede solo le proprie prenotazioni".
+
+---
+
+## D-025 — Il servizio di un pacchetto è dello stesso professionista: foreign key composta
+**Stato:** accettata · 2026-10-29 · **modificata da D-026** (2026-10-29): in Java il professionista è un `Long practitionerId`, non un `@ManyToOne`; il vincolo nel database non cambia
+
+**Contesto.** `package_offer` ha sia `practitioner_id` sia `service_id`. Ognuna delle due foreign key, presa da sola, accetta un pacchetto di un professionista costruito sul servizio dell'altro: i dati sarebbero incoerenti. Un `check` non può impedirlo, perché vede solo la propria riga. Confronto completo: `docs/studio/08-migrazione-v2-catalogo.md`, parte 2.
+
+**Decisione.** Foreign key **composta** in V2:
+- in `service`, `unique (id, practitioner_id)` (`service_id_practitioner_id_uk`), logicamente ridondante con la chiave primaria ma richiesto da PostgreSQL come destinazione della foreign key;
+- in `package_offer`, `foreign key (service_id, practitioner_id) references service (id, practitioner_id)` (`package_offer_service_practitioner_fk`).
+
+Restano anche le foreign key semplici verso `practitioner` e `service`: implicate dalla composta, ma rendono leggibile ogni relazione da sola. In Java, `CatalogService` controlla comunque proprietà e stato del servizio, per dare un errore chiaro.
+
+**Alternative scartate.**
+- *Togliere `practitioner_id` da `package_offer`* (normalizzazione): incoerenza impossibile per costruzione, ma ogni ricerca "pacchetti del professionista" passa per una join, e in JPA per una relazione in più da caricare.
+- *Trigger*: logica procedurale nascosta nel database, in un secondo linguaggio, per una regola che una foreign key esprime in modo dichiarativo.
+- *Solo in Java*: non protegge da bug, scritture esterne e richieste concorrenti (PD-17).
+
+**Conseguenze.** La regola vale anche con un bug in Java o con un `insert` a mano (provato da `CatalogSchemaTest`). Entrambe le colonne sono `not null`: con un `NULL`, una foreign key composta non verrebbe controllata (`MATCH SIMPLE`). JPA non conosce il vincolo: le entità avranno due `@ManyToOne` separati. Lo stesso schema è candidato per `credit_lot` al passo 10, che ha le stesse due colonne.
+
+---
+
+## D-026 — Tra moduli ci si riferisce per id; una sola `NotFoundException`
+**Stato:** accettata · 2026-10-29 · modifica una conseguenza di D-025
+
+**Contesto.** Le tabelle di un modulo hanno chiavi esterne verso tabelle di altri moduli (`practitioner.user_id` → `app_user` di `auth`; `service.practitioner_id` → `practitioner`). In JPA una chiave esterna si può mappare come oggetto (`@ManyToOne`, `@OneToOne`) o come semplice id. Confronto completo: `docs/studio/09-modulo-practitioner.md`, parte 2.
+
+**Decisione.**
+- **Tra moduli diversi** l'entità tiene solo l'id (`Long userId`, `Long practitionerId`). Per sapere qualcosa dell'altro modulo si chiama il suo servizio pubblico, che restituisce `record`.
+- **Dentro lo stesso modulo** si usano le relazioni JPA (es. `PackageOffer` → `Service`, entrambe di `catalog`).
+- Entità e repository restano **non pubblici**: D-002 la fa rispettare il compilatore.
+- Per "non esiste" (e, dalle API, "non è tuo") c'è **una sola** `NotFoundException` (`RuntimeException`), nel package `shared`. Diventa un 404 nel `@RestControllerAdvice`.
+
+**Alternative scartate.**
+- *Oggetti anche tra moduli*: navigazione comoda, ma entità pubbliche, caricamento *lazy* che attraversa i moduli (con `LazyInitializationException` fuori dalla transazione, D-019) e la possibilità per un modulo di modificare le entità di un altro saltando le sue regole.
+- *Un'eccezione per modulo*: più precisa, ma per chi chiama l'API la differenza non esiste (sempre 404), e il gestore degli errori dovrebbe conoscerle tutte.
+
+**Conseguenze.** Niente join JPQL tra entità di moduli diversi: se servono dati di più moduli, li combina un servizio. È lo stesso principio degli aggregati del Domain-Driven Design e di Spring Modulith. La coerenza tra id di moduli diversi la garantiscono le foreign key del database (D-025 resta identica nello schema).
+
+---
+
+## D-027 — Regole violate: una `BusinessRuleException` con codice, risposta 409
+**Stato:** accettata · 2026-10-29
+
+**Contesto.** Alcune richieste falliscono non perché una cosa manca (404, D-026) né perché sono scritte male (400), ma perché una regola lo impedisce nello stato attuale: un pacchetto su un servizio disattivato oggi, un orario già preso o un credito scaduto domani. L'architettura chiede errori con un codice leggibile che il frontend traduce in italiano. Confronto: `docs/studio/10-modulo-catalog.md`, 1.3.
+
+**Decisione.**
+- Una sola `BusinessRuleException` (`RuntimeException`) nel package `shared`, con un codice preso dall'`enum` `ErrorCode` (primo valore: `SERVICE_NOT_ACTIVE`).
+- Il gestore degli errori la trasforma in **409 Conflict**, con il codice nel `ProblemDetail`.
+
+**Alternative scartate.** *Una classe per ogni regola*: diventerebbero decine, e il gestore degli errori dovrebbe conoscerle tutte. *Codice come `String`*: errori di battitura possibili, nessun elenco unico. *422 Unprocessable Content*: adatto quando è il contenuto della richiesta a non avere senso; le nostre regole dipendono quasi sempre dallo stato delle risorse.
+
+**Conseguenze.** Ogni nuova regola aggiunge un valore a `ErrorCode`, e il frontend aggiunge la sua traduzione. Il codice è parte del contratto delle API: una volta pubblicato, non si rinomina.
+
+---
+
+## D-028 — Professionista corrente provvisorio: interfaccia + header, da rimuovere al passo 8
+**Stato:** accettata · 2026-10-29 · **provvisoria**: l'implementazione va rimossa al passo 8
+
+**Contesto.** Le API del pannello devono sapere quale professionista agisce, ma l'accesso arriva al passo 8. Serve un sostituto che stia in un punto solo, che nei test permetta di agire come due professionisti diversi, e che sia chiaramente provvisorio. Confronto: `docs/studio/11-api-pannello.md`, parte 2.
+
+**Decisione.**
+- Interfaccia pubblica `CurrentPractitioner` (`long id()`) nel modulo **`practitioner`**. I controller dipendono solo da lei.
+- Implementazione provvisoria `DevHeaderCurrentPractitioner` (package-private, stesso modulo): legge l'header `X-Practitioner-Id` e controlla che il professionista esista. Header mancante, non numerico o con un id inesistente → `NotAuthenticatedException` → **401**.
+- **Al passo 8** l'implementazione si cancella e la sostituisce una che chiede ad `auth` l'utente autenticato e lo traduce nel suo professionista (`practitioner.user_id`). Criterio di "fatto" del passo 8.
+
+Nella guida l'interfaccia era proposta in `auth`; spostata in `practitioner` durante l'implementazione per evitare un ciclo tra moduli (il controller di `practitioner` dipenderebbe da `auth`, e `auth` da `practitioner` per sapere se il professionista esiste). Così le dipendenze vanno in un verso solo: `catalog` → `practitioner` → `auth`.
+
+**Alternative scartate.** *Valore fisso nella configurazione*: un solo professionista per contesto, il test "A non tocca le cose di B" non si può scrivere. *Id nella URL*: la stessa identità dichiarata, sparsa in ogni indirizzo, da riscrivere al passo 8. *Spring Security subito con un utente finto*: anticipa a metà il passo 8.
+
+**Conseguenze.** L'identità è **dichiarata dal client, non verificata**: l'implementazione non deve mai arrivare in produzione (il sistema non va online prima del passo 14). Scelte collegate dello stesso pezzo: URL sotto `/api/panel/...`, creazione con `POST` (201 + `Location`), modifica con `PUT`, disattivazione e riattivazione come azioni `POST .../deactivate` e `.../activate`; annotazioni di Bean Validation sui `record` di ingresso dei moduli.
+
+---
+
+## D-029 — "Professionista attivo" si chiede ad `auth`, con una domanda su un insieme di id
+**Stato:** accettata · 2026-10-30
+
+**Contesto.** L'elenco pubblico dei professionisti mostra solo quelli attivi, e il catalogo pubblico di un professionista disattivato non deve esistere. Ma `practitioner` non ha una colonna `active`: la disattivazione è quella dell'account, `app_user.active` (D-021), che appartiene al modulo `auth`. Confronto completo: `docs/studio/12-api-pubbliche.md`, parte 2.
+
+**Decisione.**
+- `auth` espone il suo primo servizio pubblico, `AccountService`, con `Set<Long> activeAmong(Collection<Long> userIds)`: riceve un **insieme** di id utente e restituisce quelli attivi (una sola query, che legge solo gli id).
+- `PractitionerService.listActive()` legge tutti i professionisti ordinati per cognome e nome, chiede ad `auth` in un colpo solo, e filtra in Java: due query, qualunque sia il numero dei professionisti. `requireActive(id)` lancia la stessa `NotFoundException` per "inesistente" e "disattivato".
+- Il controllo sta nel servizio: `CatalogService.publicCatalog` chiama `requireActive`, il controller non ha logica.
+- Dipendenze tra moduli in un verso solo: `catalog` → `practitioner` → `auth`. `auth` non dipende da nessuno.
+- API pubbliche sotto `/api/public/...`, con `record` dedicati: il professionista espone solo `id`, `firstName`, `lastName` (`PublicPractitioner`); il nome da mostrare lo compone il frontend.
+
+**Alternative scartate.** *Join su `app_user` nel repository di `practitioner`*: una query sola, ma è proprio ciò che D-002 vieta, e richiederebbe SQL nativo (con D-026 non c'è una relazione JPA su cui fare la join); se `auth` cambia la tabella, si rompe solo a runtime. *Colonna `active` anche in `practitioner`*: due verità sullo stesso fatto, che prima o poi divergono. *Un metodo `isActive(userId)` per un id alla volta*: un N+1 tra moduli, che nessun `join fetch` può risolvere.
+
+**Conseguenze.** I test di `practitioner` e `catalog` con `@DataJpaTest` importano anche i servizi da cui dipendono. Un "nascosto dal sito ma attivo nel pannello" (ferie, pausa) sarebbe un concetto diverso da "account attivo", con un nome suo: se servirà, nuova decisione. Al passo 8: `/api/public/**` aperto e tutto il resto chiuso con una regola per prefisso; il login rifiuta un account disattivato (oggi `DevHeaderCurrentPractitioner` controlla solo che il professionista esista).
+
+---
+
+## D-030 — Approvazione delle prenotazioni: automatica o manuale, per professionista
+**Stato:** accettata · 2026-11-06 · completa D-023 (conteggio del limite) e D-013 (stati che occupano l'orario); sostituisce "non per il giorno stesso" (requisiti, punto aperto 14)
+
+**Contesto.** I professionisti vogliono decidere quali prenotazioni accettare: evitare mezz'ore vuote ora che una seduta può iniziare alla mezz'ora, gestire la stanza unica quando c'è una visita di valutazione, scegliere i clienti, avere il controllo dell'agenda. Il flusso deciso finora confermava la prenotazione appena pagata (D-007).
+
+**Decisione.**
+- Impostazione **per professionista** `booking_approval`, un `enum` con valori `AUTOMATIC` e `MANUAL`. Valore iniziale **`MANUAL`** (scelta di Nicholas): chi non vuole il controllo lo disattiva.
+- **`MANUAL`**: una prenotazione fatta dal cliente, appena pagata (importo bloccato sulla carta, D-031) o con il credito impegnato, passa a `PENDING_APPROVAL`. Il professionista la approva o la rifiuta dal pannello, avvisato con una notifica push (D-032).
+- **Tempo di risposta**: impostazione `approval_window_hours`, modificabile dal professionista. Si conta dal momento della richiesta e si **fotografa** nella prenotazione come scadenza (`approval_deadline`): cambiare l'impostazione non sposta le richieste già in attesa. Il cliente vede questo tempo **prima** di prenotare.
+- **Nessuna risposta entro la scadenza**: la prenotazione si **annulla** da sola, come un rifiuto. Il blocco sulla carta si annulla o il credito torna, e il cliente riceve un'email. È coerente con la scelta del professionista di approvare a mano.
+- Finché è in attesa, il cliente può **ritirare** la richiesta: nessun addebito.
+- **`AUTOMATIC`**: il sistema approva da solo, subito dopo il pagamento o l'impegno del credito. Un solo percorso nel codice per entrambe le modalità.
+- **Anticipo minimo**: il cliente può prenotare solo orari che iniziano **più di 24 ore dopo** il momento della prenotazione. Esempio: alle 10:00 il primo orario prenotabile è alle 10:30 del giorno dopo, o alle 11:00 con la griglia di un'ora. Impostazione per professionista `min_booking_notice_hours`, valore iniziale 24. Vale in entrambe le modalità.
+- Validazione: `approval_window_hours` va da 1 a `min_booking_notice_hours`, così la risposta arriva sempre prima dell'inizio della seduta, e resta molto sotto la durata del blocco sulla carta (D-031). Proposta: al massimo 48.
+- Le prenotazioni dal pannello (D-024) non passano dall'approvazione e non rispettano l'anticipo minimo.
+
+**Alternative scartate.**
+- *Approvazione sempre obbligatoria*: toglie al professionista la conferma immediata quando non gli serve il controllo.
+- *Un booleano* (`requires_approval`): con un `enum` si potrà aggiungere un terzo valore (es. "solo se si sovrappone a una valutazione") senza cambiare il tipo della colonna.
+- *Approvazione automatica alla scadenza*: contraddice la scelta di approvare a mano.
+- *Scadenza a un'ora fissa* (es. "entro le 21 del giorno prima"): più complessa da spiegare e da calcolare di una finestra in ore.
+
+**Conseguenze.**
+- Nuovi stati della prenotazione al passo 7. `PENDING_APPROVAL` occupa l'orario: entra nel vincolo di non sovrapposizione (D-013) e nel limite di prenotazioni future (D-023). Per gli stati finali, nomi proposti `REJECTED`, `APPROVAL_EXPIRED` e `WITHDRAWN` (ritirata dal cliente).
+- Un lavoro programmato, ogni minuto, annulla le richieste scadute.
+- Il calcolo degli orari liberi (passo 6) scarta quelli che iniziano entro l'anticipo minimo.
+- Una conferma che arriva quando mancano meno di 24 ore cade già dentro il preavviso di cancellazione. Esempio: richiesta 25 ore prima, approvata 12 ore dopo. **Accettato** (Nicholas): finché la richiesta è in attesa il cliente può ritirarla gratis, e il tempo di risposta lo conosce prima di prenotare. Il preavviso si conta sempre dall'inizio della seduta, non dalla conferma.
+
+---
+
+## D-031 — Pagamento delle sedute con carta: importo bloccato, incasso all'approvazione
+**Stato:** accettata · 2026-11-06 · **modifica D-007** (il webhook conferma il blocco dei soldi, non la prenotazione) e una conseguenza di D-008 (pagamento arrivato tardi)
+
+**Contesto.** Con l'approvazione (D-030) il professionista può rifiutare una prenotazione già pagata. Incassare e poi rimborsare contraddice "mai rimborso" (D-015) e costa le commissioni di Stripe. Approvare prima e far pagare dopo riapre il problema da cui nasce il progetto: il cliente che non paga.
+
+**Decisione.**
+- Le sessioni Checkout delle **sedute** si creano con *manual capture* (`payment_intent_data.capture_method = manual`). Stripe **blocca** l'importo sulla carta senza incassarlo.
+- `checkout.session.completed` → pagamento `AUTHORIZED`, prenotazione `PENDING_APPROVAL` (D-030).
+- Approvazione → il backend chiede a Stripe l'**incasso** (*capture*) → pagamento `SUCCEEDED`, prenotazione `CONFIRMED`.
+- Rifiuto, scadenza della richiesta o ritiro → il backend **annulla** il blocco (*cancel* del PaymentIntent) → pagamento `CANCELED`. Il cliente non è mai stato addebitato.
+- Con `AUTOMATIC` l'incasso parte subito dopo il webhook: stesso percorso.
+- I **pacchetti** restano con incasso immediato: si comprano crediti, non orari, e non c'è niente da approvare.
+- Pagamento arrivato tardi per una prenotazione già scaduta: si **annulla il blocco** invece di creare un credito.
+
+**Alternative scartate.** *Approvare prima, pagare dopo*: il cliente può non pagare, e l'orario resta occupato per niente. *Pagare e rimborsare al rifiuto*: contro D-015, con commissioni perse.
+
+**Conseguenze.**
+- D-007 resta valida nel principio (a dire che i soldi ci sono è Stripe, mai il browser), ma il webhook ora conferma il **blocco**. La conferma della prenotazione arriva con la risposta di Stripe all'incasso.
+- Due chiamate in uscita verso Stripe (incasso, annullamento), con errori da gestire al passo 9. Un incasso può fallire, per esempio con un blocco scaduto: il professionista ha approvato, ma la prenotazione non si può confermare.
+- Il blocco sulla carta dura in genere circa 7 giorni per i pagamenti online: la finestra di risposta (D-030) deve restare molto più breve. Se un annullamento fallisce, il blocco si scioglie comunque da solo.
+- Il lotto `LATE_PAYMENT` probabilmente non serve più per le sedute: da confermare al passo 10.
+- Da verificare al passo 9 sulla documentazione di Stripe: eventuali commissioni sui blocchi annullati, e la durata esatta del blocco per le carte europee.
+
+---
+
+## D-032 — Notifiche push con Web Push, dal pannello installabile come app
+**Stato:** accettata · 2026-11-06 · modifica l'architettura (modulo `notification`, prima solo email)
+
+**Contesto.** Con l'approvazione manuale (D-030) il professionista deve sapere subito che c'è una richiesta, perché ha un tempo limitato per rispondere. Nicholas: le notifiche push servono in ogni caso. Il pannello è un sito (Next.js), non un'app.
+
+**Decisione.**
+- Il pannello diventa installabile sulla schermata del telefono come app (*PWA*, *Progressive Web App*), con un *service worker*.
+- Notifiche con lo standard **Web Push**, firmate dal backend con una coppia di chiavi **VAPID**. La chiave privata è un segreto e va nel `.env`.
+- Una tabella dei **dispositivi registrati**: un professionista può averne più di uno.
+- **Email di riserva**: se il professionista non ha dispositivi registrati, o l'invio fallisce, la richiesta arriva anche via email.
+- Il testo della notifica **non contiene il nome del cliente**, perché compare sullo schermo bloccato. Esempio: "Nuova prenotazione da approvare: giovedì 12, 9:30". Toccandola si apre il pannello sulla richiesta.
+
+**Alternative scartate.** *App nativa iOS/Android*: due app, gli store, molto lavoro fuori dagli obiettivi del progetto. *Firebase Cloud Messaging*: account Google e SDK in più, senza un vero vantaggio per notifiche a pochi dispositivi. *Solo email*: meno immediata, e più facile da perdere. *Bot Telegram o WhatsApp*: dati e dipendenza presso terzi.
+
+**Conseguenze.**
+- Nessun account presso terzi, ma i messaggi **transitano** dai servizi push dei produttori dei browser (Apple, Google, Mozilla), cifrati: il contenuto non lo leggono.
+- Su iPhone le notifiche arrivano solo se il pannello è **installato** sulla schermata principale, da iOS 16.4 in poi: va spiegato ai professionisti.
+- Un dispositivo registrato può scadere: quando il servizio push risponde che non esiste più, la riga si cancella.
+- Nuova migrazione (tabella dei dispositivi), nuovo segreto in `.env.example`, *service worker* e pagina di attivazione nel frontend. Lato backend al passo 7, insieme all'approvazione; lato frontend al passo 13.
+
+---
+
+## D-033 — Scatto di 30 o 60 minuti; la griglia parte dall'inizio di ogni fascia
+**Stato:** accettata · 2026-11-06 · chiude il punto aperto 3 dei requisiti
+
+**Contesto.** Le sedute iniziano ogni ora, ma ogni professionista può permettere l'inizio alla mezz'ora (requisiti, "Calendario"). `practitioner.slot_step_minutes` esiste dal V1 e accetta qualsiasi numero positivo, con default 30. Confronto completo: `docs/studio/13-calendario-panorama-e-scelte.md`, parte 3.
+
+**Decisione.**
+- `slot_step_minutes` vale solo **30 o 60**, con default **60**. Il pannello lo mostra come un interruttore "inizio alla mezz'ora sì/no" e invia il numero.
+- La griglia parte dall'**inizio di ogni fascia di lavoro**: inizio, inizio + scatto, e così via, finché la seduta finisce entro la fascia.
+- Le fasce iniziano e finiscono solo **all'ora piena o alla mezz'ora**.
+
+**Alternative scartate.** *Un booleano `allow_half_hour_starts`*: una colonna da eliminare e una da creare, una traduzione in più nel calcolo, e nessuno spazio per un terzo valore. *Griglia agganciata all'orologio*: con una fascia che inizia alle 9:30 e scatto 60, la prima mezz'ora andrebbe persa.
+
+**Conseguenze.** V3 sostituisce il vincolo dello scatto e il suo default. Con fasce a ore piene o mezz'ore, i due agganci danno lo stesso risultato con lo scatto di 30; differiscono solo con scatto 60 e fasce che iniziano alla mezz'ora, e lì vince l'orario scritto dal professionista.
+
+---
+
+## D-034 — Orari di lavoro in versioni settimanali, ognuna con una data di inizio
+**Stato:** accettata · 2026-11-06 · chiude il punto aperto 13 dei requisiti; modifica la tabella `working_hours` progettata in `modello-dati.md` · **precisata** lo stesso giorno (guida 15, parte 2): "già iniziata" vuol dire con `valid_from` **prima** di oggi; una versione che parte oggi si può ancora modificare o cancellare
+
+**Contesto.** Lo studio vuole cambiare gli orari "quando e come vuole", anche **da una data futura** (es. orario estivo dal 1° giugno). Con uno schema settimanale unico, una modifica vale subito. Confronto completo: guida 13, parte 4.
+
+**Decisione.**
+- Una **versione** è una settimana-tipo completa (`working_schedule`), con una `valid_from` (data locale). Le sue fasce stanno in `working_hours`, che punta alla versione invece che al professionista.
+- **Lettura**: per un giorno D vale la versione con la `valid_from` più recente tra quelle non successive a D. Nessuna versione → nessun orario libero.
+- **Scrittura**: una versione si salva **intera**, con tutte le fasce della settimana, e il servizio rifiuta fasce sovrapposte nello stesso giorno. Una versione **già iniziata** (`valid_from` prima di oggi, a Roma) **non si modifica**: per cambiare "da subito" se ne crea una con `valid_from` di oggi, oppure si modifica quella di oggi se esiste già. Una versione da oggi in poi si sostituisce o si cancella. Non si creano versioni retrodatate.
+- `unique (practitioner_id, valid_from)`.
+- Ferie e assenze restano **indisponibilità** (non versioni).
+
+**Alternative scartate.** *Solo lo schema settimanale*: il caso "da una data futura" non si può fare. *Validità `from/to` su ogni fascia*: righe di periodi diversi possono accavallarsi nello stesso giorno, e impedirlo richiede vincoli complicati.
+
+**Conseguenze.** È *effective dating*: la storia degli orari passati resta. Con l'anticipo minimo di più di 24 ore (D-030), una nuova versione da oggi non tocca orari ancora prenotabili. Al passo 7: una nuova versione può lasciare fuori orario prenotazioni già fatte, che restano valide e si segnalano nel pannello (requisiti, punto aperto 13).
+
+---
+
+## D-035 — Calcolo degli orari liberi: funzione pura, orari locali convertiti giorno per giorno
+**Stato:** accettata · 2026-11-06 · anticipa al passo 6 la colonna dell'orizzonte di D-023 (la regola non cambia)
+
+**Contesto.** Il calcolo degli orari liberi è la logica più ricca del sistema, dipende da "adesso" (anticipo minimo, D-030) e attraversa i cambi dell'ora. Confronto completo: guida 13, parti 2, 5 e 6.
+
+**Decisione.**
+- Il calcolo è una **funzione pura**: riceve versioni, indisponibilità, intervalli occupati (vuoti fino al passo 7), durata del servizio, impostazioni e `now` (`Instant`), e restituisce gli orari liberi. Non legge il database né l'ora di sistema.
+- `ScheduleService` carica i dati, chiede l'ora a un bean `Clock` (`Clock.systemUTC()` in produzione, `Clock.fixed` nei test) e chiama il calcolo.
+- Date e orari si generano **in locale** (`Europe/Rome`) e si convertono in `Instant` un giorno alla volta, con `ZonedDateTime.of`. Mai "istante + 24 ore".
+- Intervalli **semiaperti** `[inizio, fine)`, come l'*exclusion constraint* del passo 7: si sovrappongono se `a1 < b2 && b1 < a2`.
+- API pubblica: `GET /api/public/practitioners/{id}/services/{serviceId}/slots?from=…&to=…`, con date locali. L'intervallo si taglia in automatico su anticipo minimo e orizzonte; fuori dall'orizzonte la risposta è un elenco vuoto, non un errore. `from > to` → 400. Servizio non in vendita o professionista disattivato → 404.
+- Orari nelle API in **ISO-8601 con l'offset di Roma** (`2026-11-09T09:00:00+01:00`, `OffsetDateTime`), in ingresso e in uscita. Ogni orario libero espone solo `start` ed `end`.
+- **Orizzonte**: l'ultimo giorno prenotabile è oggi (a Roma) + `booking_horizon_days`, compreso. La colonna nasce nella V3 invece che al passo 7.
+- Anticipo minimo in `practitioner.min_booking_notice_hours` (default 24, V3): sono liberi solo gli orari che iniziano **più di** N ore dopo `now`.
+- Indisponibilità: `ends_at > starts_at`; possono sovrapporsi tra loro; si cancellano davvero; `reason` solo nel pannello, mai nelle API pubbliche.
+
+**Alternative scartate.** *Calcolo dentro il servizio Spring, con query e `Instant.now()`*: ogni test avrebbe bisogno di un container e dipenderebbe dal giorno in cui gira. *Orari in UTC (`Z`) nelle API*: corretti, ma il frontend dovrebbe convertire ogni orario. *Errore per un intervallo oltre l'orizzonte*: il cliente che sfoglia le settimane non sta sbagliando niente.
+
+**Conseguenze.** Il calcolo ha molti test unitari, compresi i cambi dell'ora di marzo e ottobre (guida 13, parte 7). Le dipendenze tra moduli diventano `schedule` → `catalog` → `practitioner` → `auth`, con `schedule` che usa anche `practitioner` direttamente. Al passo 7 `booking` fornisce gli intervalli occupati e chiede a `schedule` se un orario è libero; il calcolo deve considerare libere le `PENDING_PAYMENT` con blocco scaduto (`modello-dati.md`, `booking`). Attenzione al ciclo tra moduli che ne nasce (guida 16, 6.1): da risolvere al passo 7, con un'interfaccia dichiarata da `schedule` e implementata da `booking`, oppure spostando l'API pubblica in `booking`.
+
+Implementazione (pezzo 3, guida 16): `FreeSlots.compute(SlotQuery)` nel package `schedule`; un `record` `SlotQuery` con i nove ingressi; dentro una fascia si avanza in istanti (niente aritmetica di `LocalTime`, che gira a mezzanotte); la versione di un giorno con `TreeMap.floorEntry`; `TimeRange` (intervallo semiaperto) pubblico in `shared`.
+
+---
+
+## D-036 — Fasce di lavoro non sovrapposte anche nel database: *exclusion constraint*
+**Stato:** accettata · 2026-11-06
+
+**Contesto.** Nella stessa versione dello schema (D-034), due fasce dello stesso giorno non devono sovrapporsi: il calcolo offrirebbe gli stessi orari due volte. Un `check` vede una riga sola, e un `unique` non conosce le sovrapposizioni. Confronto completo: `docs/studio/14-migrazione-v3-calendario.md`, parte 2.
+
+**Decisione.**
+- In V3: estensione `btree_gist`, tipo `timerange` (`create type timerange as range (subtype = time)`) e il vincolo `working_hours_no_overlap_ex`: `exclude using gist (schedule_id with =, day_of_week with =, timerange(start_time, end_time) with &&)`.
+- Gli intervalli sono semiaperti `[inizio, fine)`, come vuole D-035: fasce che si toccano (9–13 e 13–14) sono accettate.
+- Java controlla comunque prima (pezzo 2), per dare al professionista un errore chiaro: il vincolo è l'ultima difesa, come per D-025.
+
+**Alternative scartate.** *Solo in Java*: un bug o un `insert` a mano passerebbero; e si rinuncerebbe a provare su un caso semplice lo strumento che al passo 7 sarà indispensabile (D-013).
+
+**Conseguenze.** `btree_gist` è già installata per il passo 7. Una violazione arriva a Java come `DataIntegrityViolationException`, come gli altri vincoli (provato da `ScheduleSchemaTest`). Nel pezzo 2, sostituendo una versione futura, attenzione all'ordine delle istruzioni di Hibernate al *flush*: le cancellazioni esplicite vanno dopo gli `insert` (guida 14, 2.4). Vale anche per `unique (practitioner_id, valid_from)`. **Verificato** (pezzo 2): anche con l'*orphan removal* Hibernate 7 manda prima gli `insert` delle fasce nuove, e il vincolo rifiuta. Per questo `ScheduleService.replaceVersion` svuota le fasce, chiama `flush()` e poi aggiunge le nuove; un test sostituisce una versione con fasce identiche.
+
+---
+
+## D-037 — "Uno tra questi valori" con un vincolo Bean Validation nostro: `@OneOf`
+**Stato:** accettata · 2026-11-06
+
+**Contesto.** Lo scatto vale solo 30 o 60 (D-033). Il `check` del database rifiuta gli altri valori, ma con un 409 generico. Il pannello deve ricevere un 400 sul campo, come per le altre impostazioni. Bean Validation non ha un vincolo "uno tra questi numeri". Confronto completo: guida 14, parte 3.
+
+**Decisione.**
+- `@OneOf(int[] value)` con `OneOfValidator`, nel package `shared`. L'errore esce sul suo campo con il codice `OneOf`. `null` è valido: lo ferma `@NotNull`.
+- L'entità resta la seconda difesa, con `Checks.requireOneOf`.
+
+**Alternative scartate.** *`@Min(30) @Max(60)` più il controllo nell'entità*: 45 passerebbe la validazione e diventerebbe un 500. *Un metodo `@AssertTrue`*: l'errore uscirebbe su un campo che non esiste. *Un `enum`*: un valore sbagliato fa fallire la lettura del JSON, con un 400 generico senza il nome del campo.
+
+**Conseguenze.** Il valore ammesso compare in tre punti (vincolo del database, annotazione, `Practitioner.SLOT_STEPS`), ognuno con un commento che rimanda agli altri. Al passo 7 la stessa tecnica, in versione "di classe", controllerà `approval_window_hours` ≤ `min_booking_notice_hours` (D-030).
+
+---
+
+## D-038 — API pubblica degli orari liberi: una domanda al catalogo, parametri come un `record`, finestra decisa dal server
+**Stato:** accettata · 2026-11-06
+
+**Contesto.** `GET /api/public/practitioners/{id}/services/{serviceId}/slots?from=&to=` (D-035) deve sapere se il servizio è in vendita e quanto dura (dati di `catalog`), validare due date che arrivano nella query string, e caricare le assenze senza che il lavoro dipenda da cosa chiede il client. Confronto completo: `docs/studio/17-api-orari-liberi.md`.
+
+**Decisione.**
+- `CatalogService.serviceOnSale(practitionerId, serviceId)` restituisce `ServiceOnSale(id, durationMinutes)`; "in vendita" vuol dire servizio attivo di un professionista attivo. In tutti gli altri casi la stessa `NotFoundException` (404).
+- `from` e `to` in un `record` `SlotRange`, costruito dalla query string, entrambi obbligatori, in ISO, con il vincolo di classe `FromNotAfterTo` (400 sul campo `to`). Nessun limite di distanza: lo taglia l'orizzonte.
+- Le assenze caricate sono quelle che si sovrappongono alla finestra **da adesso alla fine dell'ultimo giorno dell'orizzonte**, qualunque siano `from` e `to`.
+- Esce solo `PublicSlot(start, end)` in ora di Roma.
+
+**Alternative scartate.** *Riusare il catalogo pubblico e cercare il servizio nella lista*: carica tutto per usarne uno, e la regola "in vendita" finirebbe fuori da `catalog`. *Controllare `from` e `to` nel servizio*: un 409 per una richiesta sbagliata in sé (D-027). *Lasciarlo a `SlotQuery`*: un 500. *Caricare le assenze dei giorni richiesti*: con `to` nel 2099 la finestra la deciderebbe il client.
+
+**Conseguenze.** Le dipendenze restano in un verso solo: `schedule` → `catalog` → `practitioner` → `auth`, e `schedule` → `practitioner`. Al passo 7 `booking` userà `serviceOnSale` per la durata e il prezzo da fotografare; e il ciclo tra `schedule` e `booking` per gli intervalli occupati va risolto per primo (guida 16, 6.1).

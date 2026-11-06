@@ -82,5 +82,5 @@ Messaggio breve:
 - Non anticipare la risposta dentro la domanda.
 - Non addolcire: una risposta sbagliata è sbagliata, detto con rispetto e con il perché.
 - Non riproporre domande identiche a test precedenti.
-- Non scrivere codice di produzione del backend come "soluzione" di una domanda: valgono le regole del tutor in CLAUDE.md (frammenti solo su esempi diversi).
+- Non scrivere codice di produzione del backend come "soluzione" di una domanda: il test misura cosa ha capito Nicholas, non cosa sa scrivere Claude. Se un esempio serve, un frammento minimo su un caso diverso.
 - Non saltare la documentazione finale, anche se il test è stato interrotto a metà: in quel caso salva quello che c'è e segnalo come "interrotto" nell'indice.
