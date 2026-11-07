@@ -169,6 +169,46 @@ public class BookingService {
 
     // ***** PRACTITIONER *****
 
+    // Booked from the panel for a customer, paid in the studio and confirmed at once (guide 22).
+    // Working bands and absences apply; grid, notice, horizon, limit and approval do not (guide 22, part 2).
+    // Customer found or created by email in this same transaction: a failed booking leaves no new customer
+    @Transactional
+    public PanelBookingView bookFromPanel(long practitionerId, NewPanelBooking request) {
+        Instant now = clock.instant();
+        // an own active service, or 404
+        ServiceOnSale service = catalog.serviceOnSale(practitionerId, request.serviceId());
+        long customerId = customers.findOrCreate(request.customer());
+        // it does not respect the limit, but it counts in it: same lock as the customer's request (D-045)
+        customers.lockForBooking(customerId);
+
+        Instant start = request.startsAt().toInstant();
+        TimeRange slot = new TimeRange(start, start.plus(Duration.ofMinutes(service.durationMinutes())));
+        if (!start.isAfter(now)) {
+            throw new BusinessRuleException(ErrorCode.SLOT_NOT_AVAILABLE, "A booking cannot start in the past: " + start);
+        }
+        schedule.requireWorkingTime(practitionerId, slot);
+
+        // the same last steps as a customer's request: stale holds closed, overlap left to the constraint
+        bookings.expireStaleHolds(practitionerId, slot.start(), slot.end(), now,
+                BookingStatus.PENDING_PAYMENT, BookingStatus.EXPIRED);
+        Booking booking = Booking.bookedFromPanel(customerId, practitionerId, service.id(), slot,
+                service.priceCents(), now);
+        try {
+            bookings.saveAndFlush(booking);
+        } catch (DataIntegrityViolationException | PessimisticLockingFailureException e) {
+            throw translateOverlap(e, practitionerId, slot);
+        }
+        events.publishEvent(BookingConfirmed.of(booking));
+        return PanelBookingView.from(booking);
+    }
+
+    @Transactional(readOnly = true)
+    public PanelBookingView findForPractitioner(long practitionerId, long bookingId) {
+        return bookings.findByIdAndPractitionerId(bookingId, practitionerId)
+                .map(PanelBookingView::from)
+                .orElseThrow(() -> notFound(bookingId));
+    }
+
     @Transactional
     public PanelBookingView approve(long practitionerId, long bookingId) {
         Instant now = clock.instant();

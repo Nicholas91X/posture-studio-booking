@@ -1,21 +1,29 @@
 package com.posturestudio.booking.customer;
 
+import java.util.Collection;
+import java.util.Map;
+import java.util.function.Function;
+import java.util.stream.Collectors;
+
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Propagation;
 import org.springframework.transaction.annotation.Transactional;
 
+import com.posturestudio.booking.auth.AccountService;
 import com.posturestudio.booking.shared.NotFoundException;
 
 /**
- * The only door of the customer module (D-002). Depends on nobody but shared.
+ * The only door of the customer module (D-002). Depends only on auth, for the accounts.
  */
 @Service
 public class CustomerService {
 
     private final CustomerRepository repository;
+    private final AccountService accounts;
 
-    CustomerService(CustomerRepository repository) {
+    CustomerService(CustomerRepository repository, AccountService accounts) {
         this.repository = repository;
+        this.accounts = accounts;
     }
 
     /**
@@ -32,5 +40,26 @@ public class CustomerService {
     public void lockForBooking(long customerId) {
         repository.findLockedById(customerId)
                 .orElseThrow(() -> new NotFoundException("Customer " + customerId + " not found"));
+    }
+
+    // The customer of this email, found or created with these names (D-024, guide 22, part 3); its id.
+    // An existing customer keeps their own names. Joins the caller's transaction: if the booking then
+    // fails, account and customer created here are rolled back with it
+    @Transactional
+    public long findOrCreate(CustomerDetails details) {
+        long userId = accounts.customerAccountFor(details.email());
+        return repository.findByUserId(userId)
+                .orElseGet(() -> repository.save(new Customer(userId, details.firstName(), details.lastName())))
+                .getId();
+    }
+
+    // The names of a set of customers, in one query: for the panel lists of booking (piece 6)
+    @Transactional(readOnly = true)
+    public Map<Long, CustomerName> namesOf(Collection<Long> customerIds) {
+        if (customerIds.isEmpty()) {
+            return Map.of();
+        }
+        return repository.findByIdIn(customerIds).stream()
+                .collect(Collectors.toMap(Customer::getId, CustomerName::from, (first, second) -> first));
     }
 }

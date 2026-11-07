@@ -1,5 +1,11 @@
 package com.posturestudio.booking.customer;
 
+import static org.assertj.core.api.Assertions.assertThat;
+
+import java.util.List;
+import java.util.Map;
+
+import jakarta.persistence.EntityManager;
 import org.junit.jupiter.api.Assertions;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -11,19 +17,25 @@ import org.springframework.transaction.annotation.Propagation;
 import org.springframework.transaction.annotation.Transactional;
 
 import com.posturestudio.booking.TestcontainersConfiguration;
+import com.posturestudio.booking.auth.AccountService;
 import com.posturestudio.booking.shared.NotFoundException;
 
-// The lock of the customer row. That it really makes a second request wait is proved in
-// BookingConcurrencyTest, with two threads; here, its contract
+// The lock of the customer row (that it really makes a second request wait is proved in
+// BookingConcurrencyTest, with two threads), and finding or creating a customer by email (guide 22)
 @DataJpaTest
-@Import({TestcontainersConfiguration.class, CustomerService.class})
+@Import({TestcontainersConfiguration.class, CustomerService.class, AccountService.class})
 public class CustomerServiceTest {
 
     @Autowired
     CustomerService service;
 
     @Autowired
+    EntityManager entityManager;
+
+    @Autowired
     JdbcTemplate jdbc;
+
+    // ***** lock *****
 
     @Test
     void anExistingCustomerIsLockedInsideATransaction() {
@@ -43,6 +55,41 @@ public class CustomerServiceTest {
         // MANDATORY: outside a transaction the lock would be released at once, protecting nothing.
         // Spring refuses before the method runs, so the customer does not even need to exist
         Assertions.assertThrows(IllegalTransactionStateException.class, () -> service.lockForBooking(1));
+    }
+
+    // ***** find or create *****
+
+    @Test
+    void aNewCustomerIsCreatedWithTheirNames() {
+        long id = service.findOrCreate(new CustomerDetails("mario.rossi@example.com", "Mario", "Rossi"));
+        entityManager.flush();
+
+        Map<String, Object> row = jdbc.queryForMap("""
+                select c.first_name, c.last_name, u.email, u.role
+                from customer c join app_user u on u.id = c.user_id
+                where c.id = ?
+                """, id);
+        assertThat(row).containsEntry("first_name", "Mario")
+                .containsEntry("last_name", "Rossi")
+                .containsEntry("email", "mario.rossi@example.com")
+                .containsEntry("role", "CUSTOMER");
+    }
+
+    @Test
+    void anExistingCustomerKeepsTheirOwnNames() {
+        long existing = insertCustomer("mario.rossi@example.com");
+
+        // the practitioner typed the name differently: the customer's data stay theirs (guide 22, 3.2)
+        long id = service.findOrCreate(new CustomerDetails("Mario.Rossi@Example.com", "Marione", "R."));
+        entityManager.flush();
+
+        assertThat(id).isEqualTo(existing);
+        assertThat(service.namesOf(List.of(id))).containsEntry(id, new CustomerName("Test", "Customer"));
+    }
+
+    @Test
+    void namesOfNoCustomersIsEmpty() {
+        assertThat(service.namesOf(List.of())).isEmpty();
     }
 
     private long insertCustomer(String email) {

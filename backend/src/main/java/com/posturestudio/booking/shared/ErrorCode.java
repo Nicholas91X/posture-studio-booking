@@ -30,5 +30,8 @@ public enum ErrorCode {
     BOOKING_TRANSITION_NOT_ALLOWED,
 
     // the practitioner answers after approval_deadline: the request is already void, the job closes it (D-030)
-    APPROVAL_DEADLINE_PASSED
+    APPROVAL_DEADLINE_PASSED,
+
+    // booking from the panel for an email that belongs to a practitioner or the admin: one role per user (D-021)
+    EMAIL_NOT_A_CUSTOMER
 }

@@ -9,10 +9,13 @@ import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.boot.webmvc.test.autoconfigure.AutoConfigureMockMvc;
 import org.springframework.context.annotation.Import;
 import org.springframework.http.HttpStatus;
+import org.springframework.http.MediaType;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.test.web.servlet.assertj.MockMvcTester;
+import org.springframework.test.web.servlet.assertj.MvcTestResult;
 import org.springframework.transaction.annotation.Transactional;
 
+import com.jayway.jsonpath.JsonPath;
 import com.posturestudio.booking.FixedClockConfiguration;
 import com.posturestudio.booking.TestcontainersConfiguration;
 
@@ -95,9 +98,61 @@ public class BookingPanelApiTest {
                 .bodyJson().extractingPath("$.code").isEqualTo("APPROVAL_DEADLINE_PASSED");
     }
 
+    // ***** booking from the panel (guide 22) *****
+
+    @Test
+    void aPanelBookingAnswers201WithLocationAndCanBeReadBack() throws Exception {
+        data.weekdays(Long.parseLong(anna), "2026-11-02");
+
+        MvcTestResult result = bookFromPanel(anna, "mario.rossi@example.com");
+
+        assertThat(result).hasStatus(HttpStatus.CREATED);
+        int id = JsonPath.read(result.getResponse().getContentAsString(), "$.id");
+        assertThat(result).hasHeader("Location", "/api/panel/bookings/" + id);
+        assertThat(result).bodyJson().extractingPath("$.status").isEqualTo("CONFIRMED");
+        assertThat(mvc.get().uri("/api/panel/bookings/" + id).header(HEADER, anna))
+                .hasStatusOk()
+                .bodyJson().extractingPath("$.startsAt").isEqualTo("2026-11-10T09:00:00+01:00");
+        // 404 and not 403 for someone else's booking
+        assertThat(mvc.get().uri("/api/panel/bookings/" + id).header(HEADER, marco)).hasStatus(HttpStatus.NOT_FOUND);
+    }
+
+    @Test
+    void anInvalidEmailAnswers400OnItsNestedField() {
+        // mario@localhost passes jakarta's @Email but not our Email record: @ValidEmail keeps one rule
+        MvcTestResult result = bookFromPanel(anna, "mario@localhost");
+
+        assertThat(result).hasStatus(HttpStatus.BAD_REQUEST);
+        assertThat(result).bodyJson().extractingPath("$.errors[*].field").asArray().containsExactly("customer.email");
+        assertThat(result).bodyJson().extractingPath("$.errors[0].constraint").isEqualTo("ValidEmail");
+    }
+
+    @Test
+    void aMissingCustomerAnswers400() {
+        MvcTestResult result = mvc.post().uri("/api/panel/bookings").header(HEADER, anna)
+                .contentType(MediaType.APPLICATION_JSON)
+                .content("""
+                        {"serviceId": %d, "startsAt": "2026-11-10T09:00:00+01:00"}
+                        """.formatted(serviceOf(waiting)))
+                .exchange();
+
+        assertThat(result).hasStatus(HttpStatus.BAD_REQUEST);
+        assertThat(result).bodyJson().extractingPath("$.errors[*].field").asArray().containsExactly("customer");
+    }
+
     @Test
     void withoutHeaderTheAnswerIs401() {
         assertThat(mvc.post().uri("/api/panel/bookings/" + waiting + "/approve")).hasStatus(HttpStatus.UNAUTHORIZED);
+    }
+
+    private MvcTestResult bookFromPanel(String practitioner, String email) {
+        return mvc.post().uri("/api/panel/bookings").header(HEADER, practitioner)
+                .contentType(MediaType.APPLICATION_JSON)
+                .content("""
+                        {"serviceId": %d, "startsAt": "2026-11-10T09:00:00+01:00",
+                         "customer": {"email": "%s", "firstName": "Mario", "lastName": "Rossi"}}
+                        """.formatted(serviceOf(waiting), email))
+                .exchange();
     }
 
     private long customerOf(long booking) {

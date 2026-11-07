@@ -81,6 +81,8 @@ interface BookingRepository extends JpaRepository<Booking, Long> {
     // ownership is part of the query: someone else's booking is not found, like a missing one
     Optional<Booking> findByIdAndCustomerId(Long id, Long customerId);
 
+    Optional<Booking> findByIdAndPractitionerId(Long id, Long practitionerId);
+
     // ***** for transitions: select ... for update (guide 20, 3.4) *****
     // Whoever arrives second waits, then reads the new status: a transition that calls Stripe starts only
     // when it is surely ours. The lazy expiry and the jobs (bulk updates) wait on the same row lock

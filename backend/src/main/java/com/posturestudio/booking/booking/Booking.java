@@ -49,6 +49,28 @@ class Booking {
         return booking;
     }
 
+    // Booked by the practitioner for their customer, to be paid in the studio (D-024, D-040): born CONFIRMED,
+    // decided now by the practitioner. Not a transition: the state machine is about steps, not birth.
+    // The only way to create a confirmed booking; no hold, no approval
+    static Booking bookedFromPanel(long customerId, long practitionerId, long serviceId, TimeRange slot,
+                                   long priceCents, Instant now) {
+        Objects.requireNonNull(slot, "slot must not be null");
+        Objects.requireNonNull(now, "now must not be null");
+        Booking booking = new Booking();
+        booking.customerId = customerId;
+        booking.practitionerId = practitionerId;
+        booking.serviceId = serviceId;
+        booking.startsAt = slot.start();
+        booking.endsAt = slot.end();
+        booking.status = BookingStatus.CONFIRMED;
+        booking.bookedBy = BookedBy.PRACTITIONER;
+        booking.paidWith = PaidWith.IN_STUDIO;
+        booking.priceCents = Checks.requirePositive(priceCents, "priceCents");
+        booking.decidedAt = now;
+        booking.createdAt = now;
+        return booking;
+    }
+
     @Id
     @GeneratedValue(strategy = GenerationType.IDENTITY)
     private Long id;

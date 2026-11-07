@@ -1,18 +1,27 @@
 package com.posturestudio.booking.customer;
 
+import static com.posturestudio.booking.shared.Checks.requireNotBlank;
+
 import java.time.Instant;
+import java.util.Objects;
 
 import org.hibernate.annotations.Generated;
 import jakarta.persistence.*;
 
 // A customer of the studio (V1). Package-private: other modules use CustomerService (D-002, D-026).
-// No public constructor yet: customers are created at the first sign-in (step 8) or from the panel (piece 5)
+// Created from the panel (D-024) and, at step 8, at the first sign-in (D-014)
 @Entity
 @Table(name = "customer")
 class Customer {
 
     protected Customer() {
         // JPA needs a no-arg constructor
+    }
+
+    Customer(Long userId, String firstName, String lastName) {
+        this.userId = Objects.requireNonNull(userId, "userId must not be null");
+        this.firstName = requireNotBlank(firstName, "firstName");
+        this.lastName = requireNotBlank(lastName, "lastName");
     }
 
     @Id
@@ -37,5 +46,13 @@ class Customer {
 
     Long getId() {
         return id;
+    }
+
+    String getFirstName() {
+        return firstName;
+    }
+
+    String getLastName() {
+        return lastName;
     }
 }

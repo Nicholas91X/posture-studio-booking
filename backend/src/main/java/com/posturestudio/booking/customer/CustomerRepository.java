@@ -1,5 +1,7 @@
 package com.posturestudio.booking.customer;
 
+import java.util.Collection;
+import java.util.List;
 import java.util.Optional;
 
 import org.springframework.data.jpa.repository.JpaRepository;
@@ -14,4 +16,9 @@ interface CustomerRepository extends JpaRepository<Customer, Long> {
     // The word between "find" and "By" is only a name: Spring Data ignores it
     @Lock(LockModeType.PESSIMISTIC_WRITE)
     Optional<Customer> findLockedById(Long id);
+
+    // customer.user_id is unique (V1): at most one
+    Optional<Customer> findByUserId(Long userId);
+
+    List<Customer> findByIdIn(Collection<Long> ids);
 }

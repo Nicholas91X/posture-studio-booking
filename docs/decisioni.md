@@ -752,3 +752,22 @@ Implementazione (pezzo 3, guida 16): `FreeSlots.compute(SlotQuery)` nel package 
 **Alternative scartate.** *`fixedRate`*: esecuzioni lente si accumulano. *`cron`*: aggancio all'orologio inutile qui. *Una transazione per tutto il lavoro delle richieste*: un errore annullerebbe nel database anche le richieste già chiuse, ma non le chiamate esterne già fatte. *ShedLock*: non serve con un'istanza, e il codice è già corretto con due.
 
 **Conseguenze.** Con due istanze i lavori girano due volte: lavoro doppio, ma nessun effetto doppio (la seconda trova le righe già chiuse). Una richiesta scaduta resta aperta al massimo circa un minuto, coperto dal controllo della scadenza nelle risposte (D-046) e dalla scadenza pigra (D-045).
+
+---
+
+## D-048 — Prenotazione dal pannello: fasce e assenze sì, griglia no; cliente trovato o creato per email
+**Stato:** accettata · 2026-11-07 · completa D-024 e D-040 · confronto completo: `docs/studio/22-prenotazione-dal-pannello.md` · scelte di Claude secondo le raccomandazioni della guida, su indicazione di Nicholas
+
+**Contesto.** Il professionista prenota per un suo cliente (D-024), pagamento in studio (D-040). I documenti dicevano cosa non vale dal pannello (anticipo, orizzonte, limite, approvazione), non se valgono griglia, fasce e assenze; e non dicevano come si riconosce un cliente esistente.
+
+**Decisione.**
+- `POST /api/panel/bookings` con `serviceId`, `startsAt` e `customer` (`email`, `firstName`, `lastName`); 201 + `Location`; `GET /api/panel/bookings/{id}` per la propria.
+- **Regole**: dentro una **fascia di lavoro** della versione valida quel giorno e fuori dalle **assenze** (`ScheduleService.requireWorkingTime`); non nel passato; **non** valgono griglia, anticipo, orizzonte, limite, approvazione. Sovrapposizioni: il vincolo del database, tradotto in `SLOT_NOT_AVAILABLE`.
+- Nasce `CONFIRMED`, `booked_by = PRACTITIONER`, `paid_with = IN_STUDIO`, `decided_at` = adesso (`Booking.bookedFromPanel`, l'unico modo di creare una prenotazione confermata); evento `BookingConfirmed`. Prende lo stesso lucchetto sul cliente della richiesta (D-045).
+- **Cliente per email**: `AccountService.customerAccountFor` trova o crea l'account `CUSTOMER` (email normalizzata, D-020), lo riattiva se disattivato, rifiuta con 409 `EMAIL_NOT_A_CUSTOMER` un'email di un professionista o dell'admin (D-021); `CustomerService.findOrCreate` trova o crea il cliente. Un cliente esistente **tiene il suo nome**. Tutto nella stessa transazione della prenotazione.
+- `@ValidEmail` (in `auth`): Bean Validation che delega al `record` `Email`, una regola sola; 400 su `customer.email`.
+- Dipendenze: `customer` → `auth`, oltre a `booking` → `customer`.
+
+**Alternative scartate.** *Griglia anche dal pannello*: impedirebbe la seduta alle 9:30 dopo una valutazione 9:00–9:30, il caso per cui lo studio ha chiesto la mezz'ora. *Nessuna fascia dal pannello*: lo studio non lavora mai fuori dal proprio schema; una seduta fuori orario sarebbe un errore di battitura. *Scegliere il cliente da un elenco*: apre la domanda, ancora aperta, su quali clienti può vedere un professionista (passo 13). *`jakarta.validation.constraints.Email`*: accetta indirizzi che `Email` rifiuta, con un 500.
+
+**Conseguenze.** Il professionista può prenotare a distanza ravvicinata o lontana nel tempo, e fuori griglia. La segnalazione della stanza unica "prima di confermare" (punto aperto 12) non blocca e compare nelle liste (pezzo 6); il frontend del passo 13 potrà mostrarla prima dell'invio. Due creazioni simultanee della stessa email: una fallisce sul `unique` di `app_user` (raro; ripetendo, si trova l'account).
