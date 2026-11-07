@@ -75,7 +75,7 @@ Un'unica applicazione, divisa in package per area. Ogni modulo espone verso gli 
 
 ### API
 
-- REST, JSON, tutte sotto `/api`.
+- REST, JSON, tutte sotto `/api`, divise per prefisso secondo chi le usa (D-029, D-045): `/api/public/**` senza accesso (professionisti, catalogo, orari liberi), `/api/panel/**` per i professionisti, `/api/customer/**` per i clienti. Al passo 8 Spring Security assegna ogni prefisso al suo ruolo con una regola sola. `/api/dev/**` contiene solo il pagamento simulato provvisorio, spento per default (D-046), da togliere al passo 9.
 - Contratto OpenAPI generato in automatico (springdoc). Il frontend genera i suoi tipi da lì.
 - Errori in formato standard *Problem Details* (RFC 9457), con un codice leggibile (es. `SLOT_NOT_AVAILABLE`) che il frontend traduce in un messaggio in italiano.
 
