@@ -285,7 +285,7 @@ Anche con tutti i controlli, due clienti diversi possono chiedere lo stesso orar
 
 **Come**:
 - `saveAndFlush`, non `save`: l'`insert` deve partire **adesso**, dentro il `try`. Con `save`, Hibernate lo rimanderebbe al commit, fuori dal metodo, dove nessuno può più tradurre l'errore;
-- si riconosce la violazione dal **codice SQLSTATE** `23P01` (*exclusion violation*) e dal **nome del vincolo**, cercati nelle cause dell'eccezione. Il driver di PostgreSQL è una dipendenza `runtime`: il codice non può nominare le sue classi, ma `java.sql.SQLException` sì;
+- si riconosce la violazione dal **codice SQLSTATE** `23P01` (*exclusion violation*) e dal **nome del vincolo**, cercati nelle cause dell'eccezione. **Correzione (2026-11-07)**: anche `40P01` (*deadlock*) vuol dire la stessa cosa, perché due `insert` contemporanei su un *exclusion constraint* possono aspettarsi a vicenda (guida 18, 3.3, correzione); arriva come `PessimisticLockingFailureException` e va tradotto anch'esso. Il driver di PostgreSQL è una dipendenza `runtime`: il codice non può nominare le sue classi, ma `java.sql.SQLException` sì;
 - ogni altra violazione si rilancia com'è: è un bug, non un orario preso.
 
 ---

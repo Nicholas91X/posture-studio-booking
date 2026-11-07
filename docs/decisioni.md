@@ -694,7 +694,7 @@ Implementazione (pezzo 3, guida 16): `FreeSlots.compute(SlotQuery)` nel package 
 ---
 
 ## D-045 — Richiesta di prenotazione: un solo calcolo, lucchetto sul cliente, scadenza pigra dei blocchi
-**Stato:** accettata · 2026-11-06 · confronto completo: `docs/studio/19-richiesta-di-prenotazione.md` · scelte di Claude secondo le raccomandazioni della guida, su indicazione di Nicholas ("se non ci sono domande, procedi senza chiedere conferma")
+**Stato:** accettata · 2026-11-06 · confronto completo: `docs/studio/19-richiesta-di-prenotazione.md` · scelte di Claude secondo le raccomandazioni della guida, su indicazione di Nicholas ("se non ci sono domande, procedi senza chiedere conferma") · **completata da D-046** (2026-11-07): anche il *deadlock* `40P01` all'`insert` diventa `SLOT_NOT_AVAILABLE`
 
 **Contesto.** Il cliente chiede un orario. I controlli sono sei (servizio in vendita, griglia e orari di lavoro, anticipo, orizzonte, limite, orario libero), il limite è un conteggio in Java esposto alla concorrenza (D-023), e un blocco scaduto occupa ancora l'orario per il vincolo del database (D-042).
 
@@ -711,3 +711,26 @@ Implementazione (pezzo 3, guida 16): `FreeSlots.compute(SlotQuery)` nel package 
 **Alternative scartate.** *Controlli dedicati in `booking`*: la stessa regola in due posti. *Lucchetto ottimistico o `SERIALIZABLE` per il limite*: chi perde fallisce e va ripetuto, invece di aspettare. *Lucchetto consultivo di PostgreSQL*: specifico e poco leggibile. *Aspettare il lavoro programmato*: fino a un minuto di "occupato" falso. *Riprovare dopo la violazione*: PostgreSQL annulla tutta la transazione. *Cancellare il blocco scaduto*: si perde la storia e il pagamento tardivo non troverebbe la sua prenotazione. *Tradurre il vincolo nell'`ApiExceptionHandler`*: dovrebbe conoscere i vincoli di tutti i moduli.
 
 **Conseguenze.** Le richieste dello stesso cliente vanno una alla volta; quelle di clienti diversi no. Le prenotazioni dal pannello (pezzo 5) devono prendere lo stesso lucchetto, perché contano nel limite. Al passo 8 Spring Security apre `/api/customer/**` solo ai clienti. Il lavoro programmato del pezzo 4 farà la stessa transizione su tutti i blocchi scaduti, con la stessa guardia nel `where`.
+
+---
+
+## D-046 — Stati e approvazione: macchina nell'`enum`, lucchetto pessimistico sulle transizioni, eventi dopo il commit, pagamento simulato spento per default
+**Stato:** accettata · 2026-11-07 · confronto completo: `docs/studio/20-stati-e-approvazione.md` · scelte di Claude secondo le raccomandazioni della guida, su indicazione di Nicholas · completa D-045 (traduzione del *deadlock*)
+
+**Contesto.** Dopo la richiesta (D-045), la prenotazione deve arrivare alla conferma passando dal pagamento (simulato fino al passo 9) e dall'approvazione (D-030), con incasso e annullamento del blocco sulla carta (D-031). Il brief vuole una macchina a stati esplicita, un'interfaccia per incasso e annullamento, eventi di dominio senza ascoltatori (D-039) e un "pagamento autorizzato" che non sia mai attivo in produzione.
+
+**Decisione.**
+- **Macchina a stati**: `BookingStatus.canMoveTo`, uno `switch` espressione senza `default` (il compilatore obbliga a coprire ogni stato). Sei frecce: `PENDING_PAYMENT` → `PENDING_APPROVAL`, `EXPIRED`; `PENDING_APPROVAL` → `CONFIRMED`, `REJECTED`, `APPROVAL_EXPIRED`, `WITHDRAWN`. Nell'entità lo stato cambia solo con `moveTo`; transizioni con un nome (`paymentAuthorized`, `approve`, `reject`, `withdraw`). Un passaggio vietato è un 409 `BOOKING_TRANSITION_NOT_ALLOWED`.
+- **Un solo percorso** per le due modalità: il pagamento porta sempre a `PENDING_APPROVAL`; in `AUTOMATIC` lo stesso `confirm` del professionista parte subito, nella stessa transazione.
+- **Scadenza della risposta** = `created_at` + `approval_window_hours` (D-030: "dal momento della richiesta"). `booking.created_at` lo scrive Java con il `Clock`. Il professionista che risponde dopo la scadenza riceve 409 `APPROVAL_DEADLINE_PASSED`; il cliente può ritirare anche allora.
+- **Pagamento tardivo**: su una `PENDING_PAYMENT` (anche con blocco scaduto) si accetta; su una `EXPIRED` si annulla il blocco e non cambia niente, senza errore.
+- **`CardHolds`** (`capture`, `cancel`), dichiarata da `booking` e implementata da `payment` al passo 9; ora `LoggingCardHolds`, provvisoria.
+- **Lucchetto pessimistico** sulla riga della prenotazione in ogni transizione, e quest'ordine: lucchetto, transizione in memoria, chiamata a `CardHolds`, commit. `@Version` resta come seconda difesa. Sostituisce l'anticipazione della guida 19 (4.3), che prevedeva il lucchetto ottimistico.
+- **Eventi di dominio**: `sealed interface BookingEvent` con quattro `record` annidati (`ApprovalRequested`, `BookingConfirmed`, `BookingRejected`, `BookingWithdrawn`), solo id e istanti. Pubblicati con `ApplicationEventPublisher` dentro la transazione; al passo 8 ascoltati con `@TransactionalEventListener` (dopo il commit).
+- **Pagamento simulato**: `POST /api/dev/bookings/{id}/payment-authorized`, controller con `@ConditionalOnProperty(booking.simulated-payments=true)`, default `false` (`BOOKING_SIMULATED_PAYMENTS` nel `.env`). Senza la proprietà l'indirizzo non esiste.
+- **API**: `POST /api/panel/bookings/{id}/approve` e `/reject` (`PanelBookingView`), `POST /api/customer/bookings/{id}/withdraw`; `CustomerBookingView` riceve `approvalDeadline`.
+- **Deadlock all'`insert`** (completa D-045): due `insert` contemporanei sul vincolo di non sovrapposizione possono aspettarsi a vicenda, perché un *exclusion constraint* inserisce nell'indice prima di cercare i conflitti; PostgreSQL ne annulla uno con `40P01`. `BookingService` lo traduce in `SLOT_NOT_AVAILABLE`, come `23P01`.
+
+**Alternative scartate.** *Tabella `EnumMap`*: uno stato dimenticato non è un errore di compilazione. *Pattern State, Spring Statemachine*: troppo per stati senza comportamento proprio. *Lucchetto ottimistico sulle transizioni*: scopre il conflitto dopo l'incasso, che non si annulla. *Ascoltatori `@EventListener`*: un'email partirebbe anche per una transazione annullata. *Outbox*: una tabella e un lavoro in più, rimandabile al passo 8 se servirà. *Profilo `dev` o controller sempre attivo per il pagamento simulato*: sicuri solo finché nessuno sbaglia la configurazione. *Riprovare la transazione dopo il deadlock*: chi perde troverebbe comunque l'orario occupato, con più codice.
+
+**Conseguenze.** La riga della prenotazione resta bloccata per la durata della chiamata a Stripe: irrilevante a questa scala. Resta il caso "incasso riuscito, commit fallito" (doppia scrittura), da chiudere al passo 9 riconciliando con il webhook (`payment_intent.succeeded`). Al passo 9 un annullamento fallito si registra senza bloccare la transizione. Al passo 8 gli ascoltatori che scrivono nel database hanno bisogno di `REQUIRES_NEW`. Il pezzo 4 aggiunge l'evento `ApprovalExpired` e usa `CardHolds.cancel` per le approvazioni scadute.

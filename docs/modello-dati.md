@@ -174,7 +174,8 @@ Il pacchetto "in vendita".
 | approval_deadline | timestamptz | obbligatoria per `PENDING_APPROVAL` (un `check`): richiesta + `approval_window_hours`, fotografata (D-030); resta valorizzata dopo |
 | decided_at | timestamptz | quando è stata approvata o rifiutata, dal professionista o in automatico (D-030, D-042) |
 | cancelled_at | timestamptz | quando il cliente ha rinunciato: ritiro (`WITHDRAWN`) dal passo 7, cancellazione dal passo 11 |
-| version | bigint | per il blocco ottimistico di JPA |
+| version | bigint | per il blocco ottimistico di JPA, seconda difesa: le transizioni bloccano la riga con `select ... for update` (D-046) |
+| created_at | timestamptz | il momento della richiesta, scritto da Java con il `Clock` (non dal default, come nelle altre tabelle): la scadenza dell'approvazione si conta da qui (D-030, D-046) |
 
 Indici `(practitioner_id, starts_at)` e `(customer_id, starts_at)`. Il `check` di `status` contiene solo gli stati che il codice sa produrre: nella V4 i sette del passo 7 (da `PENDING_PAYMENT` a `WITHDRAWN` nella tabella qui sotto); gli altri arrivano con i passi 11 e successivi (D-042).
 
