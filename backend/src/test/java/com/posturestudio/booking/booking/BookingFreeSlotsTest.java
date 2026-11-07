@@ -19,6 +19,7 @@ import com.posturestudio.booking.FixedClockConfiguration;
 import com.posturestudio.booking.TestcontainersConfiguration;
 import com.posturestudio.booking.auth.AccountService;
 import com.posturestudio.booking.catalog.CatalogService;
+import com.posturestudio.booking.customer.CustomerService;
 import com.posturestudio.booking.practitioner.PractitionerService;
 import com.posturestudio.booking.schedule.PublicSlot;
 import com.posturestudio.booking.schedule.ScheduleService;
@@ -26,10 +27,12 @@ import com.posturestudio.booking.schedule.ScheduleService;
 // Free slots with real bookings: schedule's ScheduleService with booking's BookingOccupiedTime (D-044).
 // This package can import both: ScheduleService is public, BookingOccupiedTime lives here.
 // Today is Friday 6 November 2026, 10:00 in Rome. Anna works Monday to Friday 9-13 and 14-19,
-// hourly starts (default step 60), sessions of 60 minutes: on Monday 9 November, 9 free slots
+// hourly starts (default step 60), sessions of 60 minutes: on Monday 9 November, 9 free slots.
+// Same configuration as BookingServiceTest (BookingService and CustomerService unused here): same context
 @DataJpaTest
-@Import({TestcontainersConfiguration.class, FixedClockConfiguration.class, ScheduleService.class,
-        CatalogService.class, PractitionerService.class, AccountService.class, BookingOccupiedTime.class})
+@Import({TestcontainersConfiguration.class, FixedClockConfiguration.class, BookingService.class,
+        BookingOccupiedTime.class, ScheduleService.class, CatalogService.class, PractitionerService.class,
+        AccountService.class, CustomerService.class})
 public class BookingFreeSlotsTest {
 
     private static final LocalDate MONDAY_9_NOVEMBER = LocalDate.of(2026, 11, 9);

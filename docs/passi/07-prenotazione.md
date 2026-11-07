@@ -1,13 +1,13 @@
 # Passo 07 — Prenotazione
 
-> **Stato: in corso.** Pezzo 1 fatto (2026-11-06), 321 test verdi (`mvnw clean test`). Branch `feat/step-7-booking`.
+> **Stato: in corso.** Pezzi 1 e 2 fatti (2026-11-06), 353 test verdi (`mvnw clean test`). Branch `feat/step-7-booking`.
 
 ## Obiettivo
 Il cliente chiede un orario e il sistema lo accompagna fino alla conferma: controlli, blocco dell'orario, pagamento (ancora simulato), approvazione automatica o manuale, oppure rifiuto, scadenza o ritiro. Il database rende impossibili le doppie prenotazioni. Due lavori programmati fanno pulizia.
 
 I pezzi (guida 18, 1.2):
 1. Migrazione V4 e ciclo tra `schedule` e `booking` — ✅ fatto
-2. Richiesta di prenotazione del cliente: controlli, `PENDING_PAYMENT`, limite sotto concorrenza, blocco scaduto
+2. Richiesta di prenotazione del cliente: controlli, `PENDING_PAYMENT`, limite sotto concorrenza, blocco scaduto — ✅ fatto
 3. Stati e approvazione: macchina a stati, incasso e annullamento provvisori, eventi di dominio
 4. Lavori programmati: `EXPIRED` e `APPROVAL_EXPIRED` ogni minuto, con il `Clock`
 5. Prenotazione dal pannello, pagata in studio (D-040)
@@ -37,6 +37,21 @@ Fuori dal passo: crediti (passo 10), cancellazione di una prenotazione confermat
 | `test/.../booking/BookingTestData.java` | Claude, su richiesta di Nicholas | Righe di prova con SQL (professionisti, clienti, servizi, orari, prenotazioni con le colonne che il loro stato richiede) |
 | `test/.../schedule/NothingOccupied.java` | Claude, su richiesta di Nicholas | Un `OccupiedTime` finto, scritto come lambda, per i test `@DataJpaTest` di `schedule` |
 | Test di `practitioner` e `catalog` | Claude, su richiesta di Nicholas | Aggiornati ai `record` nuovi. Casi nuovi: finestra oltre l'anticipo → 400 su `approvalWindowHours` con `WindowWithinNotice`; finestra 49 → 400 con `Max`; modo d'approvazione sconosciuto → 400 generico; un client con le impostazioni del passo 6 → 400 sui tre campi mancanti; `check` nuovi del database; `evaluation` salvato, corretto, obbligatorio; `serviceOnSale` con il prezzo |
+| **Pezzo 2** | | |
+| `customer/Customer.java`, `CustomerRepository.java` | Claude, su richiesta di Nicholas | La prima entità del modulo, sulla tabella della V1; `findLockedById` con `@Lock(PESSIMISTIC_WRITE)` |
+| `customer/CustomerService.java` | Claude, su richiesta di Nicholas | La porta del modulo: `lockForBooking`, in `Propagation.MANDATORY` (senza transazione il lucchetto non proteggerebbe niente) |
+| `customer/CurrentCustomer.java`, `DevHeaderCurrentCustomer.java` | Claude, su richiesta di Nicholas | Il cliente corrente **provvisorio**, header `X-Customer-Id`, 401 se manca o non esiste; `TODO (step 8)` |
+| `shared/ErrorCode.java` | Claude, su richiesta di Nicholas | `SLOT_NOT_AVAILABLE` (un codice per tutte le regole del calcolo) e `BOOKING_LIMIT_REACHED` |
+| `schedule/ScheduleService.java` | Claude, su richiesta di Nicholas | `requireFreeSlot`: l'orario richiesto è tra gli orari liberi del suo giorno? Il calcolo è condiviso con l'API pubblica in un metodo privato |
+| `booking/Booking.java` | Claude, su richiesta di Nicholas | `HOLD` di 30 minuti; `requestedByCustomer(...)`: `PENDING_PAYMENT`, `CUSTOMER`, `CARD`, prezzo copiato, blocco fino a `now + HOLD` |
+| `booking/BookingRepository.java` | Claude, su richiesta di Nicholas | Il conteggio del limite (stessa condizione di "occupato adesso" del calcolo); la scadenza pigra con un `update` in blocco che incrementa la versione a mano; la prenotazione di un cliente con la proprietà nella query |
+| `booking/BookingService.java` | Claude, su richiesta di Nicholas | `request`: un solo `clock.instant()`, poi servizio, lucchetto, limite, orario, blocchi scaduti, `saveAndFlush`; la violazione `23P01` di `booking_no_overlap_ex` diventa `SLOT_NOT_AVAILABLE`. `findForCustomer` |
+| `booking/BookingStatus.java` | Claude, su richiesta di Nicholas | Diventa pubblico: è nella risposta |
+| `booking/NewBooking.java`, `CustomerBookingView.java`, `BookingCustomerController.java` | Claude, su richiesta di Nicholas | `POST /api/customer/bookings` (201 + `Location`) e `GET /api/customer/bookings/{id}`; orari in ora di Roma |
+| `test/.../booking/BookingServiceTest.java` | Claude, su richiesta di Nicholas | 19 test: la richiesta che riesce (letta dalla riga), il prezzo del momento, servizio non in vendita, fuori griglia, fuori fascia, sabato, oltre l'orizzonte, dentro l'anticipo, assenza, orario preso, blocco scaduto chiuso (con la versione), blocco scaduto altrove lasciato al lavoro, limite raggiunto, cosa non conta nel limite, la seduta che inizia libera il posto, la prenotazione dal pannello conta, il limite prima dell'orario, la proprietà in lettura |
+| `test/.../booking/BookingConcurrencyTest.java` | Claude, su richiesta di Nicholas | Due casi nuovi attraverso il servizio: **stesso cliente, limite 1, due orari** → uno riesce, l'altro `BOOKING_LIMIT_REACHED` (verificato che senza il lucchetto il test fallisce con 2 prenotazioni); **due clienti, stesso orario** → uno riesce, l'altro `SLOT_NOT_AVAILABLE` |
+| `test/.../booking/BookingCustomerApiTest.java` | Claude, su richiesta di Nicholas | 8 test dall'esterno: 401, 201 con `Location` e JSON esatto, un altro offset per lo stesso istante, 400 sul campo, 409 con i due codici, 404 per il servizio, 404 per la prenotazione di un altro |
+| `test/.../customer/CustomerServiceTest.java` | Claude, su richiesta di Nicholas | 3 test del lucchetto: cliente esistente, mancante, e fuori transazione → `IllegalTransactionStateException` |
 
 ## Concetti chiave
 
@@ -64,6 +79,27 @@ Un'interfaccia con un solo metodo si implementa con una lambda: `(practitionerId
 ### Test di concorrenza contro un database vero
 `@DataJpaTest` avvolge ogni test in una transazione annullata alla fine: due thread non la possono condividere. Il test gira senza transazione (`Propagation.NOT_SUPPORTED`), ogni thread apre e conferma la propria con `TransactionTemplate`, un `CountDownLatch` li fa partire insieme, e una pausa prima del commit garantisce che le due transazioni si sovrappongano davvero. Siccome le righe sono confermate, `@AfterEach` le cancella: il container è condiviso con gli altri test.
 
+### Il limite sotto concorrenza: lucchetto pessimistico sulla riga del cliente (pezzo 2)
+Un conteggio non è un vincolo del database: due richieste dello stesso cliente possono contare insieme e inserire entrambe. All'inizio della transazione `select ... for update` sulla riga del cliente (`@Lock(PESSIMISTIC_WRITE)`): la seconda richiesta aspetta la fine della prima, poi conta di nuovo. Il lucchetto ottimistico e `SERIALIZABLE` farebbero **fallire** la seconda richiesta, che andrebbe ripetuta; qui il cliente deve solo aspettare il suo turno, e clienti diversi non si aspettano mai.
+
+### Il livello di isolamento, solo quanto basta (pezzo 2)
+Con `READ COMMITTED`, il default di PostgreSQL, ogni istruzione vede i dati confermati quando inizia: il conteggio, che parte dopo l'attesa, vede la prenotazione appena confermata. Con `REPEATABLE READ` la transazione lavorerebbe sulla fotografia della prima istruzione, presa prima dell'attesa, e il lucchetto non servirebbe a niente. Lucchetto e isolamento si scelgono insieme.
+
+### `Propagation.MANDATORY` (pezzo 2)
+Un lucchetto vive quanto la transazione. Fuori da una transazione si scioglierebbe appena finita la `select`, senza errori: con `MANDATORY` Spring rifiuta la chiamata se non c'è una transazione aperta da chi chiama.
+
+### Un solo calcolo, un solo codice d'errore (pezzo 2)
+L'orario richiesto si controlla rifacendo il calcolo degli orari liberi del suo giorno: impossibile che il cliente veda un orario libero e la richiesta lo rifiuti per una regola scritta diversamente. Griglia, fasce, anticipo, orizzonte, assenze e orari presi danno tutti `SLOT_NOT_AVAILABLE`: il cliente sceglie comunque un altro orario, e codici diversi direbbero a chiunque dove ci sono prenotazioni.
+
+### Scadenza pigra e `update` in blocco (pezzo 2)
+Prima dell'`insert`, la richiesta porta a `EXPIRED` i blocchi scaduti che si sovrappongono all'orario. Un `update` JPQL in blocco salta l'entità: niente `@Version` automatico (lo si incrementa a mano) e niente *persistence context*. La condizione `where` è la guardia della transizione: se il lavoro programmato chiude la stessa riga nello stesso momento, il secondo `update` la rilegge e non cambia niente.
+
+### Tradurre la violazione di un vincolo (pezzo 2)
+`saveAndFlush` fa partire l'`insert` dentro il `try`; `save` lo rimanderebbe al commit, fuori dal metodo. La violazione si riconosce da `SQLSTATE 23P01` e dal nome del vincolo, cercati nelle cause: il driver di PostgreSQL è `runtime`, ma `java.sql.SQLException` si può nominare. La traduzione sta nel modulo che possiede il vincolo.
+
+### Un test che deve saper fallire (pezzo 2)
+Un test di concorrenza che passa non dimostra niente, finché non si vede fallire nel caso sbagliato. Tolto per un momento il lucchetto, il test del limite ha dato 2 prenotazioni su 1; rimesso il lucchetto, è tornato verde (tre esecuzioni su tre).
+
 ## Decisioni
 - D-039: notifiche push lato backend al passo 8, con l'email.
 - D-040: prenotazioni dal pannello pagate in studio; link di pagamento da decidere (punto aperto 16).
@@ -71,12 +107,14 @@ Un'interfaccia con un solo metodo si implementa con una lambda: `(practitionerId
 - D-042: schema della V4.
 - D-043: il servizio di valutazione è una proprietà del servizio.
 - D-044: `OccupiedTime`, il ciclo tra `schedule` e `booking`.
+- D-045: la richiesta di prenotazione (ordine dei controlli, un solo calcolo, lucchetto sul cliente, scadenza pigra, traduzione del vincolo, `/api/customer`).
 
 ## Errori fatti e come sono stati corretti
 
 1. **Notifiche push senza la loro riserva.** D-032 metteva le push al passo 7 e l'email al passo 8, ma la stessa D-032 vuole l'email come riserva delle push: al passo 7 una richiesta poteva restare senza avviso. Corretto spostando le push al passo 8 con una scheda nuova (D-039), non cambiando D-032 in silenzio.
 2. **Un limite proposto senza guardare come si usa.** D-023 proponeva 2 prenotazioni future. Nicholas ha fatto il conto: con 2 sedute a settimana, 2 coprono solo la settimana in corso. Il valore giusto dipendeva da quanto è pieno il calendario e da come lavorano gli abituali: deciso 4 (D-041). Lezione: un valore di default è una regola di prodotto, va verificato su un caso d'uso reale.
 3. **Due vincoli violati dalla stessa riga.** Dopo la V4, `PractitionerSchemaTest.zeroMinBookingNoticeIsRejected` falliva: un anticipo a 0 viola sia il suo `check` sia quello nuovo della finestra (`window >= 1` e `window <= notice` non possono valere insieme), e PostgreSQL ne segnala uno solo, in questo caso l'altro. Il database aveva ragione; era il test a essere diventato impreciso. Corretto accettando uno dei due nomi, con un commento. Lezione: i vincoli che legano più colonne interagiscono con quelli esistenti, e un test che controlla il nome del vincolo deve violarne uno solo, oppure dire perché non può.
+4. **Pezzo 2: nessun errore di implementazione.** Tutti i test verdi al primo giro. Per questo il test del limite è stato verificato al contrario, togliendo il lucchetto: se fosse passato lo stesso, sarebbe stato un test inutile, ed è l'errore più insidioso di un test di concorrenza (passa perché le due transazioni non si sono mai sovrapposte). La pausa con `pg_sleep` prima del commit è ciò che lo rende significativo.
 
 ## Domande da colloquio
 
@@ -95,5 +133,11 @@ Un'interfaccia con un solo metodo si implementa con una lambda: `(practitionerId
 ### Domanda 5: Devi aggiungere una colonna `not null` con un vincolo che dipende da un'altra colonna, su una tabella con dati. Come scrivi la migrazione?
 **Risposta modello.** In tre passi: la colonna con un default; un `update` che corregge le righe in cui il default violerebbe il vincolo; solo allora il vincolo. Tutto insieme, una sola riga anomala farebbe fallire la migrazione. Su PostgreSQL Flyway la esegue in una transazione, e da PostgreSQL 11 una colonna con un default fisso si aggiunge senza riscrivere la tabella.
 
-### Domanda 6: Come provi in un test che un vincolo regge due richieste simultanee?
+### Domanda 6: Come fai rispettare "al massimo N prenotazioni per cliente" con richieste concorrenti?
+**Risposta modello.** Un conteggio in Java non basta: due transazioni contano insieme e inseriscono entrambe. Serializzo le richieste dello stesso cliente con un lucchetto pessimistico sulla sua riga (`SELECT ... FOR UPDATE`, in JPA `@Lock(PESSIMISTIC_WRITE)`): la seconda aspetta la fine della prima e poi conta di nuovo. Funziona con `READ COMMITTED`, perché il conteggio parte dopo l'attesa e vede i dati confermati; con `REPEATABLE READ` lavorerebbe su una fotografia vecchia. `SERIALIZABLE` o un lucchetto ottimistico farebbero fallire la seconda, che andrebbe ripetuta.
+
+### Domanda 7: Un `update` JPQL in blocco su un'entità con `@Version`: cosa devi sapere?
+**Risposta modello.** Va dritto al database: salta il *persistence context* e il controllo della versione. Incremento la versione nello stesso `update`, così chi ha letto la riga prima se ne accorge, e metto lo stato di partenza nella condizione `where`: è la guardia della transizione, e sotto concorrenza un secondo `update` sulla stessa riga la rilegge e non fa niente.
+
+### Domanda 8: Come provi in un test che un vincolo regge due richieste simultanee?
 **Risposta modello.** Tolgo la transazione unica del test, che due thread non possono condividere; faccio partire due thread insieme con un `CountDownLatch`; ognuno inserisce e conferma nella propria transazione, con una pausa prima del commit perché le due si sovrappongano davvero. Verifico che una sola riesca e che ci sia una riga sola, poi cancello quello che è stato confermato. Uso PostgreSQL vero con Testcontainers: un altro database non avrebbe lo stesso vincolo né lo stesso comportamento.

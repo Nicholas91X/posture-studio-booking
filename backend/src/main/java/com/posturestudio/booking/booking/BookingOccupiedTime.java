@@ -13,7 +13,7 @@ import com.posturestudio.booking.shared.TimeRange;
  * The booked time, for schedule's free slot calculation (D-044).
  * A small class of its own, depending only on the repository: if the booking service implemented
  * OccupiedTime, the cycle schedule -> booking service -> schedule would stop Spring at startup
- * (guide 18, 8.5).
+ * (guide 18, 8.5): BookingService depends on ScheduleService to check a requested slot.
  */
 @Component
 class BookingOccupiedTime implements OccupiedTime {

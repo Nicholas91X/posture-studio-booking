@@ -57,8 +57,27 @@ public class ScheduleService {
     @Transactional(readOnly = true)
     public List<PublicSlot> freeSlots(long practitionerId, long serviceId, LocalDate from, LocalDate to) {
         ServiceOnSale service = catalog.serviceOnSale(practitionerId, serviceId);
+        return compute(practitionerId, service.durationMinutes(), from, to, clock.instant()).stream()
+                .map(PublicSlot::from)
+                .toList();
+    }
+
+    // For booking (guide 19, part 3): is this start one of the free slots? The same calculation the customer
+    // saw, so the two can never disagree. Duration and now come from the caller, who already asked the
+    // catalog and read the clock once for the whole request. Only the day of the start is computed
+    @Transactional(readOnly = true)
+    public TimeRange requireFreeSlot(long practitionerId, int durationMinutes, Instant start, Instant now) {
+        LocalDate day = LocalDate.ofInstant(start, StudioTime.ZONE);
+        return compute(practitionerId, durationMinutes, day, day, now).stream()
+                .filter(slot -> slot.start().equals(start))
+                .findFirst()
+                .orElseThrow(() -> new BusinessRuleException(ErrorCode.SLOT_NOT_AVAILABLE,
+                        "No free slot of practitioner " + practitionerId + " starts at " + start));
+    }
+
+    // The glue shared by the two methods above
+    private List<TimeRange> compute(long practitionerId, int durationMinutes, LocalDate from, LocalDate to, Instant now) {
         PractitionerSettings settings = practitioners.getSettings(practitionerId);
-        Instant now = clock.instant();
 
         // absences and booked time in a window decided by the server, not by the client (guide 17, part 4):
         // from now to the end of the last day of the horizon, whatever from and to say
@@ -75,10 +94,10 @@ public class ScheduleService {
             versions.put(version.getValidFrom(), version.bands());
         }
 
-        SlotQuery query = new SlotQuery(versions, busy, Duration.ofMinutes(service.durationMinutes()),
+        SlotQuery query = new SlotQuery(versions, busy, Duration.ofMinutes(durationMinutes),
                 settings.slotStepMinutes(), settings.minBookingNoticeHours(), settings.bookingHorizonDays(),
                 from, to, now);
-        return FreeSlots.compute(query).stream().map(PublicSlot::from).toList();
+        return FreeSlots.compute(query);
     }
 
     // ***** SCHEDULE VERSIONS (panel) *****

@@ -70,6 +70,21 @@ final class BookingTestData {
                 at(holdExpiresAt), status.equals("PENDING_APPROVAL") ? at(LATER) : null);
     }
 
+    // a booking made by the practitioner from the panel, to be paid in the studio (D-024, D-040)
+    long panelBooking(long practitionerId, long serviceId, long customerId, String startsAt, String endsAt) {
+        return jdbc.queryForObject("""
+                insert into booking (customer_id, practitioner_id, service_id, starts_at, ends_at, status,
+                                     booked_by, paid_with, price_cents)
+                values (?, ?, ?, ?, ?, 'CONFIRMED', 'PRACTITIONER', 'IN_STUDIO', 3000)
+                returning id
+                """, Long.class, customerId, practitionerId, serviceId, at(startsAt), at(endsAt));
+    }
+
+    void absence(long practitionerId, String startsAt, String endsAt) {
+        jdbc.update("insert into unavailability (practitioner_id, starts_at, ends_at) values (?, ?, ?)",
+                practitionerId, at(startsAt), at(endsAt));
+    }
+
     static OffsetDateTime at(String time) {
         return time == null ? null : OffsetDateTime.parse(time);
     }

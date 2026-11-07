@@ -2,14 +2,17 @@ package com.posturestudio.booking.booking;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
+import java.time.OffsetDateTime;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.concurrent.Callable;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.ExecutionException;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.concurrent.Future;
 import java.util.concurrent.TimeUnit;
+import java.util.concurrent.TimeoutException;
 
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
@@ -24,20 +27,34 @@ import org.springframework.transaction.annotation.Propagation;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.transaction.support.TransactionTemplate;
 
+import com.posturestudio.booking.FixedClockConfiguration;
 import com.posturestudio.booking.TestcontainersConfiguration;
+import com.posturestudio.booking.auth.AccountService;
+import com.posturestudio.booking.catalog.CatalogService;
+import com.posturestudio.booking.customer.CustomerService;
+import com.posturestudio.booking.practitioner.PractitionerService;
+import com.posturestudio.booking.schedule.ScheduleService;
+import com.posturestudio.booking.shared.BusinessRuleException;
+import com.posturestudio.booking.shared.ErrorCode;
 
-// Two bookings of the same slot in two transactions that really run at the same time (guide 18, 10.2).
+// Two transactions that really run at the same time (guide 18, 10.2; guide 19, 9.2).
 // @DataJpaTest would run the test in ONE transaction, rolled back at the end: two threads cannot share it,
 // and a row not yet committed is invisible to anyone else. So the test runs without a transaction
 // (NOT_SUPPORTED), every thread commits its own, and @AfterEach deletes what was really written:
-// the container is shared with the other tests of the same configuration
+// the container is shared with the other tests of the same configuration.
+// Every transaction stays open for a moment after its work (pg_sleep): this makes sure the two overlap.
+// Without the pause the first could commit before the second even starts, and the test would prove
+// nothing about simultaneous requests. Today is Friday 6 November 2026, 10:00 in Rome
 @DataJpaTest
-@Import(TestcontainersConfiguration.class)
+@Import({TestcontainersConfiguration.class, FixedClockConfiguration.class, BookingService.class,
+        BookingOccupiedTime.class, ScheduleService.class, CatalogService.class, PractitionerService.class,
+        AccountService.class, CustomerService.class})
 @Transactional(propagation = Propagation.NOT_SUPPORTED)
 public class BookingConcurrencyTest {
 
     private static final String MONDAY_9 = "2026-11-09T09:00+01:00";
     private static final String MONDAY_10 = "2026-11-09T10:00+01:00";
+    private static final String TUESDAY_9 = "2026-11-10T09:00+01:00";
 
     @Autowired
     JdbcTemplate jdbc;
@@ -45,9 +62,12 @@ public class BookingConcurrencyTest {
     @Autowired
     PlatformTransactionManager transactionManager;
 
+    @Autowired
+    BookingService service;
+
     private BookingTestData data;
     private long anna;
-    private long service;
+    private long seduta;
     private long customerA;
     private long customerB;
 
@@ -56,65 +76,134 @@ public class BookingConcurrencyTest {
     void insertPeople() {
         data = new BookingTestData(jdbc);
         anna = data.practitioner("concurrency-anna@example.com");
-        service = data.service(anna, 60);
+        seduta = data.service(anna, 60);
         customerA = data.customer("concurrency-a@example.com");
         customerB = data.customer("concurrency-b@example.com");
+        data.weekdays(anna, "2026-11-02");
     }
 
     @AfterEach
     void deleteWhatWasCommitted() {
         jdbc.update("delete from booking where practitioner_id = ?", anna);
+        // the bands go with their version (on delete cascade, V3)
+        jdbc.update("delete from working_schedule where practitioner_id = ?", anna);
         jdbc.update("delete from service where practitioner_id = ?", anna);
         jdbc.update("delete from practitioner where id = ?", anna);
         jdbc.update("delete from customer where id in (?, ?)", customerA, customerB);
         jdbc.update("delete from app_user where email like 'concurrency-%'");
     }
 
+    // ***** the database constraint alone (piece 1) *****
+
     @Test
-    void twoSimultaneousBookingsOfTheSameSlotLeaveExactlyOne() throws Exception {
-        // arrange: two customers, the same slot, a gate that opens for both at once
+    void twoSimultaneousInsertsOfTheSameSlotLeaveExactlyOne() throws Exception {
+        Outcome outcome = runTogether(
+                () -> inOpenTransaction(() -> data.booking(anna, seduta, customerA, MONDAY_9, MONDAY_10, "PENDING_PAYMENT")),
+                () -> inOpenTransaction(() -> data.booking(anna, seduta, customerB, MONDAY_9, MONDAY_10, "PENDING_PAYMENT")));
+
+        // one wins, the other is stopped by the exclusion constraint, whatever the order
+        assertThat(outcome.succeeded()).isEqualTo(1);
+        assertThat(outcome.failures()).singleElement()
+                .isInstanceOf(DataIntegrityViolationException.class)
+                .extracting(Throwable::getMessage).asString().contains("booking_no_overlap_ex");
+        assertThat(bookingRows()).isEqualTo(1);
+    }
+
+    // ***** through BookingService (piece 2) *****
+
+    @Test
+    void twoSimultaneousRequestsOfOneCustomerDoNotExceedTheLimit() throws Exception {
+        // limit 1, two different slots: the exclusion constraint cannot help, only the customer lock.
+        // Without it both would count 0 and both would be booked
+        jdbc.update("update practitioner set max_future_bookings = 1 where id = ?", anna);
+
+        Outcome outcome = runTogether(
+                () -> inOpenTransaction(() -> request(customerA, MONDAY_9)),
+                () -> inOpenTransaction(() -> request(customerA, TUESDAY_9)));
+
+        // the second waited for the first on the lock, then counted 1
+        assertThat(outcome.succeeded()).isEqualTo(1);
+        assertThat(outcome.failures()).singleElement()
+                .isInstanceOf(BusinessRuleException.class)
+                .extracting(failure -> ((BusinessRuleException) failure).getCode())
+                .isEqualTo(ErrorCode.BOOKING_LIMIT_REACHED);
+        assertThat(bookingRows()).isEqualTo(1);
+    }
+
+    @Test
+    void twoCustomersAskingTheSameSlotTogetherGetOneBookingAndAReadableError() throws Exception {
+        // both checks see the slot free (neither sees the other's uncommitted row), so the second is stopped
+        // by the constraint and BookingService translates it (guide 19, part 6). Should the second check
+        // run after the first commit, the check itself answers: the same code, as the customer should see
+        Outcome outcome = runTogether(
+                () -> inOpenTransaction(() -> request(customerA, MONDAY_9)),
+                () -> inOpenTransaction(() -> request(customerB, MONDAY_9)));
+
+        assertThat(outcome.succeeded()).isEqualTo(1);
+        assertThat(outcome.failures()).singleElement()
+                .isInstanceOf(BusinessRuleException.class)
+                .extracting(failure -> ((BusinessRuleException) failure).getCode())
+                .isEqualTo(ErrorCode.SLOT_NOT_AVAILABLE);
+        assertThat(bookingRows()).isEqualTo(1);
+    }
+
+    // ***** helpers *****
+
+    private record Outcome(int succeeded, List<Throwable> failures) {
+    }
+
+    // Two tasks on two threads, released together by a gate; waits for both and collects how they ended
+    private static Outcome runTogether(Callable<?> first, Callable<?> second) throws InterruptedException {
         CountDownLatch start = new CountDownLatch(1);
         ExecutorService threads = Executors.newFixedThreadPool(2);
-        List<Future<Long>> attempts = new ArrayList<>();
-        for (long customer : List.of(customerA, customerB)) {
+        List<Future<?>> attempts = new ArrayList<>();
+        for (Callable<?> task : List.of(first, second)) {
             attempts.add(threads.submit(() -> {
                 start.await();
-                return book(customer);
+                return task.call();
             }));
         }
-
-        // act
         start.countDown();
         int succeeded = 0;
         List<Throwable> failures = new ArrayList<>();
-        for (Future<Long> attempt : attempts) {
-            try {
-                attempt.get(10, TimeUnit.SECONDS);
-                succeeded++;
-            } catch (ExecutionException e) {
-                failures.add(e.getCause());
+        try {
+            for (Future<?> attempt : attempts) {
+                try {
+                    attempt.get(10, TimeUnit.SECONDS);
+                    succeeded++;
+                } catch (ExecutionException e) {
+                    failures.add(e.getCause());
+                } catch (TimeoutException e) {
+                    failures.add(e);
+                }
             }
+        } finally {
+            threads.shutdownNow();
         }
-        threads.shutdown();
-
-        // assert: one wins, the other is stopped by the exclusion constraint, whatever the order
-        assertThat(succeeded).isEqualTo(1);
-        assertThat(failures).singleElement()
-                .isInstanceOf(DataIntegrityViolationException.class)
-                .extracting(Throwable::getMessage).asString().contains("booking_no_overlap_ex");
-        Integer rows = jdbc.queryForObject("select count(*) from booking where practitioner_id = ?", Integer.class, anna);
-        assertThat(rows).isEqualTo(1);
+        return new Outcome(succeeded, failures);
     }
 
-    // One transaction: insert, then stay open for a moment before the commit. The pause makes sure the
-    // two transactions overlap: the second insert finds the first row not yet committed, waits for it,
-    // and fails when it commits (guide 18, 3.3). Without the pause the first could commit before the
-    // second even starts, and the test would prove nothing about simultaneous requests
-    private long book(long customer) {
+    // The work in a transaction of its own, which then stays open for 0.3 seconds before the commit.
+    // BookingService.request joins this transaction (REQUIRED): its lock and its row live until the commit
+    private <T> T inOpenTransaction(Callable<T> work) {
         return new TransactionTemplate(transactionManager).execute(status -> {
-            long id = data.booking(anna, service, customer, MONDAY_9, MONDAY_10, "PENDING_PAYMENT");
-            jdbc.execute("select pg_sleep(0.3)");
-            return id;
+            try {
+                T result = work.call();
+                jdbc.execute("select pg_sleep(0.3)");
+                return result;
+            } catch (RuntimeException e) {
+                throw e;
+            } catch (Exception e) {
+                throw new IllegalStateException(e);
+            }
         });
+    }
+
+    private CustomerBookingView request(long customerId, String startsAt) {
+        return service.request(customerId, new NewBooking(anna, seduta, OffsetDateTime.parse(startsAt)));
+    }
+
+    private Integer bookingRows() {
+        return jdbc.queryForObject("select count(*) from booking where practitioner_id = ?", Integer.class, anna);
     }
 }

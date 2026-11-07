@@ -6,8 +6,9 @@ import java.util.Set;
 /**
  * The states of a booking in step 7 (guide 18, part 1.1): only the ones the code can reach (D-042).
  * Same values as booking_status_ck; steps 10 and 11 add the cancellations with a new migration.
+ * Public: the API returns it, so its names are part of the contract and are never renamed (as D-027).
  */
-enum BookingStatus {
+public enum BookingStatus {
 
     // the customer is paying: the time is held until hold_expires_at (D-008)
     PENDING_PAYMENT,

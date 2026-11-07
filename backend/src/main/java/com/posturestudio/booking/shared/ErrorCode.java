@@ -16,5 +16,13 @@ public enum ErrorCode {
     SCHEDULE_STARTS_IN_THE_PAST,
 
     // another version of the same practitioner already starts on that date
-    SCHEDULE_DATE_TAKEN
+    SCHEDULE_DATE_TAKEN,
+
+    // the requested start is not among the free slots: off the grid, outside working hours, too soon,
+    // beyond the horizon, during an absence, or taken. One code on purpose: the customer picks another
+    // slot whatever the reason, and telling "taken" from "not working" would reveal bookings (guide 19, 2.2)
+    SLOT_NOT_AVAILABLE,
+
+    // the customer already has max_future_bookings future bookings with this practitioner (D-023, D-041)
+    BOOKING_LIMIT_REACHED
 }
