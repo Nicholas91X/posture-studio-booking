@@ -173,6 +173,20 @@ class Booking {
         this.status = next;
     }
 
+    // ***** QUESTIONS *****
+
+    // Holds the time for whoever looks at instant now: a holding state, and not a pending payment whose
+    // hold has expired (guide 18, 3.5). The same rule as the two queries of BookingRepository that say
+    // "b.status in :holding and (b.status <> :pending or b.holdExpiresAt > :now)"
+    boolean holdsTimeAt(Instant now) {
+        return BookingStatus.HOLDS_TIME.contains(status)
+                && (status != BookingStatus.PENDING_PAYMENT || holdExpiresAt.isAfter(now));
+    }
+
+    TimeRange range() {
+        return new TimeRange(startsAt, endsAt);
+    }
+
     // ***** GETTERS *****
 
     Long getId() {

@@ -4,7 +4,13 @@ import java.sql.SQLException;
 import java.time.Clock;
 import java.time.Duration;
 import java.time.Instant;
+import java.time.LocalDate;
+import java.util.Comparator;
+import java.util.HashSet;
 import java.util.List;
+import java.util.Map;
+import java.util.Set;
+import java.util.stream.Collectors;
 
 import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.dao.DataAccessException;
@@ -20,6 +26,7 @@ import com.posturestudio.booking.booking.BookingEvent.BookingRejected;
 import com.posturestudio.booking.booking.BookingEvent.BookingWithdrawn;
 import com.posturestudio.booking.catalog.CatalogService;
 import com.posturestudio.booking.catalog.ServiceOnSale;
+import com.posturestudio.booking.customer.CustomerName;
 import com.posturestudio.booking.customer.CustomerService;
 import com.posturestudio.booking.practitioner.PractitionerService;
 import com.posturestudio.booking.practitioner.PractitionerSettings;
@@ -27,6 +34,7 @@ import com.posturestudio.booking.schedule.ScheduleService;
 import com.posturestudio.booking.shared.BusinessRuleException;
 import com.posturestudio.booking.shared.ErrorCode;
 import com.posturestudio.booking.shared.NotFoundException;
+import com.posturestudio.booking.shared.StudioTime;
 import com.posturestudio.booking.shared.TimeRange;
 
 /**
@@ -229,6 +237,34 @@ public class BookingService {
         return PanelBookingView.from(booking);
     }
 
+    // ***** LISTS (guide 23) *****
+
+    // the practitioner's bookings overlapping the local days from..to (both included, in Rome), every state
+    @Transactional(readOnly = true)
+    public List<PanelBookingRow> listForPanel(long practitionerId, LocalDate from, LocalDate to) {
+        Instant windowStart = from.atStartOfDay(StudioTime.ZONE).toInstant();
+        Instant windowEnd = to.plusDays(1).atStartOfDay(StudioTime.ZONE).toInstant();
+        List<Booking> own = bookings.findByPractitionerIdAndStartsAtBeforeAndEndsAtAfterOrderByStartsAt(
+                practitionerId, windowEnd, windowStart);
+        return rowsFor(practitionerId, own, clock.instant());
+    }
+
+    // the requests the practitioner can still answer (D-030): past the deadline they are void
+    @Transactional(readOnly = true)
+    public List<PanelBookingRow> requestsForPanel(long practitionerId) {
+        Instant now = clock.instant();
+        List<Booking> waiting = bookings.findByPractitionerIdAndStatusAndApprovalDeadlineAfterOrderByApprovalDeadline(
+                practitionerId, BookingStatus.PENDING_APPROVAL, now);
+        return rowsFor(practitionerId, waiting, now);
+    }
+
+    @Transactional(readOnly = true)
+    public List<CustomerBookingView> listForCustomer(long customerId) {
+        return bookings.findByCustomerIdOrderByStartsAtDesc(customerId).stream()
+                .map(CustomerBookingView::from)
+                .toList();
+    }
+
     // ***** JOBS (guide 21) *****
 
     // PENDING_PAYMENT -> EXPIRED for every expired hold, in one statement: no card, no event
@@ -261,6 +297,64 @@ public class BookingService {
     }
 
     // ***** HELPERS *****
+
+    // The rows of a panel list with names and flags (guide 23, part 2). A fixed number of queries whatever
+    // the number of rows: one question per module on a set of ids (D-029), the rest combined in Java.
+    // Flags only on bookings that hold the time now: a rejected or expired booking uses no room
+    private List<PanelBookingRow> rowsFor(long practitionerId, List<Booking> own, Instant now) {
+        if (own.isEmpty()) {
+            return List.of();
+        }
+        List<Booking> holding = own.stream().filter(booking -> booking.holdsTimeAt(now)).toList();
+
+        Set<TimeRange> outside = schedule.outsideWorkingHours(practitionerId,
+                holding.stream().map(Booking::range).toList());
+
+        // the other practitioners' bookings in the span of ours: only service and times (BookedRange)
+        List<BookedRange> others = holding.isEmpty() ? List.of() : bookings.findOthersHolding(practitionerId,
+                holding.stream().map(Booking::getStartsAt).min(Comparator.naturalOrder()).orElseThrow(),
+                holding.stream().map(Booking::getEndsAt).max(Comparator.naturalOrder()).orElseThrow(),
+                now, BookingStatus.HOLDS_TIME, BookingStatus.PENDING_PAYMENT);
+        Set<Long> serviceIds = new HashSet<>();
+        holding.forEach(booking -> serviceIds.add(booking.getServiceId()));
+        others.forEach(other -> serviceIds.add(other.serviceId()));
+        Set<Long> evaluations = catalog.evaluationsAmong(serviceIds);
+
+        Map<Long, CustomerName> names = customers.namesOf(
+                own.stream().map(Booking::getCustomerId).collect(Collectors.toSet()));
+
+        return own.stream()
+                .map(booking -> {
+                    boolean holds = booking.holdsTimeAt(now);
+                    return PanelBookingRow.from(booking, names.get(booking.getCustomerId()),
+                            holds && outside.contains(booking.range()),
+                            holds ? evaluationOverlaps(booking, others, evaluations) : List.of());
+                })
+                .toList();
+    }
+
+    // The intervals this booking shares with the others', when one of the two is an evaluation (D-043).
+    // The shared part of two half-open intervals: from the later start to the earlier end
+    private static List<RoomOverlap> evaluationOverlaps(Booking booking, List<BookedRange> others, Set<Long> evaluations) {
+        boolean ownIsEvaluation = evaluations.contains(booking.getServiceId());
+        TimeRange own = booking.range();
+        return others.stream()
+                .filter(other -> own.overlaps(other.range()))
+                .filter(other -> ownIsEvaluation || evaluations.contains(other.serviceId()))
+                .map(other -> new RoomOverlap(
+                        StudioTime.inStudioZone(max(own.start(), other.start())),
+                        StudioTime.inStudioZone(min(own.end(), other.end()))))
+                .sorted(Comparator.comparing(RoomOverlap::start))
+                .toList();
+    }
+
+    private static Instant max(Instant a, Instant b) {
+        return a.isAfter(b) ? a : b;
+    }
+
+    private static Instant min(Instant a, Instant b) {
+        return a.isBefore(b) ? a : b;
+    }
 
     // The order matters (guide 20, 3.5): the state machine first, so a refused step never reaches Stripe;
     // then the capture, whose failure rolls the transaction back and leaves PENDING_APPROVAL

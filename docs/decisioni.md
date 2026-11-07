@@ -771,3 +771,22 @@ Implementazione (pezzo 3, guida 16): `FreeSlots.compute(SlotQuery)` nel package 
 **Alternative scartate.** *Griglia anche dal pannello*: impedirebbe la seduta alle 9:30 dopo una valutazione 9:00–9:30, il caso per cui lo studio ha chiesto la mezz'ora. *Nessuna fascia dal pannello*: lo studio non lavora mai fuori dal proprio schema; una seduta fuori orario sarebbe un errore di battitura. *Scegliere il cliente da un elenco*: apre la domanda, ancora aperta, su quali clienti può vedere un professionista (passo 13). *`jakarta.validation.constraints.Email`*: accetta indirizzi che `Email` rifiuta, con un 500.
 
 **Conseguenze.** Il professionista può prenotare a distanza ravvicinata o lontana nel tempo, e fuori griglia. La segnalazione della stanza unica "prima di confermare" (punto aperto 12) non blocca e compare nelle liste (pezzo 6); il frontend del passo 13 potrà mostrarla prima dell'invio. Due creazioni simultanee della stessa email: una fallisce sul `unique` di `app_user` (raro; ripetendo, si trova l'account).
+
+---
+
+## D-049 — Liste e segnalazioni: domande su insiemi di id, la stanza unica senza leggere i clienti degli altri
+**Stato:** accettata · 2026-11-07 · completa D-034 e D-043 · confronto completo: `docs/studio/23-liste-e-segnalazioni.md` · scelte di Claude secondo le raccomandazioni della guida, su indicazione di Nicholas
+
+**Contesto.** Il professionista deve vedere le proprie prenotazioni e le richieste da approvare, con due segnalazioni: prenotazione fuori dall'orario di lavoro attuale (D-034) e sovrapposizione con una valutazione dell'altro professionista (D-043), senza mai il nome del cliente dell'altro. Il cliente deve vedere le proprie.
+
+**Decisione.**
+- `GET /api/panel/bookings?from=&to=` (date locali, `SlotRange` riusato): le prenotazioni proprie che si sovrappongono al periodo, tutti gli stati, per inizio. `GET /api/panel/bookings/requests`: le `PENDING_APPROVAL` con scadenza nel futuro, prima quella che scade prima. `GET /api/customer/bookings`: le proprie, inizio decrescente.
+- Riga `PanelBookingRow` con nome del cliente (chiesto a `customer` con `namesOf`, un insieme di id), chi l'ha creata, come si paga, scadenza, `outsideWorkingHours`, `evaluationOverlaps`.
+- Segnalazioni **solo sulle righe che occupano l'orario adesso** (`Booking.holdsTimeAt`, la stessa regola delle due query del repository).
+- `outsideWorkingHours`: la riga non sta in una fascia della versione valida nel suo giorno (`ScheduleService.outsideWorkingHours`, le versioni caricate una volta).
+- `evaluationOverlaps`: gli intervalli condivisi con le prenotazioni degli altri professionisti che occupano l'orario, quando una delle due è una valutazione (`CatalogService.evaluationsAmong`, un insieme di id). La query sugli altri **seleziona solo servizio e orari** (`BookedRange`): il cliente dell'altro non viene nemmeno letto. La segnalazione ha solo `start` ed `end`.
+- `BookedBy` e `PaidWith` diventano pubblici: sono nella risposta.
+
+**Alternative scartate.** *Una join SQL tra prenotazioni, clienti e servizi*: attraverserebbe tre moduli (D-026). *Leggere le prenotazioni degli altri come entità e filtrare la risposta*: riservatezza per filtro, non per costruzione; un campo aggiunto per errore uscirebbe. *Fotografare "valutazione" nella prenotazione*: D-043 lo esclude. *Un limite alla lunghezza del periodo*: dati propri e pochi.
+
+**Conseguenze.** Numero di query costante per lista (righe, altri, valutazioni, orari, nomi). Il frontend del passo 13 mostra la segnalazione anche prima di confermare una prenotazione dal pannello (punto aperto 12, "quando compare"), chiedendo la lista del giorno.

@@ -1,6 +1,7 @@
 package com.posturestudio.booking.booking;
 
 import java.net.URI;
+import java.util.List;
 
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.GetMapping;
@@ -11,6 +12,7 @@ import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
 
 import com.posturestudio.booking.practitioner.CurrentPractitioner;
+import com.posturestudio.booking.schedule.SlotRange;
 
 import jakarta.validation.Valid;
 
@@ -36,6 +38,18 @@ class BookingPanelController {
     ResponseEntity<PanelBookingView> book(@Valid @RequestBody NewPanelBooking request) {
         PanelBookingView created = bookings.bookFromPanel(current.id(), request);
         return ResponseEntity.created(URI.create("/api/panel/bookings/" + created.id())).body(created);
+    }
+
+    // ?from=2026-11-09&to=2026-11-15: the same SlotRange of the free slots (both required, from not after to)
+    @GetMapping
+    List<PanelBookingRow> list(@Valid SlotRange period) {
+        return bookings.listForPanel(current.id(), period.from(), period.to());
+    }
+
+    // a literal path wins over /{id}
+    @GetMapping("/requests")
+    List<PanelBookingRow> requests() {
+        return bookings.requestsForPanel(current.id());
     }
 
     @GetMapping("/{id}")

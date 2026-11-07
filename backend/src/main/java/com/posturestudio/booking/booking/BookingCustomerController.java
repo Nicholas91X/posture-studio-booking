@@ -1,6 +1,7 @@
 package com.posturestudio.booking.booking;
 
 import java.net.URI;
+import java.util.List;
 
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.GetMapping;
@@ -35,6 +36,12 @@ class BookingCustomerController {
     ResponseEntity<CustomerBookingView> request(@Valid @RequestBody NewBooking request) {
         CustomerBookingView created = bookings.request(current.id(), request);
         return ResponseEntity.created(URI.create("/api/customer/bookings/" + created.id())).body(created);
+    }
+
+    // "my sessions": all of them, the furthest in the future first
+    @GetMapping
+    List<CustomerBookingView> list() {
+        return bookings.listForCustomer(current.id());
     }
 
     // the page back from the payment asks for the status here (D-007)

@@ -60,6 +60,31 @@ interface BookingRepository extends JpaRepository<Booking, Long> {
     int expireStaleHolds(long practitionerId, Instant start, Instant end, Instant now,
                          BookingStatus pending, BookingStatus expired);
 
+    // ***** for the lists (guide 23) *****
+
+    // the practitioner's bookings that overlap a window, every state, by start
+    List<Booking> findByPractitionerIdAndStartsAtBeforeAndEndsAtAfterOrderByStartsAt(
+            Long practitionerId, Instant windowEnd, Instant windowStart);
+
+    // the requests still answerable, the one that expires first on top
+    List<Booking> findByPractitionerIdAndStatusAndApprovalDeadlineAfterOrderByApprovalDeadline(
+            Long practitionerId, BookingStatus status, Instant now);
+
+    List<Booking> findByCustomerIdOrderByStartsAtDesc(Long customerId);
+
+    // The bookings of the OTHER practitioners that hold the time in a span, for the room flag: only service
+    // and times are selected, never the customer (guide 23, 2.3). Same "holding at now" as findOccupied
+    @Query("""
+            select new com.posturestudio.booking.booking.BookedRange(b.serviceId, b.startsAt, b.endsAt)
+            from Booking b
+            where b.practitionerId <> :practitionerId
+              and b.startsAt < :spanEnd and b.endsAt > :spanStart
+              and b.status in :holding
+              and (b.status <> :pending or b.holdExpiresAt > :now)
+            """)
+    List<BookedRange> findOthersHolding(long practitionerId, Instant spanStart, Instant spanEnd, Instant now,
+                                        Collection<BookingStatus> holding, BookingStatus pending);
+
     // ***** for the jobs (guide 21) *****
 
     // all the expired holds at once: the lazy expiry above without the range. Same guard in the where

@@ -2,6 +2,9 @@ package com.posturestudio.booking.booking;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
+import java.util.List;
+import java.util.Map;
+
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -138,6 +141,48 @@ public class BookingPanelApiTest {
 
         assertThat(result).hasStatus(HttpStatus.BAD_REQUEST);
         assertThat(result).bodyJson().extractingPath("$.errors[*].field").asArray().containsExactly("customer");
+    }
+
+    // ***** lists (guide 23) *****
+
+    @Test
+    void theRoomFlagNeverRevealsTheOtherPractitionersCustomer() throws Exception {
+        // Marco's evaluation for "Segreto Cliente" overlaps Anna's request on Monday 9:30-10:00
+        long marcoId = Long.parseLong(marco);
+        long marcosEvaluation = data.evaluation(marcoId);
+        long segreto = data.customer("segreto@example.com", "Segreto", "Cliente");
+        long marcosBooking = data.booking(marcoId, marcosEvaluation, segreto,
+                "2026-11-09T09:30+01:00", "2026-11-09T10:00+01:00", "CONFIRMED");
+
+        MvcTestResult result = mvc.get().uri("/api/panel/bookings?from=2026-11-09&to=2026-11-15").header(HEADER, anna).exchange();
+
+        assertThat(result).hasStatusOk();
+        assertThat(result).bodyJson().extractingPath("$[0].evaluationOverlaps").isEqualTo(List.of(
+                Map.of("start", "2026-11-09T09:30:00+01:00", "end", "2026-11-09T10:00:00+01:00")));
+        // nothing about Marco's booking: not the customer's name, not the email, not the booking id
+        String body = result.getResponse().getContentAsString();
+        assertThat(body).doesNotContain("Segreto", "segreto@example.com", "\"id\":" + marcosBooking + ",");
+    }
+
+    @Test
+    void theRequestsListShowsTheWaitingRequest() {
+        assertThat(mvc.get().uri("/api/panel/bookings/requests").header(HEADER, anna))
+                .hasStatusOk()
+                .bodyJson().extractingPath("$[*].id").asArray().containsExactly((int) waiting);
+    }
+
+    @Test
+    void aPeriodEndingBeforeItStartsAnswers400OnTo() {
+        assertThat(mvc.get().uri("/api/panel/bookings?from=2026-11-15&to=2026-11-09").header(HEADER, anna))
+                .hasStatus(HttpStatus.BAD_REQUEST)
+                .bodyJson().extractingPath("$.errors[*].field").asArray().containsExactly("to");
+    }
+
+    @Test
+    void theCustomerListShowsTheirOwn() {
+        assertThat(mvc.get().uri("/api/customer/bookings").header("X-Customer-Id", String.valueOf(customerOf(waiting))))
+                .hasStatusOk()
+                .bodyJson().extractingPath("$[*].id").asArray().containsExactly((int) waiting);
     }
 
     @Test

@@ -26,17 +26,28 @@ final class BookingTestData {
     }
 
     long customer(String email) {
+        return customer(email, "Test", "Customer");
+    }
+
+    long customer(String email, String firstName, String lastName) {
         Long userId = jdbc.queryForObject(
                 "insert into app_user (role, email) values ('CUSTOMER', ?) returning id", Long.class, email);
         return jdbc.queryForObject(
-                "insert into customer (user_id, first_name, last_name) values (?, 'Test', 'Customer') returning id",
-                Long.class, userId);
+                "insert into customer (user_id, first_name, last_name) values (?, ?, ?) returning id",
+                Long.class, userId, firstName, lastName);
     }
 
     long service(long practitionerId, int durationMinutes) {
         return jdbc.queryForObject(
                 "insert into service (practitioner_id, name, duration_minutes, price_cents) values (?, 'Seduta', ?, 3000) returning id",
                 Long.class, practitionerId, durationMinutes);
+    }
+
+    // an evaluation visit of 30 minutes (D-043)
+    long evaluation(long practitionerId) {
+        return jdbc.queryForObject(
+                "insert into service (practitioner_id, name, duration_minutes, price_cents, evaluation) values (?, 'Valutazione', 30, 3000, true) returning id",
+                Long.class, practitionerId);
     }
 
     // Monday to Friday 9-13 and 14-19, from the given date
