@@ -32,7 +32,7 @@ import com.posturestudio.booking.schedule.ScheduleService;
 @DataJpaTest
 @Import({TestcontainersConfiguration.class, FixedClockConfiguration.class, BookingService.class,
         BookingOccupiedTime.class, ScheduleService.class, CatalogService.class, PractitionerService.class,
-        AccountService.class, CustomerService.class})
+        AccountService.class, CustomerService.class, BookingTestDoubles.class})
 public class BookingFreeSlotsTest {
 
     private static final LocalDate MONDAY_9_NOVEMBER = LocalDate.of(2026, 11, 9);

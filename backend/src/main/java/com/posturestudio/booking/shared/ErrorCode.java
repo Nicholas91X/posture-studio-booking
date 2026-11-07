@@ -24,5 +24,11 @@ public enum ErrorCode {
     SLOT_NOT_AVAILABLE,
 
     // the customer already has max_future_bookings future bookings with this practitioner (D-023, D-041)
-    BOOKING_LIMIT_REACHED
+    BOOKING_LIMIT_REACHED,
+
+    // the booking is not in a state that allows this step, e.g. approving a request just withdrawn (guide 20, part 2)
+    BOOKING_TRANSITION_NOT_ALLOWED,
+
+    // the practitioner answers after approval_deadline: the request is already void, the job closes it (D-030)
+    APPROVAL_DEADLINE_PASSED
 }

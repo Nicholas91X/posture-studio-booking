@@ -32,7 +32,7 @@ import com.posturestudio.booking.shared.NotFoundException;
 @DataJpaTest
 @Import({TestcontainersConfiguration.class, FixedClockConfiguration.class, BookingService.class,
         BookingOccupiedTime.class, ScheduleService.class, CatalogService.class, PractitionerService.class,
-        AccountService.class, CustomerService.class})
+        AccountService.class, CustomerService.class, BookingTestDoubles.class})
 public class BookingServiceTest {
 
     private static final String MONDAY_9 = "2026-11-09T09:00+01:00";

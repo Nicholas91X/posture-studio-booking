@@ -42,4 +42,10 @@ class BookingCustomerController {
     CustomerBookingView find(@PathVariable long id) {
         return bookings.findForCustomer(current.id(), id);
     }
+
+    // while waiting for the practitioner's answer: nothing charged (D-030)
+    @PostMapping("/{id}/withdraw")
+    CustomerBookingView withdraw(@PathVariable long id) {
+        return bookings.withdraw(current.id(), id);
+    }
 }

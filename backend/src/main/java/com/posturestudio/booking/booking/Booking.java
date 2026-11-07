@@ -4,16 +4,18 @@ import java.time.Duration;
 import java.time.Instant;
 import java.util.Objects;
 
-import org.hibernate.annotations.Generated;
 import jakarta.persistence.*;
 
+import com.posturestudio.booking.shared.BusinessRuleException;
 import com.posturestudio.booking.shared.Checks;
+import com.posturestudio.booking.shared.ErrorCode;
 import com.posturestudio.booking.shared.TimeRange;
 
 // A booking of a customer with a practitioner (V4). Package-private: other modules use BookingService,
 // never the entity (D-002, D-026).
 // Created only through named factory methods, which say where a booking comes from (piece 5 adds the panel).
-// Transitions arrive with the state machine of piece 3
+// The status changes only through moveTo, which asks the state machine (BookingStatus.canMoveTo):
+// every transition has a domain name and writes its own moment column (guide 20, part 2)
 @Entity
 @Table(name = "booking")
 class Booking {
@@ -43,6 +45,7 @@ class Booking {
         booking.paidWith = PaidWith.CARD;
         booking.priceCents = Checks.requirePositive(priceCents, "priceCents");
         booking.holdExpiresAt = now.plus(HOLD);
+        booking.createdAt = now;
         return booking;
     }
 
@@ -95,15 +98,55 @@ class Booking {
     @Column
     private Instant cancelledAt;
 
-    // optimistic lock: two concurrent changes of the same booking cannot both win (piece 3)
+    // optimistic lock, the second defense: transitions take a pessimistic lock on the row first
+    // (guide 20, 3.4), so this only catches a future write that forgets it
     @Version
     private long version;
 
+    // The moment of the request, from the Clock and not from the default of the database (as the other
+    // tables do): the approval window counts from it (D-030, guide 20, 6.1), and tests fix the clock
     @Column(updatable = false)
-    @Generated
     private Instant createdAt;
 
-    // ***** METHODS *****
+    // ***** TRANSITIONS *****
+
+    // The card hold is in place: the practitioner has until request + window to answer (D-030).
+    // window <= min_booking_notice_hours, and the slot starts more than the notice after the request,
+    // so the deadline always comes before the session
+    void paymentAuthorized(Duration approvalWindow) {
+        Objects.requireNonNull(approvalWindow, "approvalWindow must not be null");
+        moveTo(BookingStatus.PENDING_APPROVAL);
+        this.approvalDeadline = createdAt.plus(approvalWindow);
+    }
+
+    // approved by the practitioner, or by the system in AUTOMATIC mode
+    void approve(Instant now) {
+        moveTo(BookingStatus.CONFIRMED);
+        this.decidedAt = Objects.requireNonNull(now, "now must not be null");
+    }
+
+    void reject(Instant now) {
+        moveTo(BookingStatus.REJECTED);
+        this.decidedAt = Objects.requireNonNull(now, "now must not be null");
+    }
+
+    // the customer gives up while waiting for the answer: nothing is charged
+    void withdraw(Instant now) {
+        moveTo(BookingStatus.WITHDRAWN);
+        this.cancelledAt = Objects.requireNonNull(now, "now must not be null");
+    }
+
+    // A forbidden step is a 409, not a bug (D-027): it really happens, e.g. approving a request
+    // the customer has just withdrawn. Nothing changes if the step is refused
+    private void moveTo(BookingStatus next) {
+        if (!status.canMoveTo(next)) {
+            throw new BusinessRuleException(ErrorCode.BOOKING_TRANSITION_NOT_ALLOWED,
+                    "Booking " + id + " cannot go from " + status + " to " + next);
+        }
+        this.status = next;
+    }
+
+    // ***** GETTERS *****
 
     Long getId() {
         return id;
@@ -147,6 +190,22 @@ class Booking {
 
     Instant getHoldExpiresAt() {
         return holdExpiresAt;
+    }
+
+    Instant getApprovalDeadline() {
+        return approvalDeadline;
+    }
+
+    Instant getDecidedAt() {
+        return decidedAt;
+    }
+
+    Instant getCancelledAt() {
+        return cancelledAt;
+    }
+
+    Instant getCreatedAt() {
+        return createdAt;
     }
 
     long getVersion() {

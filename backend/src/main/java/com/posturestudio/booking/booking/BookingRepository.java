@@ -6,10 +6,13 @@ import java.util.List;
 import java.util.Optional;
 
 import org.springframework.data.jpa.repository.JpaRepository;
+import org.springframework.data.jpa.repository.Lock;
 import org.springframework.data.jpa.repository.Modifying;
 import org.springframework.data.jpa.repository.Query;
 
 import com.posturestudio.booking.shared.TimeRange;
+
+import jakarta.persistence.LockModeType;
 
 // "Holding the time at instant now" appears in two queries below, with the same two lines:
 // a holding state, and not a pending payment whose hold has already expired (guide 18, 3.5)
@@ -59,4 +62,17 @@ interface BookingRepository extends JpaRepository<Booking, Long> {
 
     // ownership is part of the query: someone else's booking is not found, like a missing one
     Optional<Booking> findByIdAndCustomerId(Long id, Long customerId);
+
+    // ***** for transitions: select ... for update (guide 20, 3.4) *****
+    // Whoever arrives second waits, then reads the new status: a transition that calls Stripe starts only
+    // when it is surely ours. The lazy expiry and the jobs (bulk updates) wait on the same row lock
+
+    @Lock(LockModeType.PESSIMISTIC_WRITE)
+    Optional<Booking> findLockedById(Long id);
+
+    @Lock(LockModeType.PESSIMISTIC_WRITE)
+    Optional<Booking> findLockedByIdAndPractitionerId(Long id, Long practitionerId);
+
+    @Lock(LockModeType.PESSIMISTIC_WRITE)
+    Optional<Booking> findLockedByIdAndCustomerId(Long id, Long customerId);
 }

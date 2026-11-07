@@ -21,6 +21,7 @@ import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.data.jpa.test.autoconfigure.DataJpaTest;
 import org.springframework.context.annotation.Import;
 import org.springframework.dao.DataIntegrityViolationException;
+import org.springframework.dao.PessimisticLockingFailureException;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.transaction.PlatformTransactionManager;
 import org.springframework.transaction.annotation.Propagation;
@@ -48,7 +49,7 @@ import com.posturestudio.booking.shared.ErrorCode;
 @DataJpaTest
 @Import({TestcontainersConfiguration.class, FixedClockConfiguration.class, BookingService.class,
         BookingOccupiedTime.class, ScheduleService.class, CatalogService.class, PractitionerService.class,
-        AccountService.class, CustomerService.class})
+        AccountService.class, CustomerService.class, BookingTestDoubles.class})
 @Transactional(propagation = Propagation.NOT_SUPPORTED)
 public class BookingConcurrencyTest {
 
@@ -101,11 +102,15 @@ public class BookingConcurrencyTest {
                 () -> inOpenTransaction(() -> data.booking(anna, seduta, customerA, MONDAY_9, MONDAY_10, "PENDING_PAYMENT")),
                 () -> inOpenTransaction(() -> data.booking(anna, seduta, customerB, MONDAY_9, MONDAY_10, "PENDING_PAYMENT")));
 
-        // one wins, the other is stopped by the exclusion constraint, whatever the order
+        // One wins, the other is stopped, whatever the order. Two answers are both right (passi/07, "Errori", 5):
+        // 23P01 if the first had committed when the second checked; 40P01 (deadlock) if both rows were in the
+        // index and each waited for the other, until PostgreSQL killed one. Either way, one row
         assertThat(outcome.succeeded()).isEqualTo(1);
-        assertThat(outcome.failures()).singleElement()
-                .isInstanceOf(DataIntegrityViolationException.class)
-                .extracting(Throwable::getMessage).asString().contains("booking_no_overlap_ex");
+        assertThat(outcome.failures()).singleElement().satisfiesAnyOf(
+                failure -> assertThat(failure).isInstanceOf(DataIntegrityViolationException.class)
+                        .hasMessageContaining("booking_no_overlap_ex"),
+                failure -> assertThat(failure).isInstanceOf(PessimisticLockingFailureException.class)
+                        .hasMessageContaining("deadlock"));
         assertThat(bookingRows()).isEqualTo(1);
     }
 

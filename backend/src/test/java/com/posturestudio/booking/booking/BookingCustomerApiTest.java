@@ -71,7 +71,8 @@ public class BookingCustomerApiTest {
         assertThat(result).bodyJson().isStrictlyEqualTo("""
                 {"id": %d, "practitionerId": %d, "serviceId": %d,
                  "startsAt": "2026-11-09T09:00:00+01:00", "endsAt": "2026-11-09T10:00:00+01:00",
-                 "status": "PENDING_PAYMENT", "priceCents": 3000, "holdExpiresAt": "2026-11-06T10:30:00+01:00"}
+                 "status": "PENDING_PAYMENT", "priceCents": 3000, "holdExpiresAt": "2026-11-06T10:30:00+01:00",
+                 "approvalDeadline": null}
                 """.formatted(id, anna, seduta));
     }
 
@@ -133,6 +134,33 @@ public class BookingCustomerApiTest {
         // 404 and not 403: the answer must not reveal that the booking exists
         assertThat(mvc.get().uri("/api/customer/bookings/" + id).header(HEADER, altroCliente))
                 .hasStatus(HttpStatus.NOT_FOUND);
+    }
+
+    @Test
+    void aCustomerWithdrawsTheirRequestButNotSomeoneElses() {
+        long waiting = data.booking(anna, seduta, Long.parseLong(cliente),
+                "2026-11-09T09:00+01:00", "2026-11-09T10:00+01:00", "PENDING_APPROVAL");
+
+        assertThat(mvc.post().uri("/api/customer/bookings/" + waiting + "/withdraw").header(HEADER, altroCliente))
+                .hasStatus(HttpStatus.NOT_FOUND);
+        assertThat(mvc.post().uri("/api/customer/bookings/" + waiting + "/withdraw").header(HEADER, cliente))
+                .hasStatusOk()
+                .bodyJson().extractingPath("$.status").isEqualTo("WITHDRAWN");
+        // a second time: the state machine refuses
+        assertThat(mvc.post().uri("/api/customer/bookings/" + waiting + "/withdraw").header(HEADER, cliente))
+                .hasStatus(HttpStatus.CONFLICT)
+                .bodyJson().extractingPath("$.code").isEqualTo("BOOKING_TRANSITION_NOT_ALLOWED");
+    }
+
+    @Test
+    void withoutTheSwitchTheSimulatedPaymentDoesNotExist() throws Exception {
+        // booking.simulated-payments is false by default: the controller is not even created (guide 20, part 5)
+        int pending = JsonPath.read(request(cliente, "2026-11-09T09:00:00+01:00").getResponse().getContentAsString(), "$.id");
+
+        assertThat(mvc.post().uri("/api/dev/bookings/" + pending + "/payment-authorized"))
+                .hasStatus(HttpStatus.NOT_FOUND);
+        String status = jdbc.queryForObject("select status from booking where id = ?", String.class, pending);
+        assertThat(status).isEqualTo("PENDING_PAYMENT");
     }
 
     private MvcTestResult request(String customer, String startsAt) {

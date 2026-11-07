@@ -34,4 +34,17 @@ public enum BookingStatus {
     // The states that hold the time in the database: the same list as the where of booking_no_overlap_ex.
     // For free slots, a PENDING_PAYMENT holds the time only until its hold expires (guide 18, 3.5)
     static final Set<BookingStatus> HOLDS_TIME = EnumSet.of(PENDING_PAYMENT, PENDING_APPROVAL, CONFIRMED);
+
+    // The state machine (guide 20, part 2): the only arrows of the diagram of guide 18, 1.1.
+    // A switch expression with no default must cover every value: a state added at step 11 will not
+    // compile until someone decides its arrows
+    boolean canMoveTo(BookingStatus next) {
+        return switch (this) {
+            case PENDING_PAYMENT -> next == PENDING_APPROVAL || next == EXPIRED;
+            case PENDING_APPROVAL -> next == CONFIRMED || next == REJECTED
+                    || next == APPROVAL_EXPIRED || next == WITHDRAWN;
+            // final in step 7: cancelling a confirmed booking arrives with step 11
+            case CONFIRMED, EXPIRED, REJECTED, APPROVAL_EXPIRED, WITHDRAWN -> false;
+        };
+    }
 }
