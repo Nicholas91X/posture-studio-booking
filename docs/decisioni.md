@@ -690,3 +690,24 @@ Implementazione (pezzo 3, guida 16): `FreeSlots.compute(SlotQuery)` nel package 
 **Alternative scartate.** *Spostare l'API pubblica degli orari liberi in `booking`*: il calcolo resterebbe in un modulo che non conosce tutto ciò che occupa il tempo. *Far implementare l'interfaccia a `BookingService`*: siccome `BookingService` userà `ScheduleService`, Spring non riuscirebbe ad avviarsi (riferimento circolare tra bean).
 
 **Conseguenze.** Le dipendenze nel codice vanno in un verso solo: `booking` → `schedule` → `catalog` → `practitioner` → `auth`. Gli orari liberi escludono le prenotazioni vere; un blocco scaduto è libero per il calcolo ma non ancora per il vincolo (D-042).
+
+---
+
+## D-045 — Richiesta di prenotazione: un solo calcolo, lucchetto sul cliente, scadenza pigra dei blocchi
+**Stato:** accettata · 2026-11-06 · confronto completo: `docs/studio/19-richiesta-di-prenotazione.md` · scelte di Claude secondo le raccomandazioni della guida, su indicazione di Nicholas ("se non ci sono domande, procedi senza chiedere conferma")
+
+**Contesto.** Il cliente chiede un orario. I controlli sono sei (servizio in vendita, griglia e orari di lavoro, anticipo, orizzonte, limite, orario libero), il limite è un conteggio in Java esposto alla concorrenza (D-023), e un blocco scaduto occupa ancora l'orario per il vincolo del database (D-042).
+
+**Decisione.**
+- API del cliente sotto **`/api/customer`**: `POST /api/customer/bookings` (201 + `Location`, `NewBooking(practitionerId, serviceId, startsAt)`) e `GET /api/customer/bookings/{id}` (404 per la prenotazione di un altro). La fine la calcola il backend dalla durata.
+- **Ordine**: servizio in vendita (404) → lucchetto sul cliente → limite (409 `BOOKING_LIMIT_REACHED`) → orario libero (409 `SLOT_NOT_AVAILABLE`) → scadenza dei blocchi vecchi sull'orario → `insert`. Il limite prima dell'orario: nessun altro orario risolverebbe il problema del cliente.
+- **Orario libero**: `ScheduleService.requireFreeSlot(practitionerId, durationMinutes, start, now)` riusa il calcolo degli orari liberi del giorno. **Un solo codice**, `SLOT_NOT_AVAILABLE`, per griglia, orari, anticipo, orizzonte, assenze e orari occupati: l'azione del cliente è la stessa, e codici diversi rivelerebbero le prenotazioni.
+- **Limite sotto concorrenza**: lucchetto pessimistico sulla riga del cliente (`@Lock(PESSIMISTIC_WRITE)`), con `CustomerService.lockForBooking` in `Propagation.MANDATORY`. Isolamento di default, `READ COMMITTED`, necessario perché il conteggio dopo l'attesa veda la prenotazione appena confermata.
+- **Blocco scaduto**: scadenza "pigra" nella stessa transazione, con un `update` JPQL in blocco (`PENDING_PAYMENT` → `EXPIRED`) limitato ai blocchi scaduti che si sovrappongono all'orario richiesto; la versione si incrementa a mano. Nel limite un blocco scaduto non conta (stessa condizione del calcolo).
+- **Violazione del vincolo**: `saveAndFlush`, poi `SQLSTATE 23P01` e nome `booking_no_overlap_ex` cercati nelle cause dell'eccezione → `SLOT_NOT_AVAILABLE`. La traduzione sta in `BookingService`, non nel gestore globale; ogni altra violazione si rilancia.
+- **Cliente corrente provvisorio**: `CurrentCustomer` e `DevHeaderCurrentCustomer` (header `X-Customer-Id`) nel modulo `customer`, da rimuovere al passo 8.
+- `BookingStatus` diventa pubblico: è nella risposta, quindi parte del contratto.
+
+**Alternative scartate.** *Controlli dedicati in `booking`*: la stessa regola in due posti. *Lucchetto ottimistico o `SERIALIZABLE` per il limite*: chi perde fallisce e va ripetuto, invece di aspettare. *Lucchetto consultivo di PostgreSQL*: specifico e poco leggibile. *Aspettare il lavoro programmato*: fino a un minuto di "occupato" falso. *Riprovare dopo la violazione*: PostgreSQL annulla tutta la transazione. *Cancellare il blocco scaduto*: si perde la storia e il pagamento tardivo non troverebbe la sua prenotazione. *Tradurre il vincolo nell'`ApiExceptionHandler`*: dovrebbe conoscere i vincoli di tutti i moduli.
+
+**Conseguenze.** Le richieste dello stesso cliente vanno una alla volta; quelle di clienti diversi no. Le prenotazioni dal pannello (pezzo 5) devono prendere lo stesso lucchetto, perché contano nel limite. Al passo 8 Spring Security apre `/api/customer/**` solo ai clienti. Il lavoro programmato del pezzo 4 farà la stessa transizione su tutti i blocchi scaduti, con la stessa guardia nel `where`.
