@@ -136,6 +136,11 @@ class Booking {
         this.cancelledAt = Objects.requireNonNull(now, "now must not be null");
     }
 
+    // nobody answered in time: void, like a rejection (D-030). Done by the job of guide 21
+    void expireApproval() {
+        moveTo(BookingStatus.APPROVAL_EXPIRED);
+    }
+
     // A forbidden step is a 409, not a bug (D-027): it really happens, e.g. approving a request
     // the customer has just withdrawn. Nothing changes if the step is refused
     private void moveTo(BookingStatus next) {

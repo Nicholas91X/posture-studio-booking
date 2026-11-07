@@ -4,6 +4,7 @@ import java.sql.SQLException;
 import java.time.Clock;
 import java.time.Duration;
 import java.time.Instant;
+import java.util.List;
 
 import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.dao.DataAccessException;
@@ -12,6 +13,7 @@ import org.springframework.dao.PessimisticLockingFailureException;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
+import com.posturestudio.booking.booking.BookingEvent.ApprovalExpired;
 import com.posturestudio.booking.booking.BookingEvent.ApprovalRequested;
 import com.posturestudio.booking.booking.BookingEvent.BookingConfirmed;
 import com.posturestudio.booking.booking.BookingEvent.BookingRejected;
@@ -185,6 +187,37 @@ public class BookingService {
         cards.cancel(booking.getId());
         events.publishEvent(BookingRejected.of(booking));
         return PanelBookingView.from(booking);
+    }
+
+    // ***** JOBS (guide 21) *****
+
+    // PENDING_PAYMENT -> EXPIRED for every expired hold, in one statement: no card, no event
+    @Transactional
+    public int expireHolds() {
+        return bookings.expireAllStaleHolds(clock.instant(), BookingStatus.PENDING_PAYMENT, BookingStatus.EXPIRED);
+    }
+
+    // the requests past their deadline, to be closed one by one with expireApproval
+    @Transactional(readOnly = true)
+    public List<Long> expiredApprovals() {
+        return bookings.findIdsPastDeadline(clock.instant(), BookingStatus.PENDING_APPROVAL);
+    }
+
+    // One request, in a transaction of its own (guide 21, 3.2). Between the list and the lock the
+    // practitioner may have answered or the customer withdrawn: after the lock the guard is read again,
+    // and if it no longer holds nothing happens, with no error. This also makes two instances of the
+    // application safe: the second one finds the request already closed (guide 21, part 5)
+    @Transactional
+    public void expireApproval(long bookingId) {
+        Instant now = clock.instant();
+        Booking booking = bookings.findLockedById(bookingId).orElse(null);
+        if (booking == null || booking.getStatus() != BookingStatus.PENDING_APPROVAL
+                || now.isBefore(booking.getApprovalDeadline())) {
+            return;
+        }
+        booking.expireApproval();
+        cards.cancel(booking.getId());
+        events.publishEvent(ApprovalExpired.of(booking));
     }
 
     // ***** HELPERS *****

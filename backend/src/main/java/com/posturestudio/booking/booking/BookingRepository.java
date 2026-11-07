@@ -60,6 +60,24 @@ interface BookingRepository extends JpaRepository<Booking, Long> {
     int expireStaleHolds(long practitionerId, Instant start, Instant end, Instant now,
                          BookingStatus pending, BookingStatus expired);
 
+    // ***** for the jobs (guide 21) *****
+
+    // all the expired holds at once: the lazy expiry above without the range. Same guard in the where
+    @Modifying
+    @Query("""
+            update Booking b set b.status = :expired, b.version = b.version + 1
+            where b.status = :pending and b.holdExpiresAt <= :now
+            """)
+    int expireAllStaleHolds(Instant now, BookingStatus pending, BookingStatus expired);
+
+    // only the ids: each one is then closed in a transaction of its own, after a lock and a fresh look
+    @Query("""
+            select b.id from Booking b
+            where b.status = :waiting and b.approvalDeadline <= :now
+            order by b.approvalDeadline
+            """)
+    List<Long> findIdsPastDeadline(Instant now, BookingStatus waiting);
+
     // ownership is part of the query: someone else's booking is not found, like a missing one
     Optional<Booking> findByIdAndCustomerId(Long id, Long customerId);
 

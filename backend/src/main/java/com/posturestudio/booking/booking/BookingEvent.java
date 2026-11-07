@@ -10,11 +10,11 @@ import java.time.Instant;
  * sealed: these records are the only implementations, so a switch over a BookingEvent can list every
  * case with no default, and stops compiling when a new event is added (pattern matching, Java 21).
  * Ids and instants only, never the customer's name: listeners ask the module that owns it, and a push
- * notification on a locked screen must not show it (D-032). ApprovalExpired arrives with piece 4.
+ * notification on a locked screen must not show it (D-032).
  */
 public sealed interface BookingEvent
-        permits BookingEvent.ApprovalRequested, BookingEvent.BookingConfirmed,
-                BookingEvent.BookingRejected, BookingEvent.BookingWithdrawn {
+        permits BookingEvent.ApprovalRequested, BookingEvent.BookingConfirmed, BookingEvent.BookingRejected,
+                BookingEvent.BookingWithdrawn, BookingEvent.ApprovalExpired {
 
     long bookingId();
 
@@ -50,6 +50,16 @@ public sealed interface BookingEvent
 
         static BookingRejected of(Booking booking) {
             return new BookingRejected(booking.getId(), booking.getPractitionerId(), booking.getCustomerId(),
+                    booking.getStartsAt());
+        }
+    }
+
+    // nobody answered before the deadline, hold released by the job (email to the customer)
+    record ApprovalExpired(long bookingId, long practitionerId, long customerId, Instant startsAt)
+            implements BookingEvent {
+
+        static ApprovalExpired of(Booking booking) {
+            return new ApprovalExpired(booking.getId(), booking.getPractitionerId(), booking.getCustomerId(),
                     booking.getStartsAt());
         }
     }

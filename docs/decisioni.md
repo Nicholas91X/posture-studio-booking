@@ -733,4 +733,22 @@ Implementazione (pezzo 3, guida 16): `FreeSlots.compute(SlotQuery)` nel package 
 
 **Alternative scartate.** *Tabella `EnumMap`*: uno stato dimenticato non è un errore di compilazione. *Pattern State, Spring Statemachine*: troppo per stati senza comportamento proprio. *Lucchetto ottimistico sulle transizioni*: scopre il conflitto dopo l'incasso, che non si annulla. *Ascoltatori `@EventListener`*: un'email partirebbe anche per una transazione annullata. *Outbox*: una tabella e un lavoro in più, rimandabile al passo 8 se servirà. *Profilo `dev` o controller sempre attivo per il pagamento simulato*: sicuri solo finché nessuno sbaglia la configurazione. *Riprovare la transazione dopo il deadlock*: chi perde troverebbe comunque l'orario occupato, con più codice.
 
-**Conseguenze.** La riga della prenotazione resta bloccata per la durata della chiamata a Stripe: irrilevante a questa scala. Resta il caso "incasso riuscito, commit fallito" (doppia scrittura), da chiudere al passo 9 riconciliando con il webhook (`payment_intent.succeeded`). Al passo 9 un annullamento fallito si registra senza bloccare la transizione. Al passo 8 gli ascoltatori che scrivono nel database hanno bisogno di `REQUIRES_NEW`. Il pezzo 4 aggiunge l'evento `ApprovalExpired` e usa `CardHolds.cancel` per le approvazioni scadute.
+**Conseguenze (D-046).** La riga della prenotazione resta bloccata per la durata della chiamata a Stripe: irrilevante a questa scala. Resta il caso "incasso riuscito, commit fallito" (doppia scrittura), da chiudere al passo 9 riconciliando con il webhook (`payment_intent.succeeded`). Al passo 9 un annullamento fallito si registra senza bloccare la transizione. Al passo 8 gli ascoltatori che scrivono nel database hanno bisogno di `REQUIRES_NEW`. Il pezzo 4 aggiunge l'evento `ApprovalExpired` e usa `CardHolds.cancel` per le approvazioni scadute.
+
+---
+
+## D-047 — Lavori programmati: `fixedDelay` di un minuto, una transazione per richiesta, sicuri con più istanze
+**Stato:** accettata · 2026-11-07 · confronto completo: `docs/studio/21-lavori-programmati.md` · scelte di Claude secondo le raccomandazioni della guida, su indicazione di Nicholas
+
+**Contesto.** Blocchi di pagamento scaduti e richieste senza risposta vanno chiusi ogni minuto (D-008, D-030), leggendo l'ora dal `Clock`, con test che non aspettano davvero. Il brief chiede anche cosa succederebbe con due istanze dell'applicazione.
+
+**Decisione.**
+- `@Scheduled(fixedDelayString = "PT1M")` in `BookingJobs`, una classe separata da `BookingService`: un minuto dalla **fine** dell'esecuzione precedente, mai due esecuzioni sovrapposte; le chiamate passano dal *proxy* del servizio, quindi `@Transactional` vale.
+- **Blocchi scaduti**: un solo `update` in blocco (`PENDING_PAYMENT` → `EXPIRED`, versione incrementata), con lo stato di partenza nel `where`. Nessun evento.
+- **Richieste scadute**: prima gli id (`approval_deadline <= now`), poi **una transazione per richiesta** con il lucchetto sulla riga e la guardia **riletta dopo il lucchetto**; se non vale più (approvata, ritirata), non succede niente e non è un errore. Poi `APPROVAL_EXPIRED`, `CardHolds.cancel`, evento `ApprovalExpired`. Un errore su una richiesta si registra e non ferma le altre.
+- `@EnableScheduling` in `SchedulingConfiguration`, acceso da `booking.jobs.enabled` (default `true`, variabile `BOOKING_JOBS_ENABLED`).
+- Nei test: un `MovableClock` che si sposta a comando e i metodi dei lavori chiamati direttamente.
+
+**Alternative scartate.** *`fixedRate`*: esecuzioni lente si accumulano. *`cron`*: aggancio all'orologio inutile qui. *Una transazione per tutto il lavoro delle richieste*: un errore annullerebbe nel database anche le richieste già chiuse, ma non le chiamate esterne già fatte. *ShedLock*: non serve con un'istanza, e il codice è già corretto con due.
+
+**Conseguenze.** Con due istanze i lavori girano due volte: lavoro doppio, ma nessun effetto doppio (la seconda trova le righe già chiuse). Una richiesta scaduta resta aperta al massimo circa un minuto, coperto dal controllo della scadenza nelle risposte (D-046) e dalla scadenza pigra (D-045).
