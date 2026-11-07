@@ -67,7 +67,7 @@ public class CatalogPanelErrorsTest {
         return mvc.post().uri("/api/panel/services")
                 .contentType(MediaType.APPLICATION_JSON)
                 .content("""
-                        {"name": "Seduta posturale", "durationMinutes": 60, "priceCents": 3000}
+                        {"name": "Seduta posturale", "durationMinutes": 60, "priceCents": 3000, "evaluation": false}
                         """)
                 .exchange();
     }

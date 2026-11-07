@@ -32,6 +32,13 @@ public final class Checks {
         return value;
     }
 
+    public static int requireBetween(int value, int min, int max, String field) {
+        if (value < min || value > max) {
+            throw new IllegalArgumentException(field + " must be between " + min + " and " + max + ", was " + value);
+        }
+        return value;
+    }
+
     public static int requireOneOf(int value, Set<Integer> allowed, String field) {
         if (!allowed.contains(value)) {
             throw new IllegalArgumentException(field + " must be one of " + allowed + ", was " + value);

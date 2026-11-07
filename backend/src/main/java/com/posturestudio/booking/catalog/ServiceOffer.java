@@ -48,6 +48,10 @@ class ServiceOffer {
     @Column
     private boolean active;
 
+    // not copied into bookings: a correction applies to the sessions already booked too (D-043)
+    @Column
+    private boolean evaluation;
+
     @Column(updatable = false)
     @Generated
     private Instant createdAt;
@@ -63,9 +67,11 @@ class ServiceOffer {
         String newName = requireNotBlank(details.name(), "name");
         int newDuration = requirePositive(details.durationMinutes(), "durationMinutes");
         long newPrice = requirePositive(details.priceCents(), "priceCents");
+        boolean newEvaluation = Objects.requireNonNull(details.evaluation(), "evaluation must not be null");
         this.name = newName;
         this.durationMinutes = newDuration;
         this.priceCents = newPrice;
+        this.evaluation = newEvaluation;
     }
 
     public void deactivate() {
@@ -98,6 +104,10 @@ class ServiceOffer {
 
     public boolean isActive() {
         return active;
+    }
+
+    public boolean isEvaluation() {
+        return evaluation;
     }
 
     public Instant getCreatedAt() {

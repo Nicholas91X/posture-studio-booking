@@ -4,8 +4,14 @@ import java.time.Clock;
 import java.time.Duration;
 import java.time.Instant;
 import java.time.LocalDate;
+import java.time.ZonedDateTime;
+import java.util.ArrayList;
+import java.util.Collection;
 import java.util.List;
+import java.util.Map;
+import java.util.Set;
 import java.util.TreeMap;
+import java.util.stream.Collectors;
 
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -26,6 +32,7 @@ import com.posturestudio.booking.shared.TimeRange;
  * someone else's version or absence is reported as not found (404, not 403).
  * "Today" is the date in Rome, from the injected Clock (D-035).
  * Dependencies go one way only (D-029): schedule -> catalog -> practitioner -> auth, schedule -> practitioner.
+ * Booked time comes through OccupiedTime, implemented by booking (D-044): booking -> schedule, never back.
  */
 @Service
 public class ScheduleService {
@@ -34,14 +41,17 @@ public class ScheduleService {
     private final UnavailabilityRepository unavailabilities;
     private final CatalogService catalog;
     private final PractitionerService practitioners;
+    private final OccupiedTime occupiedTime;
     private final Clock clock;
 
     ScheduleService(WorkingScheduleRepository schedules, UnavailabilityRepository unavailabilities,
-                    CatalogService catalog, PractitionerService practitioners, Clock clock) {
+                    CatalogService catalog, PractitionerService practitioners, OccupiedTime occupiedTime,
+                    Clock clock) {
         this.schedules = schedules;
         this.unavailabilities = unavailabilities;
         this.catalog = catalog;
         this.practitioners = practitioners;
+        this.occupiedTime = occupiedTime;
         this.clock = clock;
     }
 
@@ -52,28 +62,68 @@ public class ScheduleService {
     @Transactional(readOnly = true)
     public List<PublicSlot> freeSlots(long practitionerId, long serviceId, LocalDate from, LocalDate to) {
         ServiceOnSale service = catalog.serviceOnSale(practitionerId, serviceId);
-        PractitionerSettings settings = practitioners.getSettings(practitionerId);
-        Instant now = clock.instant();
+        return compute(practitionerId, service.durationMinutes(), from, to, clock.instant()).stream()
+                .map(PublicSlot::from)
+                .toList();
+    }
 
-        // absences in a window decided by the server, not by the client (guide 17, part 4):
+    // For booking (guide 19, part 3): is this start one of the free slots? The same calculation the customer
+    // saw, so the two can never disagree. Duration and now come from the caller, who already asked the
+    // catalog and read the clock once for the whole request. Only the day of the start is computed
+    @Transactional(readOnly = true)
+    public TimeRange requireFreeSlot(long practitionerId, int durationMinutes, Instant start, Instant now) {
+        LocalDate day = LocalDate.ofInstant(start, StudioTime.ZONE);
+        return compute(practitionerId, durationMinutes, day, day, now).stream()
+                .filter(slot -> slot.start().equals(start))
+                .findFirst()
+                .orElseThrow(() -> new BusinessRuleException(ErrorCode.SLOT_NOT_AVAILABLE,
+                        "No free slot of practitioner " + practitionerId + " starts at " + start));
+    }
+
+    // For the panel (guide 22, part 2): the range lies inside a working band of the version valid that day
+    // and touches no absence. No grid, no notice, no horizon: those are rules for customers booking alone
+    @Transactional(readOnly = true)
+    public void requireWorkingTime(long practitionerId, TimeRange range) {
+        boolean absent = !unavailabilities
+                .findByPractitionerIdAndStartsAtBeforeAndEndsAtAfter(practitionerId, range.end(), range.start())
+                .isEmpty();
+        if (absent || !withinWorkingHours(versionsOf(practitionerId), range)) {
+            throw new BusinessRuleException(ErrorCode.SLOT_NOT_AVAILABLE,
+                    "Practitioner " + practitionerId + " does not work at " + range.start());
+        }
+    }
+
+    // For the panel lists (D-034): which of these ranges are outside the working hours valid on their day,
+    // e.g. after a new schedule version. One query for all the ranges
+    @Transactional(readOnly = true)
+    public Set<TimeRange> outsideWorkingHours(long practitionerId, Collection<TimeRange> ranges) {
+        if (ranges.isEmpty()) {
+            return Set.of();
+        }
+        TreeMap<LocalDate, List<WorkingBand>> versions = versionsOf(practitionerId);
+        return ranges.stream()
+                .filter(range -> !withinWorkingHours(versions, range))
+                .collect(Collectors.toSet());
+    }
+
+    // The glue shared by the two methods above
+    private List<TimeRange> compute(long practitionerId, int durationMinutes, LocalDate from, LocalDate to, Instant now) {
+        PractitionerSettings settings = practitioners.getSettings(practitionerId);
+
+        // absences and booked time in a window decided by the server, not by the client (guide 17, part 4):
         // from now to the end of the last day of the horizon, whatever from and to say
         LocalDate today = LocalDate.ofInstant(now, StudioTime.ZONE);
         Instant windowEnd = today.plusDays(settings.bookingHorizonDays() + 1L).atStartOfDay(StudioTime.ZONE).toInstant();
-        List<TimeRange> busy = unavailabilities
-                .findByPractitionerIdAndStartsAtBeforeAndEndsAtAfter(practitionerId, windowEnd, now)
-                .stream()
-                .map(absence -> new TimeRange(absence.getStartsAt(), absence.getEndsAt()))
-                .toList();
+        List<TimeRange> busy = new ArrayList<>();
+        unavailabilities.findByPractitionerIdAndStartsAtBeforeAndEndsAtAfter(practitionerId, windowEnd, now)
+                .forEach(absence -> busy.add(new TimeRange(absence.getStartsAt(), absence.getEndsAt())));
+        // FreeSlots does not care why a range is taken: absences and bookings in one list
+        busy.addAll(occupiedTime.between(practitionerId, new TimeRange(now, windowEnd), now));
 
-        TreeMap<LocalDate, List<WorkingBand>> versions = new TreeMap<>();
-        for (WorkingSchedule version : schedules.findWithBands(practitionerId)) {
-            versions.put(version.getValidFrom(), version.bands());
-        }
-
-        SlotQuery query = new SlotQuery(versions, busy, Duration.ofMinutes(service.durationMinutes()),
+        SlotQuery query = new SlotQuery(versionsOf(practitionerId), busy, Duration.ofMinutes(durationMinutes),
                 settings.slotStepMinutes(), settings.minBookingNoticeHours(), settings.bookingHorizonDays(),
                 from, to, now);
-        return FreeSlots.compute(query).stream().map(PublicSlot::from).toList();
+        return FreeSlots.compute(query);
     }
 
     // ***** SCHEDULE VERSIONS (panel) *****
@@ -159,6 +209,37 @@ public class ScheduleService {
     }
 
     // ***** HELPERS *****
+
+    // every version with its bands, by valid_from: one query (findWithBands)
+    private TreeMap<LocalDate, List<WorkingBand>> versionsOf(long practitionerId) {
+        TreeMap<LocalDate, List<WorkingBand>> versions = new TreeMap<>();
+        for (WorkingSchedule version : schedules.findWithBands(practitionerId)) {
+            versions.put(version.getValidFrom(), version.bands());
+        }
+        return versions;
+    }
+
+    // Inside one band of the version valid on the (Rome) day the range starts: the version with the latest
+    // valid_from not after that day (D-034, floorEntry as in FreeSlots). Local times become instants on that
+    // very day with ZonedDateTime.of, as in the calculation, so daylight saving changes are handled the same
+    private static boolean withinWorkingHours(TreeMap<LocalDate, List<WorkingBand>> versions, TimeRange range) {
+        LocalDate day = LocalDate.ofInstant(range.start(), StudioTime.ZONE);
+        Map.Entry<LocalDate, List<WorkingBand>> version = versions.floorEntry(day);
+        if (version == null) {
+            return false;
+        }
+        for (WorkingBand band : version.getValue()) {
+            if (band.dayOfWeek() != day.getDayOfWeek()) {
+                continue;
+            }
+            Instant bandStart = ZonedDateTime.of(day, band.startTime(), StudioTime.ZONE).toInstant();
+            Instant bandEnd = ZonedDateTime.of(day, band.endTime(), StudioTime.ZONE).toInstant();
+            if (!range.start().isBefore(bandStart) && !range.end().isAfter(bandEnd)) {
+                return true;
+            }
+        }
+        return false;
+    }
 
     private WorkingSchedule findVersion(long practitionerId, long versionId) {
         return schedules.findByIdAndPractitionerId(versionId, practitionerId)

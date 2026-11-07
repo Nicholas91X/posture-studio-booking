@@ -34,9 +34,10 @@ import com.posturestudio.booking.shared.NotFoundException;
 // The service joins the test transaction: flush() does what the commit would do, so that
 // the database constraints really see the rows
 @DataJpaTest
-// ScheduleService also asks catalog and practitioner (free slots), which ask auth
+// ScheduleService also asks catalog and practitioner (free slots), which ask auth;
+// booked time comes from a fake with no bookings (NothingOccupied)
 @Import({TestcontainersConfiguration.class, FixedClockConfiguration.class, ScheduleService.class,
-        CatalogService.class, PractitionerService.class, AccountService.class})
+        CatalogService.class, PractitionerService.class, AccountService.class, NothingOccupied.class})
 public class ScheduleServiceTest {
 
     private static final LocalDate MONDAY_9_NOVEMBER = LocalDate.of(2026, 11, 9);

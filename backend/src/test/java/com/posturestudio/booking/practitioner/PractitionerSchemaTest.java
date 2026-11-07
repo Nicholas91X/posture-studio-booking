@@ -14,7 +14,7 @@ import org.springframework.jdbc.core.JdbcTemplate;
 
 import com.posturestudio.booking.TestcontainersConfiguration;
 
-// Tests the settings constraints of V1 and V3 with plain SQL: it is the database that defends itself.
+// Tests the settings constraints of V1, V3 and V4 with plain SQL: it is the database that defends itself.
 @DataJpaTest
 @Import(TestcontainersConfiguration.class)
 public class PractitionerSchemaTest {
@@ -55,8 +55,13 @@ public class PractitionerSchemaTest {
     void zeroMinBookingNoticeIsRejected() {
         long practitionerId = insertPractitioner("anna@example.com");
 
-        assertViolates("practitioner_min_booking_notice_hours_ck",
+        // Since V4 a notice of 0 breaks two checks: its own and the approval window one (window >= 1 and
+        // window <= notice cannot both hold). PostgreSQL reports only the first one it evaluates, so either
+        // name is a correct answer: the point is that the row is rejected
+        var exception = Assertions.assertThrows(DataIntegrityViolationException.class,
                 () -> jdbc.update("update practitioner set min_booking_notice_hours = 0 where id = ?", practitionerId));
+        assertThat(exception.getMessage()).containsAnyOf(
+                "practitioner_min_booking_notice_hours_ck", "practitioner_approval_window_hours_ck");
     }
 
     @Test
@@ -65,6 +70,71 @@ public class PractitionerSchemaTest {
 
         assertViolates("practitioner_booking_horizon_days_ck",
                 () -> jdbc.update("update practitioner set booking_horizon_days = 0 where id = ?", practitionerId));
+    }
+
+    // ***** V4 *****
+
+    @Test
+    void newPractitionerGetsTheDefaultsOfV4() {
+        long practitionerId = insertPractitioner("anna@example.com");
+
+        Map<String, Object> row = jdbc.queryForMap(
+                "select max_future_bookings, booking_approval, approval_window_hours from practitioner where id = ?",
+                practitionerId);
+        assertThat(row).containsEntry("max_future_bookings", 4)
+                .containsEntry("booking_approval", "MANUAL")
+                .containsEntry("approval_window_hours", 12);
+    }
+
+    @Test
+    void zeroMaxFutureBookingsIsRejected() {
+        long practitionerId = insertPractitioner("anna@example.com");
+
+        assertViolates("practitioner_max_future_bookings_ck",
+                () -> jdbc.update("update practitioner set max_future_bookings = 0 where id = ?", practitionerId));
+    }
+
+    @Test
+    void unknownApprovalModeIsRejected() {
+        long practitionerId = insertPractitioner("anna@example.com");
+
+        assertViolates("practitioner_booking_approval_ck",
+                () -> jdbc.update("update practitioner set booking_approval = 'MAYBE' where id = ?", practitionerId));
+    }
+
+    @Test
+    void approvalWindowLongerThanTheNoticeIsRejected() {
+        // a check on two columns of the same row: lowering the notice under the window is caught too
+        long practitionerId = insertPractitioner("anna@example.com");
+
+        assertViolates("practitioner_approval_window_hours_ck",
+                () -> jdbc.update("update practitioner set min_booking_notice_hours = 6 where id = ?", practitionerId));
+    }
+
+    @Test
+    void approvalWindowEqualToTheNoticeIsAccepted() {
+        long practitionerId = insertPractitioner("anna@example.com");
+
+        int updated = jdbc.update("update practitioner set approval_window_hours = 24 where id = ?", practitionerId);
+
+        assertThat(updated).isEqualTo(1);
+    }
+
+    @Test
+    void approvalWindowOver48HoursIsRejectedEvenWithALongNotice() {
+        long practitionerId = insertPractitioner("anna@example.com");
+
+        assertViolates("practitioner_approval_window_hours_ck", () -> jdbc.update(
+                "update practitioner set min_booking_notice_hours = 200, approval_window_hours = 49 where id = ?",
+                practitionerId));
+    }
+
+    @Test
+    void zeroApprovalWindowIsRejected() {
+        long practitionerId = insertPractitioner("anna@example.com");
+
+        assertViolates("practitioner_approval_window_hours_ck",
+                () -> jdbc.update("update practitioner set approval_window_hours = 0 where id = ?", practitionerId));
     }
 
     private void assertViolates(String constraintName, Runnable statement) {
