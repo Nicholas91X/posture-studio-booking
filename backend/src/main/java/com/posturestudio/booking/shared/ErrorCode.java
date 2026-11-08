@@ -16,5 +16,22 @@ public enum ErrorCode {
     SCHEDULE_STARTS_IN_THE_PAST,
 
     // another version of the same practitioner already starts on that date
-    SCHEDULE_DATE_TAKEN
+    SCHEDULE_DATE_TAKEN,
+
+    // the requested start is not among the free slots: off the grid, outside working hours, too soon,
+    // beyond the horizon, during an absence, or taken. One code on purpose: the customer picks another
+    // slot whatever the reason, and telling "taken" from "not working" would reveal bookings (guide 19, 2.2)
+    SLOT_NOT_AVAILABLE,
+
+    // the customer already has max_future_bookings future bookings with this practitioner (D-023, D-041)
+    BOOKING_LIMIT_REACHED,
+
+    // the booking is not in a state that allows this step, e.g. approving a request just withdrawn (guide 20, part 2)
+    BOOKING_TRANSITION_NOT_ALLOWED,
+
+    // the practitioner answers after approval_deadline: the request is already void, the job closes it (D-030)
+    APPROVAL_DEADLINE_PASSED,
+
+    // booking from the panel for an email that belongs to a practitioner or the admin: one role per user (D-021)
+    EMAIL_NOT_A_CUSTOMER
 }

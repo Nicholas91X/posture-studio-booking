@@ -1,6 +1,8 @@
 package com.posturestudio.booking.catalog;
 
+import java.util.Collection;
 import java.util.List;
+import java.util.Set;
 
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -126,7 +128,7 @@ public class CatalogService {
         return new PublicCatalog(onSaleServices, onSalePackages);
     }
 
-    // For the other modules (schedule, from step 7 booking): is this service on sale, and how long is it?
+    // For the other modules (schedule, booking): is this service on sale, how long is it, how much does it cost?
     // On sale = an active service of an active practitioner. Missing, someone else's, deactivated, or of a
     // deactivated practitioner: the same NotFoundException, as in the public catalog
     @Transactional(readOnly = true)
@@ -135,6 +137,17 @@ public class CatalogService {
         return services.findByIdAndPractitionerIdAndActiveTrue(serviceId, practitionerId)
                 .map(ServiceOnSale::from)
                 .orElseThrow(() -> new NotFoundException("Service " + serviceId + " not found"));
+    }
+
+    // For booking (guide 23, 2.3): which of these services are evaluation visits? A set of ids, one query,
+    // as AccountService.activeAmong (D-029). Read at the time of the question, never copied (D-043)
+    @Transactional(readOnly = true)
+    public Set<Long> evaluationsAmong(Collection<Long> serviceIds) {
+        if (serviceIds.isEmpty()) {
+            // "in ()" is not valid SQL: do not depend on how Hibernate translates an empty list
+            return Set.of();
+        }
+        return services.findEvaluationIdsAmong(serviceIds);
     }
 
     // ***** HELPERS *****

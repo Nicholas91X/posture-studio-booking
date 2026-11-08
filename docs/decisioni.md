@@ -272,7 +272,7 @@ Spariscono aliquote, punti base e il calcolo del lordo con arrotondamento.
 ---
 
 ## D-023 — Orizzonte di prenotazione e limite di sedute future
-**Stato:** accettata · 2026-10-29 · completata da D-030 (2026-11-06): nel limite contano anche le `PENDING_APPROVAL` · la colonna dell'orizzonte nasce al passo 6 (V3), non al passo 7 (D-035)
+**Stato:** accettata · 2026-10-29 · completata da D-030 (2026-11-06): nel limite contano anche le `PENDING_APPROVAL` · la colonna dell'orizzonte nasce al passo 6 (V3), non al passo 7 (D-035) · valori iniziali fissati da D-041 (2026-11-06): 21 giorni e **4** prenotazioni
 
 **Contesto.** Un cliente, soprattutto con un pacchetto da molte sedute, potrebbe prenotarle tutte in una volta e occupare il calendario del professionista per settimane, togliendo spazio agli altri clienti.
 
@@ -291,7 +291,7 @@ Le due regole valgono solo quando **prenota il cliente**. Le prenotazioni fatte 
 ---
 
 ## D-024 — Il professionista può prenotare per un cliente dal pannello
-**Stato:** accettata · 2026-10-29 · modo di pagamento da confermare (requisiti, punto aperto 10)
+**Stato:** accettata · 2026-10-29 · pagamento in studio **confermato da D-040** (2026-11-06); chi ha creato la prenotazione: D-042
 
 **Contesto.** Non tutti i clienti prenoteranno da soli: alcuni chiedono la seduta di persona o al telefono. Il professionista deve poterla inserire lui.
 
@@ -457,7 +457,7 @@ Nella guida l'interfaccia era proposta in `auth`; spostata in `practitioner` dur
 ---
 
 ## D-032 — Notifiche push con Web Push, dal pannello installabile come app
-**Stato:** accettata · 2026-11-06 · modifica l'architettura (modulo `notification`, prima solo email)
+**Stato:** accettata · 2026-11-06 · modifica l'architettura (modulo `notification`, prima solo email) · **modificata da D-039** (2026-11-06): lato backend al passo 8, non al passo 7
 
 **Contesto.** Con l'approvazione manuale (D-030) il professionista deve sapere subito che c'è una richiesta, perché ha un tempo limitato per rispondere. Nicholas: le notifiche push servono in ogni caso. Il pannello è un sito (Next.js), non un'app.
 
@@ -581,3 +581,212 @@ Implementazione (pezzo 3, guida 16): `FreeSlots.compute(SlotQuery)` nel package 
 **Alternative scartate.** *Riusare il catalogo pubblico e cercare il servizio nella lista*: carica tutto per usarne uno, e la regola "in vendita" finirebbe fuori da `catalog`. *Controllare `from` e `to` nel servizio*: un 409 per una richiesta sbagliata in sé (D-027). *Lasciarlo a `SlotQuery`*: un 500. *Caricare le assenze dei giorni richiesti*: con `to` nel 2099 la finestra la deciderebbe il client.
 
 **Conseguenze.** Le dipendenze restano in un verso solo: `schedule` → `catalog` → `practitioner` → `auth`, e `schedule` → `practitioner`. Al passo 7 `booking` userà `serviceOnSale` per la durata e il prezzo da fotografare; e il ciclo tra `schedule` e `booking` per gli intervalli occupati va risolto per primo (guida 16, 6.1).
+
+---
+
+## D-039 — Notifiche push lato backend al passo 8, insieme all'email
+**Stato:** accettata · 2026-11-06 · modifica D-032 (conseguenze: "lato backend al passo 7")
+
+**Contesto.** D-032 metteva le notifiche push lato backend al passo 7, insieme all'approvazione. Ma la stessa D-032 vuole un'**email di riserva** quando il professionista non ha dispositivi registrati o l'invio fallisce, e il servizio email arriva al passo 8 (requisiti, punto aperto 5). Al passo 7 le push nascerebbero senza la loro riserva, cioè con richieste da approvare che possono andare perse.
+
+**Decisione.**
+- Le notifiche push lato backend (tabella `push_subscription`, chiavi VAPID, invio) passano al **passo 8**, insieme all'email.
+- Il passo 7 **pubblica eventi di dominio** (es. "richiesta in attesa", "prenotazione confermata") senza ascoltatori. Al passo 8 email e push si agganciano a quegli eventi, senza toccare il modulo delle prenotazioni.
+- Il lato frontend resta al passo 13.
+
+**Alternative scartate.** *Push al passo 7 senza riserva*: un professionista senza dispositivi registrati non saprebbe delle richieste fino alla loro scadenza. *Email anticipata al passo 7*: anticipa a metà il passo 8 (scelta del servizio email, punto aperto 5).
+
+**Conseguenze.** Il passo 7 si concentra su prenotazione, stati e vincoli. Finché il passo 8 non è fatto, nessuno viene avvisato delle richieste: non è un problema, perché il sistema non va online prima del passo 14.
+
+---
+
+## D-040 — Prenotazioni dal pannello pagate in studio; il link di pagamento si decide prima del passo 9
+**Stato:** accettata · 2026-11-06 · conferma la proposta di D-024 · chiude il punto aperto 10 dei requisiti
+
+**Contesto.** D-024 proponeva, per le prenotazioni fatte dal pannello senza crediti, il pagamento in studio. Nicholas lo conferma, e chiede in più un pulsante per inviare al cliente un link di pagamento, se ha un numero di telefono.
+
+**Decisione.**
+- Una prenotazione dal pannello senza crediti è **pagata in studio** (`paid_with = IN_STUDIO`): confermata subito, senza approvazione, anticipo, orizzonte né limite; se cancellata in tempo **non genera credito**.
+- Il **pezzo 5 resta nel passo 7**, senza crediti (passo 10).
+- Il **link di pagamento** non entra nel passo 7: richiede Stripe (passo 9) e apre domande da decidere prima (canale, numero non verificato, effetto sulle regole di cancellazione, link vecchi). Diventa il punto aperto 16 dei requisiti.
+
+**Alternative scartate.** *Link di pagamento già al passo 7*: senza Stripe sarebbe un pulsante finto, e le sue conseguenze sulle cancellazioni non sono decise.
+
+**Conseguenze.** `paid_with` esiste dalla V4 con `CARD` e `IN_STUDIO` (D-042); `CREDIT` si aggiunge al passo 10. Il pagamento in studio resta una scelta del professionista, mai un'opzione per chi prenota da solo (D-024).
+
+---
+
+## D-041 — Valori iniziali: orizzonte 21 giorni, limite 4 prenotazioni future
+**Stato:** accettata · 2026-11-06 · completa D-023 · chiude il punto aperto 11 dei requisiti
+
+**Contesto.** D-023 proponeva 21 giorni e 2 prenotazioni. Nicholas: un cliente fa in genere 2 sedute a settimana, e con un limite di 2 coprirebbe solo la settimana in corso. Contro: con il calendario quasi pieno (stima: circa 45 sedute a settimana per professionista, occupate per circa il 90%), un limite alto lascia agli abituali tutto l'orizzonte e poco spazio ai clienti nuovi.
+
+**Decisione.**
+- Valori iniziali: `booking_horizon_days = 21` (c'è già dalla V3), `max_future_bookings = 4` (V4). Restano modificabili dal pannello, per ogni professionista.
+- Nel limite contano le prenotazioni `PENDING_PAYMENT`, `PENDING_APPROVAL` e `CONFIRMED` con **inizio nel futuro**: quando una seduta inizia, smette di contare e il cliente può prenotarne un'altra. L'orizzonte si sposta da solo (oggi + 21). Nessuna logica in più: è la regola di D-023.
+- Dal pannello il professionista assegna tutte le sedute che vuole, senza limite (D-024); quelle sedute contano quando il cliente prenota da solo.
+
+**Alternative scartate.** *Limite 2*: costringe gli abituali a prenotare una settimana alla volta. *Limite 6* (2 a settimana per 3 settimane): equivale a nessun limite per un cliente abituale. *Limite per settimana* ("al massimo 2 a settimana"): rende meglio "2 a settimana", ma cambia D-023 e complica il conteggio, mentre l'accumulo nel tempo lo ferma già l'orizzonte.
+
+**Conseguenze.** Il default della colonna è 4. Una seduta in una `PENDING_PAYMENT` con blocco scaduto non deve contare (pezzo 2 del passo 7).
+
+---
+
+## D-042 — Schema delle prenotazioni (V4): vincolo parziale, `booked_by`, `check` con i soli valori prodotti
+**Stato:** accettata · 2026-11-06 · completa D-013, D-024 e D-030 · confronto completo: `docs/studio/18-migrazione-v4-prenotazioni.md`
+
+**Contesto.** La V4 crea `booking` e aggiunge a `practitioner` limite, approvazione e tempo di risposta. Da decidere: come si registra chi ha creato la prenotazione (D-024), quali valori ammettono i `check`, come si fa rispettare il legame tra tempo di risposta e anticipo minimo (D-030).
+
+**Decisione.**
+- **Non sovrapposizione** (D-013): `booking_no_overlap_ex`, `exclude using gist (practitioner_id with =, tstzrange(starts_at, ends_at) with &&) where (status in ('PENDING_PAYMENT', 'PENDING_APPROVAL', 'CONFIRMED'))`. In Java gli stessi tre stati in `BookingStatus.HOLDS_TIME`, con un commento che rimanda al vincolo.
+- Il servizio deve essere del professionista della prenotazione: *foreign key* composta `(service_id, practitioner_id)`, come D-025.
+- **Chi ha creato la prenotazione**: `booked_by`, `CUSTOMER` o `PRACTITIONER`. Dal pannello prenota solo il professionista della prenotazione, quindi la persona si ricava da `customer_id` o da `practitioner_id`.
+- **Valori dei `check`**: solo quelli che il codice del passo produce. `status` con i sette stati del passo 7; `paid_with` con `CARD` e `IN_STUDIO` (D-040). I passi 10 e 11 allargano i `check` con una migrazione nuova (`drop constraint` + `add constraint`).
+- `check` che legano lo stato a una colonna: `PENDING_PAYMENT` ha sempre `hold_expires_at`, `PENDING_APPROVAL` sempre `approval_deadline`. Le colonne non si svuotano quando lo stato cambia.
+- `booking_in_studio_ck`: `IN_STUDIO` solo con `booked_by = PRACTITIONER`. Aggiunto durante l'implementazione: è la regola di D-024 ("mai un'opzione per chi prenota da solo") detta dal database.
+- Colonne di momento `decided_at` (approvazione o rifiuto) e `cancelled_at` (ritiro, e dal passo 11 cancellazione); nessuna tabella della storia. `version` per `@Version`.
+- Indici `(practitioner_id, starts_at)` e `(customer_id, starts_at)`.
+- In `practitioner`: `max_future_bookings` (> 0, default 4, D-041), `booking_approval` (`AUTOMATIC`/`MANUAL`, default `MANUAL`), `approval_window_hours` (default 12, da 1 a `min_booking_notice_hours` e al massimo **48**). La migrazione aggiunge la colonna, corregge con un `update` le righe in cui il default supererebbe l'anticipo, e solo dopo aggiunge il `check`.
+- In Java la regola tra i due campi è un vincolo di classe su `PractitionerSettings` (400 sul campo `approvalWindowHours`), come aveva previsto D-037, più il controllo nell'entità. `BookingApproval` è un `enum` pubblico di `practitioner`: un valore sbagliato nel JSON dà un 400 generico, accettato.
+- Il test di concorrenza sul vincolo: due thread partono insieme, ognuno nella propria transazione confermata; ne passa uno solo.
+
+**Alternative scartate.**
+- *`created_by_user_id` verso `app_user`*: dice quale persona, ma oggi è ridondante, e per sapere "l'ha creata il cliente?" bisogna chiedere a un altro modulo.
+- *Tutti gli stati del modello subito*: stati che nessun codice raggiunge nella macchina a stati.
+- *La scadenza del blocco nel `where` del vincolo*: impossibile, `now()` non è `IMMUTABLE` (guida 18, 3.5).
+- *Una tabella della storia delle transizioni*: più completa, ma nessun requisito la chiede; si può aggiungere senza toccare le colonne di momento.
+
+**Conseguenze.** Una `PENDING_PAYMENT` con blocco scaduto occupa ancora l'orario per il vincolo finché qualcuno non ne cambia lo stato: va gestita nel pezzo 2. `modello-dati.md` descrive la V4 com'è. Una violazione del vincolo arriva come `DataIntegrityViolationException`, e il pezzo 2 la traduce in un 409 con un codice leggibile.
+
+---
+
+## D-043 — Il servizio di valutazione è una proprietà del servizio
+**Stato:** accettata · 2026-11-06 · chiude il punto aperto 12 dei requisiti
+
+**Contesto.** Stanza unica: la sovrapposizione tra una visita di valutazione di un professionista e una seduta dell'altro si segnala nel pannello, non si impedisce. Serve sapere quali servizi sono valutazioni.
+
+**Decisione.**
+- Colonna `service.evaluation boolean not null default false`, impostata dal professionista dal pannello (`ServiceOfferDetails`, `ServiceOfferView`). Non compare nel catalogo pubblico.
+- **Non si fotografa** nella prenotazione: descrive cos'è il servizio, e una correzione deve valere anche per le sedute già prenotate. Il modulo delle prenotazioni lo chiede a `catalog` quando produce la segnalazione (D-002).
+- La segnalazione mostra all'altro professionista solo l'orario e "valutazione", mai il nome del cliente.
+
+**Alternative scartate.** *Un `enum` del tipo di servizio*: non si vede un terzo tipo; da booleano a `enum` si passa con una migrazione, se servirà. *Riconoscere la valutazione dal nome o dalla durata*: fragile.
+
+**Conseguenze.** I servizi esistenti diventano sedute. Calcolo degli orari liberi e vincolo di non sovrapposizione restano per professionista.
+
+---
+
+## D-044 — Il ciclo tra `schedule` e `booking`: `schedule` dichiara `OccupiedTime`, `booking` lo implementa
+**Stato:** accettata · 2026-11-06 · risolve il ciclo segnalato in D-035 e D-038
+
+**Contesto.** `booking` chiede a `schedule` se un orario è libero; `schedule` deve sapere quali orari sono prenotati. Confronto: guida 16, 6.1; guida 18, parte 8.
+
+**Decisione.**
+- In `schedule`, l'interfaccia pubblica `@FunctionalInterface OccupiedTime` con `List<TimeRange> between(long practitionerId, TimeRange window, Instant now)`: gli intervalli del professionista che si sovrappongono alla finestra e sono occupati all'istante `now`. `now` è esplicito perché `ScheduleService` legge il `Clock` una volta sola.
+- In `booking`, l'implementazione `BookingOccupiedTime`: package-private, dipende solo dal repository. Considera occupate `PENDING_APPROVAL`, `CONFIRMED` e le `PENDING_PAYMENT` con blocco non ancora scaduto.
+- `ScheduleService.freeSlots` unisce assenze e intervalli occupati; `FreeSlots` non cambia.
+- Nei test `@DataJpaTest` di `schedule`, un bean finto scritto come lambda ("niente di occupato"); la prova con le prenotazioni vere sta nel package `booking`.
+
+**Alternative scartate.** *Spostare l'API pubblica degli orari liberi in `booking`*: il calcolo resterebbe in un modulo che non conosce tutto ciò che occupa il tempo. *Far implementare l'interfaccia a `BookingService`*: siccome `BookingService` userà `ScheduleService`, Spring non riuscirebbe ad avviarsi (riferimento circolare tra bean).
+
+**Conseguenze.** Le dipendenze nel codice vanno in un verso solo: `booking` → `schedule` → `catalog` → `practitioner` → `auth`. Gli orari liberi escludono le prenotazioni vere; un blocco scaduto è libero per il calcolo ma non ancora per il vincolo (D-042).
+
+---
+
+## D-045 — Richiesta di prenotazione: un solo calcolo, lucchetto sul cliente, scadenza pigra dei blocchi
+**Stato:** accettata · 2026-11-06 · confronto completo: `docs/studio/19-richiesta-di-prenotazione.md` · scelte di Claude secondo le raccomandazioni della guida, su indicazione di Nicholas ("se non ci sono domande, procedi senza chiedere conferma") · **completata da D-046** (2026-11-07): anche il *deadlock* `40P01` all'`insert` diventa `SLOT_NOT_AVAILABLE`
+
+**Contesto.** Il cliente chiede un orario. I controlli sono sei (servizio in vendita, griglia e orari di lavoro, anticipo, orizzonte, limite, orario libero), il limite è un conteggio in Java esposto alla concorrenza (D-023), e un blocco scaduto occupa ancora l'orario per il vincolo del database (D-042).
+
+**Decisione.**
+- API del cliente sotto **`/api/customer`**: `POST /api/customer/bookings` (201 + `Location`, `NewBooking(practitionerId, serviceId, startsAt)`) e `GET /api/customer/bookings/{id}` (404 per la prenotazione di un altro). La fine la calcola il backend dalla durata.
+- **Ordine**: servizio in vendita (404) → lucchetto sul cliente → limite (409 `BOOKING_LIMIT_REACHED`) → orario libero (409 `SLOT_NOT_AVAILABLE`) → scadenza dei blocchi vecchi sull'orario → `insert`. Il limite prima dell'orario: nessun altro orario risolverebbe il problema del cliente.
+- **Orario libero**: `ScheduleService.requireFreeSlot(practitionerId, durationMinutes, start, now)` riusa il calcolo degli orari liberi del giorno. **Un solo codice**, `SLOT_NOT_AVAILABLE`, per griglia, orari, anticipo, orizzonte, assenze e orari occupati: l'azione del cliente è la stessa, e codici diversi rivelerebbero le prenotazioni.
+- **Limite sotto concorrenza**: lucchetto pessimistico sulla riga del cliente (`@Lock(PESSIMISTIC_WRITE)`), con `CustomerService.lockForBooking` in `Propagation.MANDATORY`. Isolamento di default, `READ COMMITTED`, necessario perché il conteggio dopo l'attesa veda la prenotazione appena confermata.
+- **Blocco scaduto**: scadenza "pigra" nella stessa transazione, con un `update` JPQL in blocco (`PENDING_PAYMENT` → `EXPIRED`) limitato ai blocchi scaduti che si sovrappongono all'orario richiesto; la versione si incrementa a mano. Nel limite un blocco scaduto non conta (stessa condizione del calcolo).
+- **Violazione del vincolo**: `saveAndFlush`, poi `SQLSTATE 23P01` e nome `booking_no_overlap_ex` cercati nelle cause dell'eccezione → `SLOT_NOT_AVAILABLE`. La traduzione sta in `BookingService`, non nel gestore globale; ogni altra violazione si rilancia.
+- **Cliente corrente provvisorio**: `CurrentCustomer` e `DevHeaderCurrentCustomer` (header `X-Customer-Id`) nel modulo `customer`, da rimuovere al passo 8.
+- `BookingStatus` diventa pubblico: è nella risposta, quindi parte del contratto.
+
+**Alternative scartate.** *Controlli dedicati in `booking`*: la stessa regola in due posti. *Lucchetto ottimistico o `SERIALIZABLE` per il limite*: chi perde fallisce e va ripetuto, invece di aspettare. *Lucchetto consultivo di PostgreSQL*: specifico e poco leggibile. *Aspettare il lavoro programmato*: fino a un minuto di "occupato" falso. *Riprovare dopo la violazione*: PostgreSQL annulla tutta la transazione. *Cancellare il blocco scaduto*: si perde la storia e il pagamento tardivo non troverebbe la sua prenotazione. *Tradurre il vincolo nell'`ApiExceptionHandler`*: dovrebbe conoscere i vincoli di tutti i moduli.
+
+**Conseguenze.** Le richieste dello stesso cliente vanno una alla volta; quelle di clienti diversi no. Le prenotazioni dal pannello (pezzo 5) devono prendere lo stesso lucchetto, perché contano nel limite. Al passo 8 Spring Security apre `/api/customer/**` solo ai clienti. Il lavoro programmato del pezzo 4 farà la stessa transizione su tutti i blocchi scaduti, con la stessa guardia nel `where`.
+
+---
+
+## D-046 — Stati e approvazione: macchina nell'`enum`, lucchetto pessimistico sulle transizioni, eventi dopo il commit, pagamento simulato spento per default
+**Stato:** accettata · 2026-11-07 · confronto completo: `docs/studio/20-stati-e-approvazione.md` · scelte di Claude secondo le raccomandazioni della guida, su indicazione di Nicholas · completa D-045 (traduzione del *deadlock*)
+
+**Contesto.** Dopo la richiesta (D-045), la prenotazione deve arrivare alla conferma passando dal pagamento (simulato fino al passo 9) e dall'approvazione (D-030), con incasso e annullamento del blocco sulla carta (D-031). Il brief vuole una macchina a stati esplicita, un'interfaccia per incasso e annullamento, eventi di dominio senza ascoltatori (D-039) e un "pagamento autorizzato" che non sia mai attivo in produzione.
+
+**Decisione.**
+- **Macchina a stati**: `BookingStatus.canMoveTo`, uno `switch` espressione senza `default` (il compilatore obbliga a coprire ogni stato). Sei frecce: `PENDING_PAYMENT` → `PENDING_APPROVAL`, `EXPIRED`; `PENDING_APPROVAL` → `CONFIRMED`, `REJECTED`, `APPROVAL_EXPIRED`, `WITHDRAWN`. Nell'entità lo stato cambia solo con `moveTo`; transizioni con un nome (`paymentAuthorized`, `approve`, `reject`, `withdraw`). Un passaggio vietato è un 409 `BOOKING_TRANSITION_NOT_ALLOWED`.
+- **Un solo percorso** per le due modalità: il pagamento porta sempre a `PENDING_APPROVAL`; in `AUTOMATIC` lo stesso `confirm` del professionista parte subito, nella stessa transazione.
+- **Scadenza della risposta** = `created_at` + `approval_window_hours` (D-030: "dal momento della richiesta"). `booking.created_at` lo scrive Java con il `Clock`. Il professionista che risponde dopo la scadenza riceve 409 `APPROVAL_DEADLINE_PASSED`; il cliente può ritirare anche allora.
+- **Pagamento tardivo**: su una `PENDING_PAYMENT` (anche con blocco scaduto) si accetta; su una `EXPIRED` si annulla il blocco e non cambia niente, senza errore.
+- **`CardHolds`** (`capture`, `cancel`), dichiarata da `booking` e implementata da `payment` al passo 9; ora `LoggingCardHolds`, provvisoria.
+- **Lucchetto pessimistico** sulla riga della prenotazione in ogni transizione, e quest'ordine: lucchetto, transizione in memoria, chiamata a `CardHolds`, commit. `@Version` resta come seconda difesa. Sostituisce l'anticipazione della guida 19 (4.3), che prevedeva il lucchetto ottimistico.
+- **Eventi di dominio**: `sealed interface BookingEvent` con quattro `record` annidati (`ApprovalRequested`, `BookingConfirmed`, `BookingRejected`, `BookingWithdrawn`), solo id e istanti. Pubblicati con `ApplicationEventPublisher` dentro la transazione; al passo 8 ascoltati con `@TransactionalEventListener` (dopo il commit).
+- **Pagamento simulato**: `POST /api/dev/bookings/{id}/payment-authorized`, controller con `@ConditionalOnProperty(booking.simulated-payments=true)`, default `false` (`BOOKING_SIMULATED_PAYMENTS` nel `.env`). Senza la proprietà l'indirizzo non esiste.
+- **API**: `POST /api/panel/bookings/{id}/approve` e `/reject` (`PanelBookingView`), `POST /api/customer/bookings/{id}/withdraw`; `CustomerBookingView` riceve `approvalDeadline`.
+- **Deadlock all'`insert`** (completa D-045): due `insert` contemporanei sul vincolo di non sovrapposizione possono aspettarsi a vicenda, perché un *exclusion constraint* inserisce nell'indice prima di cercare i conflitti; PostgreSQL ne annulla uno con `40P01`. `BookingService` lo traduce in `SLOT_NOT_AVAILABLE`, come `23P01`.
+
+**Alternative scartate.** *Tabella `EnumMap`*: uno stato dimenticato non è un errore di compilazione. *Pattern State, Spring Statemachine*: troppo per stati senza comportamento proprio. *Lucchetto ottimistico sulle transizioni*: scopre il conflitto dopo l'incasso, che non si annulla. *Ascoltatori `@EventListener`*: un'email partirebbe anche per una transazione annullata. *Outbox*: una tabella e un lavoro in più, rimandabile al passo 8 se servirà. *Profilo `dev` o controller sempre attivo per il pagamento simulato*: sicuri solo finché nessuno sbaglia la configurazione. *Riprovare la transazione dopo il deadlock*: chi perde troverebbe comunque l'orario occupato, con più codice.
+
+**Conseguenze (D-046).** La riga della prenotazione resta bloccata per la durata della chiamata a Stripe: irrilevante a questa scala. Resta il caso "incasso riuscito, commit fallito" (doppia scrittura), da chiudere al passo 9 riconciliando con il webhook (`payment_intent.succeeded`). Al passo 9 un annullamento fallito si registra senza bloccare la transizione. Al passo 8 gli ascoltatori che scrivono nel database hanno bisogno di `REQUIRES_NEW`. Il pezzo 4 aggiunge l'evento `ApprovalExpired` e usa `CardHolds.cancel` per le approvazioni scadute.
+
+---
+
+## D-047 — Lavori programmati: `fixedDelay` di un minuto, una transazione per richiesta, sicuri con più istanze
+**Stato:** accettata · 2026-11-07 · confronto completo: `docs/studio/21-lavori-programmati.md` · scelte di Claude secondo le raccomandazioni della guida, su indicazione di Nicholas
+
+**Contesto.** Blocchi di pagamento scaduti e richieste senza risposta vanno chiusi ogni minuto (D-008, D-030), leggendo l'ora dal `Clock`, con test che non aspettano davvero. Il brief chiede anche cosa succederebbe con due istanze dell'applicazione.
+
+**Decisione.**
+- `@Scheduled(fixedDelayString = "PT1M")` in `BookingJobs`, una classe separata da `BookingService`: un minuto dalla **fine** dell'esecuzione precedente, mai due esecuzioni sovrapposte; le chiamate passano dal *proxy* del servizio, quindi `@Transactional` vale.
+- **Blocchi scaduti**: un solo `update` in blocco (`PENDING_PAYMENT` → `EXPIRED`, versione incrementata), con lo stato di partenza nel `where`. Nessun evento.
+- **Richieste scadute**: prima gli id (`approval_deadline <= now`), poi **una transazione per richiesta** con il lucchetto sulla riga e la guardia **riletta dopo il lucchetto**; se non vale più (approvata, ritirata), non succede niente e non è un errore. Poi `APPROVAL_EXPIRED`, `CardHolds.cancel`, evento `ApprovalExpired`. Un errore su una richiesta si registra e non ferma le altre.
+- `@EnableScheduling` in `SchedulingConfiguration`, acceso da `booking.jobs.enabled` (default `true`, variabile `BOOKING_JOBS_ENABLED`).
+- Nei test: un `MovableClock` che si sposta a comando e i metodi dei lavori chiamati direttamente.
+
+**Alternative scartate.** *`fixedRate`*: esecuzioni lente si accumulano. *`cron`*: aggancio all'orologio inutile qui. *Una transazione per tutto il lavoro delle richieste*: un errore annullerebbe nel database anche le richieste già chiuse, ma non le chiamate esterne già fatte. *ShedLock*: non serve con un'istanza, e il codice è già corretto con due.
+
+**Conseguenze.** Con due istanze i lavori girano due volte: lavoro doppio, ma nessun effetto doppio (la seconda trova le righe già chiuse). Una richiesta scaduta resta aperta al massimo circa un minuto, coperto dal controllo della scadenza nelle risposte (D-046) e dalla scadenza pigra (D-045).
+
+---
+
+## D-048 — Prenotazione dal pannello: fasce e assenze sì, griglia no; cliente trovato o creato per email
+**Stato:** accettata · 2026-11-07 · completa D-024 e D-040 · confronto completo: `docs/studio/22-prenotazione-dal-pannello.md` · scelte di Claude secondo le raccomandazioni della guida, su indicazione di Nicholas
+
+**Contesto.** Il professionista prenota per un suo cliente (D-024), pagamento in studio (D-040). I documenti dicevano cosa non vale dal pannello (anticipo, orizzonte, limite, approvazione), non se valgono griglia, fasce e assenze; e non dicevano come si riconosce un cliente esistente.
+
+**Decisione.**
+- `POST /api/panel/bookings` con `serviceId`, `startsAt` e `customer` (`email`, `firstName`, `lastName`); 201 + `Location`; `GET /api/panel/bookings/{id}` per la propria.
+- **Regole**: dentro una **fascia di lavoro** della versione valida quel giorno e fuori dalle **assenze** (`ScheduleService.requireWorkingTime`); non nel passato; **non** valgono griglia, anticipo, orizzonte, limite, approvazione. Sovrapposizioni: il vincolo del database, tradotto in `SLOT_NOT_AVAILABLE`.
+- Nasce `CONFIRMED`, `booked_by = PRACTITIONER`, `paid_with = IN_STUDIO`, `decided_at` = adesso (`Booking.bookedFromPanel`, l'unico modo di creare una prenotazione confermata); evento `BookingConfirmed`. Prende lo stesso lucchetto sul cliente della richiesta (D-045).
+- **Cliente per email**: `AccountService.customerAccountFor` trova o crea l'account `CUSTOMER` (email normalizzata, D-020), lo riattiva se disattivato, rifiuta con 409 `EMAIL_NOT_A_CUSTOMER` un'email di un professionista o dell'admin (D-021); `CustomerService.findOrCreate` trova o crea il cliente. Un cliente esistente **tiene il suo nome**. Tutto nella stessa transazione della prenotazione.
+- `@ValidEmail` (in `auth`): Bean Validation che delega al `record` `Email`, una regola sola; 400 su `customer.email`.
+- Dipendenze: `customer` → `auth`, oltre a `booking` → `customer`.
+
+**Alternative scartate.** *Griglia anche dal pannello*: impedirebbe la seduta alle 9:30 dopo una valutazione 9:00–9:30, il caso per cui lo studio ha chiesto la mezz'ora. *Nessuna fascia dal pannello*: lo studio non lavora mai fuori dal proprio schema; una seduta fuori orario sarebbe un errore di battitura. *Scegliere il cliente da un elenco*: apre la domanda, ancora aperta, su quali clienti può vedere un professionista (passo 13). *`jakarta.validation.constraints.Email`*: accetta indirizzi che `Email` rifiuta, con un 500.
+
+**Conseguenze.** Il professionista può prenotare a distanza ravvicinata o lontana nel tempo, e fuori griglia. La segnalazione della stanza unica "prima di confermare" (punto aperto 12) non blocca e compare nelle liste (pezzo 6); il frontend del passo 13 potrà mostrarla prima dell'invio. Due creazioni simultanee della stessa email: una fallisce sul `unique` di `app_user` (raro; ripetendo, si trova l'account).
+
+---
+
+## D-049 — Liste e segnalazioni: domande su insiemi di id, la stanza unica senza leggere i clienti degli altri
+**Stato:** accettata · 2026-11-07 · completa D-034 e D-043 · confronto completo: `docs/studio/23-liste-e-segnalazioni.md` · scelte di Claude secondo le raccomandazioni della guida, su indicazione di Nicholas
+
+**Contesto.** Il professionista deve vedere le proprie prenotazioni e le richieste da approvare, con due segnalazioni: prenotazione fuori dall'orario di lavoro attuale (D-034) e sovrapposizione con una valutazione dell'altro professionista (D-043), senza mai il nome del cliente dell'altro. Il cliente deve vedere le proprie.
+
+**Decisione.**
+- `GET /api/panel/bookings?from=&to=` (date locali, `SlotRange` riusato): le prenotazioni proprie che si sovrappongono al periodo, tutti gli stati, per inizio. `GET /api/panel/bookings/requests`: le `PENDING_APPROVAL` con scadenza nel futuro, prima quella che scade prima. `GET /api/customer/bookings`: le proprie, inizio decrescente.
+- Riga `PanelBookingRow` con nome del cliente (chiesto a `customer` con `namesOf`, un insieme di id), chi l'ha creata, come si paga, scadenza, `outsideWorkingHours`, `evaluationOverlaps`.
+- Segnalazioni **solo sulle righe che occupano l'orario adesso** (`Booking.holdsTimeAt`, la stessa regola delle due query del repository).
+- `outsideWorkingHours`: la riga non sta in una fascia della versione valida nel suo giorno (`ScheduleService.outsideWorkingHours`, le versioni caricate una volta).
+- `evaluationOverlaps`: gli intervalli condivisi con le prenotazioni degli altri professionisti che occupano l'orario, quando una delle due è una valutazione (`CatalogService.evaluationsAmong`, un insieme di id). La query sugli altri **seleziona solo servizio e orari** (`BookedRange`): il cliente dell'altro non viene nemmeno letto. La segnalazione ha solo `start` ed `end`.
+- `BookedBy` e `PaidWith` diventano pubblici: sono nella risposta.
+
+**Alternative scartate.** *Una join SQL tra prenotazioni, clienti e servizi*: attraverserebbe tre moduli (D-026). *Leggere le prenotazioni degli altri come entità e filtrare la risposta*: riservatezza per filtro, non per costruzione; un campo aggiunto per errore uscirebbe. *Fotografare "valutazione" nella prenotazione*: D-043 lo esclude. *Un limite alla lunghezza del periodo*: dati propri e pochi.
+
+**Conseguenze.** Numero di query costante per lista (righe, altri, valutazioni, orari, nomi). Il frontend del passo 13 mostra la segnalazione anche prima di confermare una prenotazione dal pannello (punto aperto 12, "quando compare"), chiedendo la lista del giorno.
