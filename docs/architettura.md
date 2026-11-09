@@ -64,7 +64,7 @@ Un'unica applicazione, divisa in package per area. Ogni modulo espone verso gli 
 | `booking` | Prenotazioni, blocco temporaneo, approvazione (D-030), cancellazioni |
 | `credit` | Lotti e movimenti dei crediti |
 | `payment` | Integrazione Stripe, webhook |
-| `notification` | Invio email e notifiche push, dispositivi registrati (D-032) |
+| `notification` | Invio email e notifiche push, dispositivi registrati (D-032). Ascolta gli eventi di `booking` dopo il commit, in un altro thread (D-053); nessun modulo dipende da lui |
 
 ### Livelli dentro ogni modulo
 

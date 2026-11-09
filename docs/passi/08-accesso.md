@@ -1,6 +1,6 @@
 # Passo 08 — Accesso e notifiche
 
-> **Stato: in corso** (dal 2026-11-09). Pezzi 1–3 di 6 fatti, 534 test verdi (`mvnw clean test`). Branch `feat/step-8-access` dal pezzo 2 (il pezzo 1 è su `main`).
+> **Stato: in corso** (dal 2026-11-09). Pezzi 1–4 di 6 fatti, 559 test verdi (`mvnw clean test`). Branch `feat/step-8-access` dal pezzo 2 (il pezzo 1 è su `main`).
 
 ## Obiettivo
 Il sistema sa chi lo sta usando: accesso con un codice via email o via SMS (solo da un numero verificato), sessione con cookie, ruoli, account disattivati fuori. I sostituti provvisori (`DevHeaderCurrentPractitioner`, `DevHeaderCurrentCustomer`) spariscono. Le notifiche email e push si agganciano agli eventi del passo 7.
@@ -9,7 +9,7 @@ I pezzi (guida 24, parte 0):
 1. Codice di accesso via email: richiesta, verifica, limiti — ✅ fatto (guida 24, D-050)
 2. Sessione e Spring Security, ruoli, via i due DevHeader, test della riservatezza — ✅ fatto (guida 25, D-051)
 3. Admin e professionisti (D-021) — ✅ fatto (guida 26, D-052)
-4. Notifiche email sugli eventi del passo 7
+4. Notifiche email sugli eventi del passo 7 — ✅ fatto (guida 27, D-053)
 5. Notifiche push (D-032, D-039), con riserva email
 6. Codice di accesso via SMS da numero verificato
 
@@ -22,10 +22,10 @@ I pezzi (guida 24, parte 0):
 | Test della riservatezza esistono e sono verdi | ✅ | `ConfidentialityTest` |
 | Ogni area solo al suo ruolo; account disattivati fuori | ✅ | `ConfidentialityTest`, `SessionApiTest` |
 | L'admin crea e disattiva professionisti; primo admin senza segreti | ✅ (`ADMIN_EMAIL` all'avvio, solo nel `.env`) | `PractitionerAdminApiTest`, `AdminBootstrapTest`, `AdminBootstrapStartupTest` |
-| Email in Mailpit per ogni evento; un invio fallito non annulla la prenotazione | Mailpit attivo e codice di accesso provato a mano; eventi al pezzo 4 | `infra/docker-compose.dev.yml` |
+| Email in Mailpit per ogni evento; un invio fallito non annulla la prenotazione | ✅ (email dopo il commit in un altro thread; un invio rifiutato non tocca la prenotazione né l'altra email) | `BookingNotificationsTest`, `MailpitDeliveryTest`, `BookingEmailsTest` |
 | Push con riserva email provata | pezzo 5 | |
 | Punto aperto 7 chiuso; punto 5 spostato al passo 14; nuovo punto sul fornitore SMS | punto 5 spostato; 7 e fornitore SMS al pezzo 6 | `stato.md`, `requisiti.md` |
-| `modello-dati.md` aggiornato; test verdi; branch e PR | V5 e V6 descritte, note del pezzo 3; 534 verdi; branch aperto, PR a fine passo | `modello-dati.md` |
+| `modello-dati.md` aggiornato; test verdi; branch e PR | V5 e V6 descritte, note del pezzo 3, nessuna migrazione nel pezzo 4; 559 verdi; branch aperto, PR a fine passo | `modello-dati.md` |
 
 ## Cosa è stato costruito
 
@@ -66,6 +66,16 @@ I pezzi (guida 24, parte 0):
 - `ErrorCode.EMAIL_ALREADY_IN_USE`; `auth.admin-email` in `application.properties`; `ADMIN_EMAIL=` in `.env.example`.
 - Test: `AdminBootstrapTest`, `AdminBootstrapStartupTest`, `PractitionerAdminApiTest`, e casi nuovi in `AccountServiceTest`, `PractitionerServiceTest`, `PractitionerTest`; `ConfidentialityTest` aggiornato.
 
+### Pezzo 4 — Notifiche email
+- `notification/BookingNotifications`: l'ascoltatore `@Async` + `@TransactionalEventListener` di `BookingEvent`; raccoglie i dati dai moduli, spedisce ogni email per conto suo, registra gli errori senza indirizzi.
+- `notification/BookingEmails`: la funzione pura che da evento e dati fa le email (`OutgoingEmail`), con uno `switch` senza `default`, *text block* e date a Roma in italiano. `BookingFacts` raccoglie i dati.
+- `notification/NotificationConfiguration`: `@EnableAsync` e l'executor `notificationExecutor`, un virtual thread per email.
+- `booking/BookingEvent`: `serviceId` in tutti gli eventi.
+- `customer/CustomerService.contactOf` (`CustomerContact`), `practitioner/PractitionerService.contactOf` (`PractitionerContact`), `catalog/CatalogService.serviceNameOf`.
+- `notification.app-url` in `application.properties`, `APP_URL` in `.env.example`.
+- `pom.xml`: i test girano con lingua inglese e fuso UTC, come il server (`maven-surefire-plugin`, `argLine`).
+- Test: `BookingEmailsTest` (unitario), `BookingNotificationsTest` (commit veri, `RecordingMailSender`, Awaitility), `MailpitDeliveryTest` (Mailpit in un container, letto con la sua API), e casi nuovi in `CustomerServiceTest`, `PractitionerServiceTest`, `CatalogServiceTest`.
+
 ## Concetti chiave
 
 - **Perché l'hash da solo non basta.** I codici a 6 cifre sono un milione. Chi ruba la tabella calcola tutte le impronte SHA-256 in meno di un secondo; anche BCrypt cede in pochi minuti su una scheda grafica. Un **HMAC** con una chiave fuori dal database rende le impronte inutili senza la chiave. La difesa vera resta il limite di tentativi con la scadenza breve.
@@ -89,10 +99,18 @@ I pezzi (guida 24, parte 0):
 - **Propagazione `REQUIRED`.** Due righe di due moduli in una transazione: il servizio chiamato entra in quella del chiamante, e un *rollback* annulla tutto.
 - **Default del database e JPA.** Un campo `int` vale 0 e scavalca il default; `@Generated` lascia decidere il database e rilegge il valore con `returning`.
 - **Una verità sola.** Disattivare un professionista è una riga, perché "attivo" sta in un posto solo (D-029).
-- **Java moderno usato qui:** `sealed interface` e *record pattern* (21), `record` con costruttore compatto come configurazione, *text block* (15), `RandomGenerator` (17), `HexFormat` (17), `List.reversed()` delle *sequenced collection* (21, nel finto mittente dei test).
+- **Eventi dopo il commit, in un altro thread.** `@TransactionalEventListener` consegna l'evento solo se il commit riesce; `@Async` lo passa a un executor. Insieme: la risposta non aspetta la posta, e un errore di posta non la raggiunge. Senza `@Async`, un'eccezione in `AFTER_COMMIT` arriva al chiamante dopo il commit: un 500 per un'operazione riuscita.
+- **Virtual thread.** Thread della JVM, non del sistema operativo: quando aspettano la rete vengono parcheggiati. Adatti a compiti che aspettano molto e calcolano poco, come un'email; non si mettono in un pool.
+- **Funzione pura per la parte con più casi.** I testi delle email non leggono e non spediscono niente: si provano senza Spring, in millisecondi. L'ascoltatore, che ha meno casi, si prova con Spring.
+- **Un bean di test può spegnere un'autoconfigurazione.** Spring Boot crea il suo `JavaMailSender` solo se non esiste un `MailSender` (`@ConditionalOnMissingBean`): un finto `MailSender` non lo sostituisce, lo fa sparire.
+- **Asincrono nei test.** Awaitility ripete un'asserzione fino a un tempo massimo; per un "non succede niente", `during(...)`: la condizione deve restare vera per tutto l'intervallo.
+- **Java moderno usato qui:** `sealed interface` e *record pattern* (21), `record` con costruttore compatto come configurazione, *text block* (15), `RandomGenerator` (17), `HexFormat` (17), `List.reversed()` e `getFirst()` delle *sequenced collection* (21), virtual thread (21, pezzo 4), `switch` con *pattern matching* su una `sealed interface` senza `default` (21, pezzo 4), `Thread.isVirtual()` nei test.
 
 ## Decisioni
 - **D-050** — codice di accesso via email (precisa **D-014**: l'account nasce alla prima verifica giusta; l'impronta è un HMAC).
+- **D-051** — sessione e Spring Security.
+- **D-052** — admin e professionisti.
+- **D-053** — notifiche email (completa **D-039** e **D-046**: `serviceId` negli eventi, `@Async` dopo il commit, nessuna *outbox*).
 
 ## Errori fatti e come sono stati corretti
 
@@ -104,7 +122,10 @@ I pezzi (guida 24, parte 0):
 6. **(Pezzo 2, errore di Claude) Un backend lasciato acceso.** Nella prova del pezzo 1, fermando `mvnw spring-boot:run` si chiudeva Maven ma non il processo Java figlio, che è rimasto sulla porta 8080 per un'ora. Alla prova del pezzo 2 la porta era occupata. Da allora si ferma il processo che ascolta sulla porta, e il suo padre.
 7. **(Pezzo 3) Un dubbio verificato invece che supposto.** Non era chiaro se `@Generated` avrebbe escluso le colonne anche dagli `update`. Invece di fidarsi della documentazione, un test di prova ha stampato l'SQL di un `insert` e di un `update`: le colonne restano negli `update`, e l'`insert` le rilegge con `returning`. Poi il test di prova è stato cancellato, e due test veri hanno preso il suo posto.
 8. **(Pezzo 3, errore di Claude) Uno script che diceva "nessun fallimento" senza aver eseguito niente.** La prova che i test sanno fallire l'ha fatta prima uno script Python, che non riusciva a lanciare Maven su Windows e leggeva i risultati vecchi. Quattro mutazioni, quattro "nessun test fallito": un risultato impossibile, e il segnale per controllare. Rifatta a mano dalla shell, ogni mutazione è stata presa. La lezione: un verde troppo veloce va guardato come un rosso.
-9. **Porta 5432 occupata** durante la prova a mano: in locale gira già il database di un altro progetto. Il PostgreSQL di questo progetto è stato avviato sulla 5433 solo per la prova (`POSTGRES_PORT=5433` davanti al comando). Da ricordare se l'avvio di Compose fallisce con "port is already allocated".
+9. **(Pezzo 4) Un finto `MailSender` che ha spento quello vero.** Il primo `RecordingMailSender` implementava `MailSender`. Spring Boot crea il suo `JavaMailSender` solo se non esiste già un `MailSender`: vedendo il finto si è tirato indietro, e `EmailLoginCodeSender`, che chiede un `JavaMailSender`, è rimasto senza. Il contesto non partiva. Corretto facendo estendere al finto `JavaMailSenderImpl`: sostituisce il mittente vero per intero. La lezione: un bean di test non si aggiunge soltanto, può cambiare quali autoconfigurazioni scattano.
+10. **(Pezzo 4, errore di Claude) Un totale stampato da un comando che non era partito.** Il primo `mvnw clean test` della suite completa aveva un percorso del log sbagliato: la shell ha rifiutato il comando prima di lanciarlo, e il conteggio successivo ha sommato i report vecchi rimasti in `target`, dando un totale credibile. Mancava la riga con il codice di uscita di Maven. Rilanciato con il percorso giusto e il codice di uscita stampato. È lo stesso errore del punto 8: un risultato si guarda insieme alla prova che il comando sia girato davvero.
+11. **(Pezzo 4) Un test che sul PC di sviluppo non poteva fallire.** La JVM di questo PC è in italiano: togliere `Locale.ITALIAN` dai testi lasciava i test verdi, ma su un server in inglese le date sarebbero uscite in inglese ("Thursday"). Ora i test girano con lingua inglese e fuso UTC (`argLine` di Surefire), come il server: la stessa mutazione fa fallire i test.
+12. **Porta 5432 occupata** durante la prova a mano: in locale gira già il database di un altro progetto. Il PostgreSQL di questo progetto è stato avviato sulla 5433 solo per la prova (`POSTGRES_PORT=5433` davanti al comando). Da ricordare se l'avvio di Compose fallisce con "port is already allocated".
 
 ## Domande da colloquio
 
@@ -124,3 +145,9 @@ Le domande del pezzo 1 sono nella guida 24 (sei domande, con le risposte modello
 
 ### Domanda 5: L'entità JPA ha un campo `int` e la colonna ha un default nel database. Cosa succede al primo `insert`, e come lo risolvi?
 **Risposta modello.** Hibernate scrive tutte le colonne mappate, quindi manda lo zero del campo e il default non scatta: qui lo zero violava anche i `check`. Le strade: ripetere i default in Java (due verità), un `insert` nativo, oppure `@Generated`, che esclude la colonna dall'`insert` e la rilegge. Con PostgreSQL, Hibernate 7 la rilegge nello stesso comando con `returning`. Prima di fidarmi ho verificato con un test che le colonne restassero negli `update`.
+
+### Domanda 6: Un test con un bean finto fa fallire l'avvio con "No qualifying bean" per un bean che non hai toccato. Cosa può essere successo?
+**Risposta modello.** Il bean finto può aver spento un'autoconfigurazione. Molte autoconfigurazioni di Spring Boot hanno `@ConditionalOnMissingBean`: se trovano già un bean di quel tipo, non creano il loro. Qui un finto `MailSender` ha fatto sparire il `JavaMailSender` di Boot, che serviva a un altro componente. Si guarda il *condition evaluation report* (`debug=true`), e si fa in modo che il finto sostituisca il tipo completo, o lo si dichiara accanto a quello vero con `@Primary`.
+
+### Domanda 7: I test passano sul tuo PC e falliscono sul server, o il contrario. Cosa controlli prima?
+**Risposta modello.** Le cose che il codice prende dall'ambiente senza dirlo: lingua (`Locale` di default), fuso orario, codifica dei caratteri, separatore di riga. Il codice le deve dire in modo esplicito (`Locale.ITALIAN`, `ZoneId` del dominio, UTF-8), e i test conviene farli girare con i valori del server, così una dimenticanza si vede subito: qui lingua inglese e fuso UTC nell'`argLine` di Surefire.

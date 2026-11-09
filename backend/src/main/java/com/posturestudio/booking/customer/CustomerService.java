@@ -76,6 +76,15 @@ public class CustomerService {
         return new CustomerProfile(accounts.emailOf(userId), customer.getFirstName(), customer.getLastName());
     }
 
+    // How to write to this customer (guide 27, 5.4): the email is the account's, asked to auth
+    @Transactional(readOnly = true)
+    public CustomerContact contactOf(long customerId) {
+        Customer customer = repository.findById(customerId)
+                .orElseThrow(() -> new NotFoundException("Customer " + customerId + " not found"));
+        return new CustomerContact(accounts.emailOf(customer.getUserId()), customer.getFirstName(),
+                customer.getLastName());
+    }
+
     // The names of a set of customers, in one query: for the panel lists of booking (piece 6)
     @Transactional(readOnly = true)
     public Map<Long, CustomerName> namesOf(Collection<Long> customerIds) {

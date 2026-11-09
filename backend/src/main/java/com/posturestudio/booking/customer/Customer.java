@@ -55,6 +55,10 @@ class Customer {
         return id;
     }
 
+    Long getUserId() {
+        return userId;
+    }
+
     String getFirstName() {
         return firstName;
     }

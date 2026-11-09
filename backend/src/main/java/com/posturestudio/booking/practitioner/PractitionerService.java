@@ -64,6 +64,16 @@ public class PractitionerService {
         }
     }
 
+    // ***** NOTIFICATION (guide 27) *****
+
+    // Active or not: an email about a booking already made is still due (guide 27, 5.4)
+    @Transactional(readOnly = true)
+    public PractitionerContact contactOf(long practitionerId) {
+        Practitioner practitioner = find(practitionerId);
+        return new PractitionerContact(accounts.emailOf(practitioner.getUserId()), practitioner.getFirstName(),
+                practitioner.getLastName());
+    }
+
     // ***** ADMIN (D-021, guide 26) *****
 
     // Two queries whatever the number of practitioners, as listActive: all of them, then email and state

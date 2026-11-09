@@ -92,6 +92,20 @@ public class CustomerServiceTest {
         assertThat(service.namesOf(List.of())).isEmpty();
     }
 
+    // ***** contact (guide 27, 5.4) *****
+
+    @Test
+    void theContactOfACustomerHasTheEmailOfTheirAccount() {
+        long customer = insertCustomer("cliente@example.com");
+
+        assertThat(service.contactOf(customer)).isEqualTo(new CustomerContact("cliente@example.com", "Test", "Customer"));
+    }
+
+    @Test
+    void theContactOfAMissingCustomerIsNotFound() {
+        Assertions.assertThrows(NotFoundException.class, () -> service.contactOf(999999));
+    }
+
     private long insertCustomer(String email) {
         Long userId = jdbc.queryForObject(
                 "insert into app_user (role, email) values ('CUSTOMER', ?) returning id", Long.class, email);

@@ -317,6 +317,22 @@ public class CatalogServiceTest {
         Assertions.assertThrows(NotFoundException.class, () -> catalog.serviceOnSale(marco, serviceId));
     }
 
+    // ***** name for the emails (guide 27, 5.4) *****
+
+    // a session booked before the deactivation is still valid, and its email still names it
+    @Test
+    void theNameOfAServiceIsGivenEvenWhenDeactivated() {
+        long serviceId = catalog.createService(anna, SEDUTA).id();
+        catalog.deactivateService(anna, serviceId);
+
+        assertThat(catalog.serviceNameOf(serviceId)).isEqualTo("Seduta posturale");
+    }
+
+    @Test
+    void theNameOfAMissingServiceIsNotFound() {
+        Assertions.assertThrows(NotFoundException.class, () -> catalog.serviceNameOf(999999));
+    }
+
     private long insertPractitioner(String email) {
         Long userId = jdbc.queryForObject(
                 "insert into app_user (role, email) values ('PRACTITIONER', ?) returning id",

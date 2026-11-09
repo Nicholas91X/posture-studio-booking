@@ -211,6 +211,21 @@ public class PractitionerServiceTest {
                 (Integer) row.get("approval_window_hours"));
     }
 
+    // ***** contact (guide 27, 5.4) *****
+
+    // deactivated too: an email about a booking already made is still due
+    @Test
+    void theContactOfAPractitionerHasTheEmailOfTheirAccountEvenWhenDeactivated() {
+        long anna = insertPractitioner("anna@example.com", "Anna", "Rossi", false);
+
+        assertThat(service.contactOf(anna)).isEqualTo(new PractitionerContact("anna@example.com", "Anna", "Rossi"));
+    }
+
+    @Test
+    void theContactOfAMissingPractitionerIsNotFound() {
+        Assertions.assertThrows(NotFoundException.class, () -> service.contactOf(999999));
+    }
+
     private long insertPractitioner(String email) {
         return insertPractitioner(email, "Test", "Practitioner", true);
     }
