@@ -44,6 +44,13 @@ class Customer {
 
     // ***** METHODS *****
 
+    // the customer corrects their own names from the profile (guide 25, 7.3)
+    void rename(String firstName, String lastName) {
+        this.firstName = requireNotBlank(firstName, "firstName");
+        this.lastName = requireNotBlank(lastName, "lastName");
+    }
+
+
     Long getId() {
         return id;
     }

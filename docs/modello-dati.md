@@ -6,6 +6,7 @@ Modifiche dovute alle migrazioni:
 - **V1 (passo 4)**: `customer.full_name` e `practitioner.display_name` sostituiti da `first_name` + `last_name`; `phone` spostato in `app_user` (facoltativo, per utenti di ogni ruolo); aggiunto `app_user.active` per la cancellazione morbida; ruolo `ADMIN` (D-021).
 - **V2 (passo 5)**: `service` e `package_offer` come da progettazione, con `created_at`; foreign key composta per il servizio del pacchetto (D-025); indici su `practitioner_id`.
 - **V3 (passo 6)**: `working_schedule`, `working_hours` e `unavailability` come da progettazione (D-034), con `created_at`; fasce all'ora piena o alla mezz'ora e non sovrapposte (*exclusion constraint* su `timerange`, estensione `btree_gist`, D-036); cascata da una versione alle sue fasce; in `practitioner` scatto solo 30 o 60 con default 60, `min_booking_notice_hours` e `booking_horizon_days` (D-033, D-035).
+- **V6 (passo 8)**: `spring_session` e `spring_session_attributes`, le tabelle di Spring Session JDBC copiate dal suo schema 4.1.1 (D-051).
 - **V5 (passo 8)**: `login_code` con `channel` + `destination` al posto di `email`, `requested_from` per il limite per IP, `created_at` scritto da Java, `code_hash` come HMAC con chiave segreta (D-050).
 - **V4 (passo 7)**: `booking` come qui sotto, con `booked_by`, `paid_with` solo `CARD` e `IN_STUDIO`, i sette stati del passo 7, `IN_STUDIO` solo con `booked_by = PRACTITIONER`, e il vincolo di non sovrapposizione parziale su `tstzrange` (D-042); `service.evaluation` (D-043); in `practitioner` `max_future_bookings`, `booking_approval` e `approval_window_hours` con il `check` su due colonne (D-041, D-042).
 
@@ -260,6 +261,11 @@ Il registro. Non si modifica e non si cancella mai una riga: si aggiungono solo 
 | received_at | timestamptz | |
 
 Se un evento con lo stesso `event_id` è già presente, si ignora.
+
+## Sessioni
+
+### `spring_session`, `spring_session_attributes`
+Le sessioni degli utenti collegati, gestite da **Spring Session JDBC** (D-051). Migrazione V6, copiata dallo schema di Spring Session 4.1.1: le tabelle sono **sue**, nomi e colonne non si cambiano, e non ci sono entità JPA. I tempi sono millisecondi dal 1970 (`bigint`). Gli attributi sono serializzati in Java (`bytea`). Da noi ce ne sono solo due: l'id dell'utente (`auth.userId`) e l'istante dell'accesso (`auth.signedInAt`). Spring Session cancella da solo, ogni minuto, le sessioni scadute (30 giorni di inattività).
 
 ## Notifiche
 

@@ -7,12 +7,13 @@ package com.posturestudio.booking.auth;
  *
  * sealed: these are all the cases. A switch over a CodeCheck lists them with no default, and stops
  * compiling if a case is added (as BookingEvent, D-046). With record patterns (Java 21) a case can also
- * take the fields apart: case Valid(long userId, boolean newAccount) -> ...
+ * take the fields apart: case Valid(long userId, Role role, boolean newAccount) -> ...
  */
 public sealed interface CodeCheck {
 
-    // the right code. newAccount: the email was never seen, the CUSTOMER account was born now (guide 24, 5.2)
-    record Valid(long userId, boolean newAccount) implements CodeCheck {
+    // the right code. role: of the account, for the answer of the sign-in (guide 25, 3.1).
+    // newAccount: the email was never seen, the CUSTOMER account was born now (guide 24, 5.2)
+    record Valid(long userId, Role role, boolean newAccount) implements CodeCheck {
     }
 
     // a wrong code, with attempts left: the person can try again

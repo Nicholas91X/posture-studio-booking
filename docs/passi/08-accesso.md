@@ -1,13 +1,13 @@
 # Passo 08 — Accesso e notifiche
 
-> **Stato: in corso** (dal 2026-11-09). Pezzo 1 di 6 fatto, 478 test verdi (`mvnw clean test`).
+> **Stato: in corso** (dal 2026-11-09). Pezzi 1 e 2 di 6 fatti, 505 test verdi (`mvnw clean test`). Branch `feat/step-8-access` dal pezzo 2 (il pezzo 1 è su `main`).
 
 ## Obiettivo
 Il sistema sa chi lo sta usando: accesso con un codice via email o via SMS (solo da un numero verificato), sessione con cookie, ruoli, account disattivati fuori. I sostituti provvisori (`DevHeaderCurrentPractitioner`, `DevHeaderCurrentCustomer`) spariscono. Le notifiche email e push si agganciano agli eventi del passo 7.
 
 I pezzi (guida 24, parte 0):
 1. Codice di accesso via email: richiesta, verifica, limiti — ✅ fatto (guida 24, D-050)
-2. Sessione e Spring Security, ruoli, via i due DevHeader, test della riservatezza
+2. Sessione e Spring Security, ruoli, via i due DevHeader, test della riservatezza — ✅ fatto (guida 25, D-051)
 3. Admin e professionisti (D-021)
 4. Notifiche email sugli eventi del passo 7
 5. Notifiche push (D-032, D-039), con riserva email
@@ -17,15 +17,15 @@ I pezzi (guida 24, parte 0):
 
 | Criterio | Stato | Dove si vede |
 |---|---|---|
-| Accesso via email e via SMS funzionanti, con limiti e tentativi provati | email: richiesta, verifica e limiti nel servizio; manca l'endpoint della verifica (pezzo 2) e l'SMS (pezzo 6) | `LoginCodeServiceTest`, `LoginCodeApiTest` |
-| I due DevHeader rimossi; nessun test li usa più | pezzo 2 | |
-| Test della riservatezza esistono e sono verdi | pezzo 2 | |
-| Ogni area solo al suo ruolo; account disattivati fuori | disattivati rifiutati dalla verifica; ruoli al pezzo 2 | `LoginCodeServiceTest` |
+| Accesso via email e via SMS funzionanti, con limiti e tentativi provati | email ✅ (richiesta, verifica, sessione); SMS al pezzo 6 | `LoginCodeServiceTest`, `LoginCodeApiTest`, `SessionApiTest` |
+| I due DevHeader rimossi; nessun test li usa più | ✅ | `SessionCurrentPractitioner`, `SessionCurrentCustomer`, `TestSessions`; nessun `X-Practitioner-Id` o `X-Customer-Id` nel codice |
+| Test della riservatezza esistono e sono verdi | ✅ | `ConfidentialityTest` |
+| Ogni area solo al suo ruolo; account disattivati fuori | ✅ | `ConfidentialityTest`, `SessionApiTest` |
 | L'admin crea e disattiva professionisti; primo admin senza segreti | pezzo 3 | |
 | Email in Mailpit per ogni evento; un invio fallito non annulla la prenotazione | Mailpit attivo e codice di accesso provato a mano; eventi al pezzo 4 | `infra/docker-compose.dev.yml` |
 | Push con riserva email provata | pezzo 5 | |
 | Punto aperto 7 chiuso; punto 5 spostato al passo 14; nuovo punto sul fornitore SMS | punto 5 spostato; 7 e fornitore SMS al pezzo 6 | `stato.md`, `requisiti.md` |
-| `modello-dati.md` aggiornato; test verdi; branch e PR | V5 descritta; 478 verdi | `modello-dati.md` |
+| `modello-dati.md` aggiornato; test verdi; branch e PR | V5 e V6 descritte; 505 verdi; branch aperto, PR a fine passo | `modello-dati.md` |
 
 ## Cosa è stato costruito
 
@@ -44,6 +44,18 @@ I pezzi (guida 24, parte 0):
 - `infra/docker-compose.dev.yml`: il servizio `mailpit` (SMTP sulla porta 1025, pagina web sulla 8025). `.env.example`: le righe `MAIL_*` e `AUTH_CODE_HMAC_KEY`.
 - Test: `LoginCodeTest`, `LoginCodeHasherTest` (unitari), `LoginCodeSchemaTest`, `LoginCodeServiceTest` (con la concorrenza), `LoginCodeApiTest`, e `RecordingLoginCodeSender` come finto mittente.
 
+### Pezzo 2 — Sessione e Spring Security
+- `V6__create_spring_session.sql`: le tabelle di Spring Session JDBC.
+- `auth/SecurityConfiguration`: la catena di filtri, con le regole per area, `denyAll()` per il resto, CSRF con `csrf.spa()`, *request cache* spenta e 401/403 passati ad `ApiExceptionHandler`.
+- `auth/SessionAccounts`: il `SecurityContextRepository` che rilegge l'account a ogni richiesta, con `signIn` (cambio dell'id, salvataggio esplicito) e `signOut`.
+- `auth/SessionCookieConfiguration`: il cookie `SESSION`.
+- `auth/SessionController`: `POST/GET/DELETE /api/public/auth/session`, uno `switch` con i *record pattern* su `CodeCheck`. `SignInRequest`, `SessionView`, `AuthErrorCode`.
+- `auth/CurrentUser` (pubblica), con `SecurityContextCurrentUser` e `SignedInUser`.
+- `practitioner/SessionCurrentPractitioner` e `customer/SessionCurrentCustomer` al posto dei DevHeader, cancellati.
+- `customer/CustomerProfileController`: `GET/PUT /api/customer/profile`, con `CustomerProfile` e `ProfileNames`.
+- `ApiExceptionHandler`: `AuthenticationException` → 401, `AccessDeniedException` → 403 (`CSRF_TOKEN_INVALID` per il CSRF). `ErrorCode.PROFILE_INCOMPLETE`.
+- Test: `TestSessions` (sessioni vere per i test d'API), `SessionApiTest`, `ConfidentialityTest`; riscritti i sei test d'API che usavano gli header.
+
 ## Concetti chiave
 
 - **Perché l'hash da solo non basta.** I codici a 6 cifre sono un milione. Chi ruba la tabella calcola tutte le impronte SHA-256 in meno di un secondo; anche BCrypt cede in pochi minuti su una scheda grafica. Un **HMAC** con una chiave fuori dal database rende le impronte inutili senza la chiave. La difesa vera resta il limite di tentativi con la scadenza breve.
@@ -54,6 +66,13 @@ I pezzi (guida 24, parte 0):
 - **Rate limiting.** Contare nel database le righe che esistono già: valgono ai riavvii e con più istanze. Limiti larghi per IP (CGNAT, Wi-Fi), rete `/64` in IPv6, e l'IP vero da Tomcat (`forward-headers-strategy=native`), mai da `X-Forwarded-For` letto a mano.
 - **Inversione delle dipendenze** (terza volta, dopo `OccupiedTime` e `CardHolds`): `auth` dichiara `LoginCodeSender`, `notification` lo implementa.
 - **Prima il commit, poi la chiamata esterna.** Un'email spedita prima di un commit fallito porterebbe un codice inesistente.
+- **Catena di filtri.** Spring Security è una fila di filtri davanti ai controller: chi c'è (`SecurityContextRepository`), CSRF, regole (`AuthorizationFilter`), traduzione dei rifiuti in 401/403. Tutto succede prima di Spring MVC, quindi il gestore degli errori non lo vede, a meno di riportarglielo.
+- **Autenticazione e autorizzazione.** Chi sei, e cosa puoi fare. Per area nei filtri (403), per oggetto nei servizi (404).
+- **Sessione contro JWT.** La sessione si revoca subito, il JWT no. Con un solo backend e un solo dominio la sessione basta, ed è più sicura.
+- **Estendere invece di riscrivere.** Per decidere "chi c'è" si sostituisce un solo pezzo della catena, il `SecurityContextRepository`.
+- **CSRF, SameSite, *login CSRF*.** Il cookie viaggia da solo, quindi un sito estraneo può far partire richieste a nome della vittima. Il token in un header non può copiarlo. `SameSite=Lax` è la seconda difesa.
+- ***Session fixation*.** All'accesso l'id della sessione cambia.
+- ***Default deny*.** `denyAll()` per tutto ciò che non è assegnato.
 - **Java moderno usato qui:** `sealed interface` e *record pattern* (21), `record` con costruttore compatto come configurazione, *text block* (15), `RandomGenerator` (17), `HexFormat` (17), `List.reversed()` delle *sequenced collection* (21, nel finto mittente dei test).
 
 ## Decisioni
@@ -63,7 +82,11 @@ I pezzi (guida 24, parte 0):
 
 1. **Un generatore non crittografico per una chiave segreta.** Nel primo `.env.example` la riga suggerita per generare `AUTH_CODE_HMAC_KEY` in PowerShell usava `Get-Random`, che non è un generatore crittografico (come `java.util.Random`). Una chiave generata così sarebbe prevedibile. Corretta con `RandomNumberGenerator` di .NET, e una riga che avvisa di non usare `Get-Random`. La lezione è la stessa della guida 24, 3.5, applicata agli strumenti fuori da Java.
 2. **Test verdi al primo colpo: provato che sanno fallire.** Non è un errore del codice, ma il motivo per cui ci si fida dei test. Con l'errore del 4.1 introdotto apposta, tre test diventano rossi. Senza `@Lock`, il test delle ipotesi in parallelo fallisce con *"Expected size: 4 but was: 10"*.
-3. **Porta 5432 occupata** durante la prova a mano: in locale gira già il database di un altro progetto. Il PostgreSQL di questo progetto è stato avviato sulla 5433 solo per la prova (`POSTGRES_PORT=5433` davanti al comando). Da ricordare se l'avvio di Compose fallisce con "port is already allocated".
+3. **(Pezzo 2) Le proprietà del cookie non arrivavano nei test.** `server.servlet.session.cookie.*` vale per Spring Session solo con Tomcat vero. Il test sul cookie l'ha scoperto: il cookie è diventato un bean.
+4. **(Pezzo 2) La cache di Hibernate nei test `@Transactional`.** Le richieste MockMvc di un test condividono la transazione e la cache di primo livello: un `update` con SQL diretto non si vedeva. `flush()` e `clear()` intorno all'`update`.
+5. **(Pezzo 2) La chiave nel `.env` tra virgolette.** Spring legge il `.env` come file di proprietà e tiene le virgolette nel valore. La chiave non era più Base64, e l'avvio si è fermato con il messaggio di `LoginCodeHasher`, come previsto. È l'errore del passo 4 (D-018). Da correggere togliendo le virgolette.
+6. **(Pezzo 2, errore di Claude) Un backend lasciato acceso.** Nella prova del pezzo 1, fermando `mvnw spring-boot:run` si chiudeva Maven ma non il processo Java figlio, che è rimasto sulla porta 8080 per un'ora. Alla prova del pezzo 2 la porta era occupata. Da allora si ferma il processo che ascolta sulla porta, e il suo padre.
+7. **Porta 5432 occupata** durante la prova a mano: in locale gira già il database di un altro progetto. Il PostgreSQL di questo progetto è stato avviato sulla 5433 solo per la prova (`POSTGRES_PORT=5433` davanti al comando). Da ricordare se l'avvio di Compose fallisce con "port is already allocated".
 
 ## Domande da colloquio
 
@@ -71,3 +94,9 @@ Le domande del pezzo 1 sono nella guida 24 (sei domande, con le risposte modello
 
 ### Domanda 1: I tuoi test sono tutti verdi. Come sai che proverebbero davvero un errore?
 **Risposta modello.** Rompendo apposta il codice e guardando se diventano rossi (*mutation testing*, a mano o con uno strumento come PIT). Per esempio, tolto il lucchetto pessimistico, il test della concorrenza deve fallire. Se resta verde, quel test non prova il lucchetto. Un test che non può fallire dà una sicurezza falsa.
+
+### Domanda 2: Un test `@Transactional` aggiorna una riga con SQL diretto, e la richiesta successiva vede ancora il valore vecchio. Perché?
+**Risposta modello.** Con `@Transactional` il test e le richieste MockMvc, nello stesso thread, condividono la stessa transazione e quindi lo stesso *persistence context* di Hibernate. Un'entità già caricata viene restituita dalla cache di primo livello, anche se una query la rilegge, senza vedere l'`update` fatto fuori da Hibernate. Si risolve con `flush()` prima e `clear()` dopo l'`update`, o con test che non girano in una transazione. In produzione ogni richiesta ha la sua transazione, e il problema non c'è.
+
+### Domanda 3: Hai configurato una proprietà e l'applicazione parte. Come sai che la configurazione è applicata davvero?
+**Risposta modello.** Con un test che osserva l'effetto, non la proprietà: qui l'header `Set-Cookie` con i suoi attributi. È così che si è scoperto che le proprietà del cookie valevano solo con Tomcat vero, e non in MockMvc. Poi una prova a mano nell'ambiente reale, perché i test girano in un ambiente un po' diverso.

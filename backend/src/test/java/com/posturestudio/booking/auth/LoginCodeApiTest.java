@@ -1,6 +1,7 @@
 package com.posturestudio.booking.auth;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.springframework.security.test.web.servlet.request.SecurityMockMvcRequestPostProcessors.csrf;
 
 import java.util.List;
 
@@ -55,6 +56,7 @@ class LoginCodeApiTest {
         return mvc.post().uri(URL).contentType(MediaType.APPLICATION_JSON)
                 .content("{\"email\": \"" + email + "\"}")
                 .with(from(ip))
+                .with(csrf())
                 .exchange();
     }
 

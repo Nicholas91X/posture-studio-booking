@@ -8,6 +8,7 @@ import org.springframework.transaction.annotation.Transactional;
 
 import com.posturestudio.booking.shared.BusinessRuleException;
 import com.posturestudio.booking.shared.ErrorCode;
+import com.posturestudio.booking.shared.NotFoundException;
 
 /**
  * The door of the auth module for the other modules (D-002): questions about user accounts,
@@ -31,6 +32,14 @@ public class AccountService {
             return Set.of();
         }
         return users.findActiveIdsAmong(userIds);
+    }
+
+    // The email of an account, normalized (D-020): for the profile of the customer (guide 25, 7.3)
+    @Transactional(readOnly = true)
+    public String emailOf(long userId) {
+        return users.findById(userId)
+                .map(user -> user.getEmail().value())
+                .orElseThrow(() -> new NotFoundException("User " + userId + " not found"));
     }
 
     // The customer account of this email, found or created (D-024, guide 22, part 3); its id.

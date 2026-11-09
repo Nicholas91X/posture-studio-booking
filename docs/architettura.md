@@ -111,8 +111,12 @@ Un'unica applicazione, divisa in package per area. Ogni modulo espone verso gli 
 
 1. L'utente inserisce l'email.
 2. Il backend genera un codice di 6 cifre, ne salva solo l'impronta (HMAC con una chiave segreta, D-050), con scadenza di 10 minuti e un massimo di 5 tentativi, e lo invia via email. La risposta è identica che l'email esista o no; limiti per email e per IP (429).
-3. L'utente inserisce il codice. Se è corretto, e l'email non era mai stata vista, nasce l'account `CUSTOMER` (D-050). Il backend crea la sessione e la invia come cookie `HttpOnly`, `Secure`, `SameSite=Lax`.
+3. L'utente inserisce il codice. Se è corretto, e l'email non era mai stata vista, nasce l'account `CUSTOMER` (D-050). Il backend crea la sessione e la invia come cookie `SESSION`, `HttpOnly`, `Secure`, `SameSite=Lax`, con `Max-Age` di 90 giorni. All'accesso l'id della sessione cambia (*session fixation*).
 4. Frontend e backend sono sullo stesso dominio (grazie a Caddy), quindi il cookie funziona senza configurazioni particolari.
+5. **La sessione** (D-051) vive in PostgreSQL con Spring Session JDBC, e sopravvive ai riavvii. Scade dopo 30 giorni senza richieste, e comunque 90 giorni dopo l'accesso. Contiene solo l'id dell'utente: a ogni richiesta il backend rilegge l'account, quindi un account disattivato è fuori subito e il ruolo è sempre quello attuale.
+6. **Regole per area** (Spring Security, una regola per prefisso): `/api/public/**` aperto, `/api/panel/**` solo professionisti, `/api/customer/**` solo clienti, `/api/admin/**` solo l'admin, tutto il resto chiuso a tutti. Nessuna sessione: 401; ruolo sbagliato: 403; la cosa di un altro: 404.
+7. **CSRF**: ogni richiesta che cambia qualcosa, accesso compreso, rimanda nell'header `X-XSRF-TOKEN` il token del cookie `XSRF-TOKEN`.
+8. Un cliente appena entrato senza nome e cognome li dà una volta (`PUT /api/customer/profile`); prima riceve 409 `PROFILE_INCOMPLETE`.
 
 Lo stesso meccanismo vale per i professionisti: la loro email ha il ruolo `PRACTITIONER`, che apre il pannello.
 

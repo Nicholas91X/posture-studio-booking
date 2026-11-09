@@ -33,5 +33,8 @@ public enum ErrorCode {
     APPROVAL_DEADLINE_PASSED,
 
     // booking from the panel for an email that belongs to a practitioner or the admin: one role per user (D-021)
-    EMAIL_NOT_A_CUSTOMER
+    EMAIL_NOT_A_CUSTOMER,
+
+    // a customer signed in for the first time and has not given first and last name yet (D-050, guide 25, 7.3)
+    PROFILE_INCOMPLETE
 }

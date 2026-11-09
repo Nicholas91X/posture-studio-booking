@@ -19,6 +19,7 @@ import org.springframework.transaction.annotation.Transactional;
 
 import com.jayway.jsonpath.JsonPath;
 import com.posturestudio.booking.FixedClockConfiguration;
+import com.posturestudio.booking.TestSessions;
 import com.posturestudio.booking.TestcontainersConfiguration;
 
 // The panel API of the schedule module from the outside. Today is Friday 6 November 2026,
@@ -29,8 +30,6 @@ import com.posturestudio.booking.TestcontainersConfiguration;
 @Transactional
 public class SchedulePanelApiTest {
 
-    // the provisional identity of the panel (D-028)
-    private static final String HEADER = "X-Practitioner-Id";
 
     private static final String WEEKDAYS_FROM_MONDAY = """
             {"validFrom": "2026-11-09", "bands": [
@@ -41,6 +40,10 @@ public class SchedulePanelApiTest {
 
     @Autowired
     MockMvcTester mvc;
+
+    // signed-in requests: a real session and a CSRF token (guide 25, part 8)
+    @Autowired
+    TestSessions sessions;
 
     @Autowired
     JdbcTemplate jdbc;
@@ -76,10 +79,10 @@ public class SchedulePanelApiTest {
     void listShowsTheVersionsOfThePractitionerWhoActs() {
         post("/api/panel/schedules", anna, WEEKDAYS_FROM_MONDAY);
 
-        assertThat(mvc.get().uri("/api/panel/schedules").header(HEADER, anna))
+        assertThat(mvc.get().uri("/api/panel/schedules").with(sessions.practitioner(anna)))
                 .hasStatusOk()
                 .bodyJson().extractingPath("$[*].validFrom").asArray().containsExactly("2026-11-09");
-        assertThat(mvc.get().uri("/api/panel/schedules").header(HEADER, marco))
+        assertThat(mvc.get().uri("/api/panel/schedules").with(sessions.practitioner(marco)))
                 .hasStatusOk()
                 .bodyJson().extractingPath("$").asArray().isEmpty();
     }
@@ -128,11 +131,11 @@ public class SchedulePanelApiTest {
     void startedVersionAnswers409OnReplaceAndDelete() {
         long started = insertVersion(anna, "2026-11-01");
 
-        assertThat(mvc.put().uri("/api/panel/schedules/" + started).header(HEADER, anna)
+        assertThat(mvc.put().uri("/api/panel/schedules/" + started).with(sessions.practitioner(anna))
                 .contentType(MediaType.APPLICATION_JSON).content(WEEKDAYS_FROM_MONDAY))
                 .hasStatus(HttpStatus.CONFLICT)
                 .bodyJson().extractingPath("$.code").isEqualTo("SCHEDULE_ALREADY_STARTED");
-        assertThat(mvc.delete().uri("/api/panel/schedules/" + started).header(HEADER, anna))
+        assertThat(mvc.delete().uri("/api/panel/schedules/" + started).with(sessions.practitioner(anna)))
                 .hasStatus(HttpStatus.CONFLICT);
     }
 
@@ -141,10 +144,10 @@ public class SchedulePanelApiTest {
         MvcTestResult created = post("/api/panel/schedules", anna, WEEKDAYS_FROM_MONDAY);
         long id = idOf(created);
 
-        assertThat(mvc.put().uri("/api/panel/schedules/" + id).header(HEADER, anna)
+        assertThat(mvc.put().uri("/api/panel/schedules/" + id).with(sessions.practitioner(anna))
                 .contentType(MediaType.APPLICATION_JSON).content(WEEKDAYS_FROM_MONDAY))
                 .hasStatusOk();
-        assertThat(mvc.delete().uri("/api/panel/schedules/" + id).header(HEADER, anna))
+        assertThat(mvc.delete().uri("/api/panel/schedules/" + id).with(sessions.practitioner(anna)))
                 .hasStatus(HttpStatus.NO_CONTENT);
     }
 
@@ -153,12 +156,12 @@ public class SchedulePanelApiTest {
         MvcTestResult created = post("/api/panel/schedules", marco, WEEKDAYS_FROM_MONDAY);
         long id = idOf(created);
 
-        assertThat(mvc.delete().uri("/api/panel/schedules/" + id).header(HEADER, anna))
+        assertThat(mvc.delete().uri("/api/panel/schedules/" + id).with(sessions.practitioner(anna)))
                 .hasStatus(HttpStatus.NOT_FOUND);
     }
 
     @Test
-    void withoutHeaderTheAnswerIs401() {
+    void withoutASessionTheAnswerIs401() {
         assertThat(mvc.get().uri("/api/panel/schedules")).hasStatus(HttpStatus.UNAUTHORIZED);
     }
 
@@ -172,7 +175,7 @@ public class SchedulePanelApiTest {
                 """);
 
         assertThat(result).hasStatus(HttpStatus.CREATED);
-        assertThat(mvc.get().uri("/api/panel/unavailabilities").header(HEADER, anna))
+        assertThat(mvc.get().uri("/api/panel/unavailabilities").with(sessions.practitioner(anna)))
                 .hasStatusOk()
                 .bodyJson().isLenientlyEqualTo("""
                         [{"startsAt": "2026-11-12T11:15:00+01:00", "endsAt": "2026-11-12T12:00:00+01:00",
@@ -207,9 +210,9 @@ public class SchedulePanelApiTest {
                 """);
         long id = idOf(created);
 
-        assertThat(mvc.delete().uri("/api/panel/unavailabilities/" + id).header(HEADER, marco))
+        assertThat(mvc.delete().uri("/api/panel/unavailabilities/" + id).with(sessions.practitioner(marco)))
                 .hasStatus(HttpStatus.NOT_FOUND);
-        assertThat(mvc.delete().uri("/api/panel/unavailabilities/" + id).header(HEADER, anna))
+        assertThat(mvc.delete().uri("/api/panel/unavailabilities/" + id).with(sessions.practitioner(anna)))
                 .hasStatus(HttpStatus.NO_CONTENT);
     }
 
@@ -221,7 +224,7 @@ public class SchedulePanelApiTest {
     }
 
     private MvcTestResult post(String uri, String practitioner, String json) {
-        return mvc.post().uri(uri).header(HEADER, practitioner)
+        return mvc.post().uri(uri).with(sessions.practitioner(practitioner))
                 .contentType(MediaType.APPLICATION_JSON)
                 .content(json)
                 .exchange();

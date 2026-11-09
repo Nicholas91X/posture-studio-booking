@@ -19,7 +19,7 @@ import org.springframework.transaction.annotation.Transactional;
 import com.posturestudio.booking.FixedClockConfiguration;
 import com.posturestudio.booking.TestcontainersConfiguration;
 
-// The public API of the free slots from the outside, with no X-Practitioner-Id header: public APIs
+// The public API of the free slots from the outside, with no session: public APIs
 // do not ask who you are. Today is Friday 6 November 2026, 10:00 in Rome. Same configuration
 // as SchedulePanelApiTest: same Spring context, same container
 @SpringBootTest

@@ -1,6 +1,7 @@
 package com.posturestudio.booking.booking;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.springframework.security.test.web.servlet.request.SecurityMockMvcRequestPostProcessors.csrf;
 
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -17,6 +18,7 @@ import org.springframework.transaction.annotation.Transactional;
 
 import com.jayway.jsonpath.JsonPath;
 import com.posturestudio.booking.FixedClockConfiguration;
+import com.posturestudio.booking.TestSessions;
 import com.posturestudio.booking.TestcontainersConfiguration;
 
 // The customer API from the outside. Today is Friday 6 November 2026, 10:00 in Rome.
@@ -27,11 +29,13 @@ import com.posturestudio.booking.TestcontainersConfiguration;
 @Transactional
 public class BookingCustomerApiTest {
 
-    // the provisional identity of the customer (guide 19, part 7)
-    private static final String HEADER = "X-Customer-Id";
 
     @Autowired
     MockMvcTester mvc;
+
+    // signed-in requests: a real session and a CSRF token (guide 25, part 8)
+    @Autowired
+    TestSessions sessions;
 
     @Autowired
     JdbcTemplate jdbc;
@@ -54,10 +58,12 @@ public class BookingCustomerApiTest {
 
     @Test
     void withoutACustomerTheAnswerIs401() {
-        assertThat(mvc.post().uri("/api/customer/bookings").contentType(MediaType.APPLICATION_JSON)
+        // with a valid CSRF token: without it the refusal would be the 403 of CSRF, before asking who acts
+        assertThat(mvc.post().uri("/api/customer/bookings").with(csrf()).contentType(MediaType.APPLICATION_JSON)
                 .content(body("2026-11-09T09:00:00+01:00")))
                 .hasStatus(HttpStatus.UNAUTHORIZED);
-        assertThat(mvc.get().uri("/api/customer/bookings/1").header(HEADER, "999999"))
+        // a session whose account does not exist (any more): anonymous
+        assertThat(mvc.get().uri("/api/customer/bookings/1").with(sessions.user(999999)))
                 .hasStatus(HttpStatus.UNAUTHORIZED);
     }
 
@@ -86,7 +92,7 @@ public class BookingCustomerApiTest {
 
     @Test
     void aMissingStartAnswers400OnItsField() {
-        MvcTestResult result = mvc.post().uri("/api/customer/bookings").header(HEADER, cliente)
+        MvcTestResult result = mvc.post().uri("/api/customer/bookings").with(sessions.customer(cliente))
                 .contentType(MediaType.APPLICATION_JSON)
                 .content("""
                         {"practitionerId": %d, "serviceId": %d}
@@ -128,11 +134,11 @@ public class BookingCustomerApiTest {
         MvcTestResult created = request(cliente, "2026-11-09T09:00:00+01:00");
         int id = JsonPath.read(created.getResponse().getContentAsString(), "$.id");
 
-        assertThat(mvc.get().uri("/api/customer/bookings/" + id).header(HEADER, cliente))
+        assertThat(mvc.get().uri("/api/customer/bookings/" + id).with(sessions.customer(cliente)))
                 .hasStatusOk()
                 .bodyJson().extractingPath("$.status").isEqualTo("PENDING_PAYMENT");
         // 404 and not 403: the answer must not reveal that the booking exists
-        assertThat(mvc.get().uri("/api/customer/bookings/" + id).header(HEADER, altroCliente))
+        assertThat(mvc.get().uri("/api/customer/bookings/" + id).with(sessions.customer(altroCliente)))
                 .hasStatus(HttpStatus.NOT_FOUND);
     }
 
@@ -141,13 +147,13 @@ public class BookingCustomerApiTest {
         long waiting = data.booking(anna, seduta, Long.parseLong(cliente),
                 "2026-11-09T09:00+01:00", "2026-11-09T10:00+01:00", "PENDING_APPROVAL");
 
-        assertThat(mvc.post().uri("/api/customer/bookings/" + waiting + "/withdraw").header(HEADER, altroCliente))
+        assertThat(mvc.post().uri("/api/customer/bookings/" + waiting + "/withdraw").with(sessions.customer(altroCliente)))
                 .hasStatus(HttpStatus.NOT_FOUND);
-        assertThat(mvc.post().uri("/api/customer/bookings/" + waiting + "/withdraw").header(HEADER, cliente))
+        assertThat(mvc.post().uri("/api/customer/bookings/" + waiting + "/withdraw").with(sessions.customer(cliente)))
                 .hasStatusOk()
                 .bodyJson().extractingPath("$.status").isEqualTo("WITHDRAWN");
         // a second time: the state machine refuses
-        assertThat(mvc.post().uri("/api/customer/bookings/" + waiting + "/withdraw").header(HEADER, cliente))
+        assertThat(mvc.post().uri("/api/customer/bookings/" + waiting + "/withdraw").with(sessions.customer(cliente)))
                 .hasStatus(HttpStatus.CONFLICT)
                 .bodyJson().extractingPath("$.code").isEqualTo("BOOKING_TRANSITION_NOT_ALLOWED");
     }
@@ -164,7 +170,7 @@ public class BookingCustomerApiTest {
     }
 
     private MvcTestResult request(String customer, String startsAt) {
-        return mvc.post().uri("/api/customer/bookings").header(HEADER, customer)
+        return mvc.post().uri("/api/customer/bookings").with(sessions.customer(customer))
                 .contentType(MediaType.APPLICATION_JSON)
                 .content(body(startsAt))
                 .exchange();

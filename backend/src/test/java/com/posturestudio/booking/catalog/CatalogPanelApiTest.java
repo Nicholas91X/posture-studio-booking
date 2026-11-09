@@ -16,6 +16,9 @@ import org.springframework.test.web.servlet.assertj.MvcTestResult;
 import org.springframework.transaction.annotation.Transactional;
 
 import com.jayway.jsonpath.JsonPath;
+import com.posturestudio.booking.TestSessions;
+
+import jakarta.servlet.http.Cookie;
 import com.posturestudio.booking.TestcontainersConfiguration;
 
 // The whole application, a real PostgreSQL, requests through MockMvc in the test's own thread:
@@ -26,11 +29,13 @@ import com.posturestudio.booking.TestcontainersConfiguration;
 @Transactional
 public class CatalogPanelApiTest {
 
-    // the provisional identity of the panel (D-028)
-    private static final String HEADER = "X-Practitioner-Id";
 
     @Autowired
     MockMvcTester mvc;
+
+    // signed-in requests: a real session and a CSRF token (guide 25, part 8)
+    @Autowired
+    TestSessions sessions;
 
     @Autowired
     JdbcTemplate jdbc;
@@ -47,7 +52,7 @@ public class CatalogPanelApiTest {
     // ***** WHO IS ACTING *****
 
     @Test
-    void withoutHeaderTheAnswerIs401() {
+    void withoutASessionTheAnswerIs401() {
         assertThat(mvc.get().uri("/api/panel/services"))
                 .hasStatus(HttpStatus.UNAUTHORIZED)
                 .hasContentType("application/problem+json");
@@ -55,9 +60,10 @@ public class CatalogPanelApiTest {
 
     @Test
     void unknownOrInvalidPractitionerIs401() {
-        assertThat(mvc.get().uri("/api/panel/services").header(HEADER, "999999"))
+        // a session of an account that does not exist, and a cookie that is no session at all
+        assertThat(mvc.get().uri("/api/panel/services").with(sessions.user(999999)))
                 .hasStatus(HttpStatus.UNAUTHORIZED);
-        assertThat(mvc.get().uri("/api/panel/services").header(HEADER, "abc"))
+        assertThat(mvc.get().uri("/api/panel/services").cookie(new Cookie("SESSION", "abc")))
                 .hasStatus(HttpStatus.UNAUTHORIZED);
     }
 
@@ -113,7 +119,7 @@ public class CatalogPanelApiTest {
 
         assertThat(result).hasStatus(HttpStatus.CREATED);
         assertThat(result).bodyJson().extractingPath("$.evaluation").isEqualTo(true);
-        assertThat(mvc.get().uri("/api/panel/services").header(HEADER, anna))
+        assertThat(mvc.get().uri("/api/panel/services").with(sessions.practitioner(anna)))
                 .bodyJson().extractingPath("$[0].evaluation").isEqualTo(true);
     }
 
@@ -147,7 +153,7 @@ public class CatalogPanelApiTest {
 
     @Test
     void packageWithoutServiceAnswers400() {
-        MvcTestResult result = mvc.post().uri("/api/panel/packages").header(HEADER, anna)
+        MvcTestResult result = mvc.post().uri("/api/panel/packages").with(sessions.practitioner(anna))
                 .contentType(MediaType.APPLICATION_JSON)
                 .content("""
                         {"name": "5 sedute", "sessionsCount": 5, "priceCents": 14000, "validityDays": 90}
@@ -166,7 +172,7 @@ public class CatalogPanelApiTest {
         long marcosService = createServiceId(marco);
 
         // act
-        MvcTestResult result = mvc.put().uri("/api/panel/services/" + marcosService).header(HEADER, anna)
+        MvcTestResult result = mvc.put().uri("/api/panel/services/" + marcosService).with(sessions.practitioner(anna))
                 .contentType(MediaType.APPLICATION_JSON)
                 .content("""
                         {"name": "Rubato", "durationMinutes": 60, "priceCents": 1, "evaluation": false}
@@ -185,8 +191,8 @@ public class CatalogPanelApiTest {
         long marcosService = createServiceId(marco);
         long neverUsed = marcosService + 1000;
 
-        MvcTestResult others = mvc.post().uri("/api/panel/services/" + marcosService + "/deactivate").header(HEADER, anna).exchange();
-        MvcTestResult missing = mvc.post().uri("/api/panel/services/" + neverUsed + "/deactivate").header(HEADER, anna).exchange();
+        MvcTestResult others = mvc.post().uri("/api/panel/services/" + marcosService + "/deactivate").with(sessions.practitioner(anna)).exchange();
+        MvcTestResult missing = mvc.post().uri("/api/panel/services/" + neverUsed + "/deactivate").with(sessions.practitioner(anna)).exchange();
 
         assertThat(others).hasStatus(HttpStatus.NOT_FOUND);
         assertThat(missing).hasStatus(HttpStatus.NOT_FOUND);
@@ -201,7 +207,7 @@ public class CatalogPanelApiTest {
         long annasService = createServiceId(anna);
         createServiceId(marco);
 
-        assertThat(mvc.get().uri("/api/panel/services").header(HEADER, anna))
+        assertThat(mvc.get().uri("/api/panel/services").with(sessions.practitioner(anna)))
                 .hasStatusOk()
                 .bodyJson().extractingPath("$[*].id").asArray().containsExactly((int) annasService);
     }
@@ -211,7 +217,7 @@ public class CatalogPanelApiTest {
         long marcosService = createServiceId(marco);
         long marcosPackage = createPackageId(marco, marcosService);
 
-        assertThat(mvc.post().uri("/api/panel/packages/" + marcosPackage + "/deactivate").header(HEADER, anna))
+        assertThat(mvc.post().uri("/api/panel/packages/" + marcosPackage + "/deactivate").with(sessions.practitioner(anna)))
                 .hasStatus(HttpStatus.NOT_FOUND);
         Boolean active = jdbc.queryForObject("select active from package_offer where id = ?", Boolean.class, marcosPackage);
         assertThat(active).isTrue();
@@ -230,7 +236,7 @@ public class CatalogPanelApiTest {
     void packageOnDeactivatedServiceAnswers409WithCode() throws Exception {
         // arrange
         long serviceId = createServiceId(anna);
-        assertThat(mvc.post().uri("/api/panel/services/" + serviceId + "/deactivate").header(HEADER, anna))
+        assertThat(mvc.post().uri("/api/panel/services/" + serviceId + "/deactivate").with(sessions.practitioner(anna)))
                 .hasStatusOk()
                 .bodyJson().extractingPath("$.active").isEqualTo(false);
 
@@ -246,7 +252,7 @@ public class CatalogPanelApiTest {
     void errorResponsesExposeNoInternals() throws Exception {
         long marcosService = createServiceId(marco);
 
-        MvcTestResult notFound = mvc.post().uri("/api/panel/services/" + marcosService + "/deactivate").header(HEADER, anna).exchange();
+        MvcTestResult notFound = mvc.post().uri("/api/panel/services/" + marcosService + "/deactivate").with(sessions.practitioner(anna)).exchange();
         MvcTestResult invalid = createService(anna, """
                 {"name": "", "durationMinutes": 0, "priceCents": 0, "evaluation": false}
                 """);
@@ -260,7 +266,7 @@ public class CatalogPanelApiTest {
     // ***** HELPERS *****
 
     private MvcTestResult createService(String practitioner, String json) {
-        return mvc.post().uri("/api/panel/services").header(HEADER, practitioner)
+        return mvc.post().uri("/api/panel/services").with(sessions.practitioner(practitioner))
                 .contentType(MediaType.APPLICATION_JSON)
                 .content(json)
                 .exchange();
@@ -274,12 +280,12 @@ public class CatalogPanelApiTest {
         return ((Number) JsonPath.read(result.getResponse().getContentAsString(), "$.id")).longValue();
     }
 
-    private MvcTestResult createPackage(String practitioner, long serviceId, int sessions) {
-        return mvc.post().uri("/api/panel/packages").header(HEADER, practitioner)
+    private MvcTestResult createPackage(String practitioner, long serviceId, int sessionsCount) {
+        return mvc.post().uri("/api/panel/packages").with(sessions.practitioner(practitioner))
                 .contentType(MediaType.APPLICATION_JSON)
                 .content("""
                         {"serviceId": %d, "name": "Pacchetto", "sessionsCount": %d, "priceCents": 14000, "validityDays": 90}
-                        """.formatted(serviceId, sessions))
+                        """.formatted(serviceId, sessionsCount))
                 .exchange();
     }
 

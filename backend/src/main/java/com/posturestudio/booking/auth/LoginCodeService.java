@@ -139,11 +139,11 @@ class LoginCodeService {
         Optional<AppUser> existing = users.findByEmail(to);
         if (existing.isEmpty()) {
             AppUser created = users.save(new AppUser(to, Role.CUSTOMER));
-            return new Valid(created.getId(), true);
+            return new Valid(created.getId(), Role.CUSTOMER, true);
         }
         AppUser user = existing.get();
         // no automatic reactivation (guide 24, 5.4): whoever deactivated the account had a reason
-        return user.isActive() ? new Valid(user.getId(), false) : new AccountDeactivated();
+        return user.isActive() ? new Valid(user.getId(), user.getRole(), false) : new AccountDeactivated();
     }
 
     // Deletes the codes older than RETENTION: after that they serve nothing, and they hold IP addresses,
