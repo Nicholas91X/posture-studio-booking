@@ -6,6 +6,7 @@ Modifiche dovute alle migrazioni:
 - **V1 (passo 4)**: `customer.full_name` e `practitioner.display_name` sostituiti da `first_name` + `last_name`; `phone` spostato in `app_user` (facoltativo, per utenti di ogni ruolo); aggiunto `app_user.active` per la cancellazione morbida; ruolo `ADMIN` (D-021).
 - **V2 (passo 5)**: `service` e `package_offer` come da progettazione, con `created_at`; foreign key composta per il servizio del pacchetto (D-025); indici su `practitioner_id`.
 - **V3 (passo 6)**: `working_schedule`, `working_hours` e `unavailability` come da progettazione (D-034), con `created_at`; fasce all'ora piena o alla mezz'ora e non sovrapposte (*exclusion constraint* su `timerange`, estensione `btree_gist`, D-036); cascata da una versione alle sue fasce; in `practitioner` scatto solo 30 o 60 con default 60, `min_booking_notice_hours` e `booking_horizon_days` (D-033, D-035).
+- **V5 (passo 8)**: `login_code` con `channel` + `destination` al posto di `email`, `requested_from` per il limite per IP, `created_at` scritto da Java, `code_hash` come HMAC con chiave segreta (D-050).
 - **V4 (passo 7)**: `booking` come qui sotto, con `booked_by`, `paid_with` solo `CARD` e `IN_STUDIO`, i sette stati del passo 7, `IN_STUDIO` solo con `booked_by = PRACTITIONER`, e il vincolo di non sovrapposizione parziale su `tstzrange` (D-042); `service.evaluation` (D-043); in `practitioner` `max_future_bookings`, `booking_approval` e `approval_window_hours` con il `check` su due colonne (D-041, D-042).
 
 Modifiche di progettazione:
@@ -35,7 +36,7 @@ practitioner ─┬─< working_schedule ──< working_hours
 payment ── booking      (pagamento di una seduta)
 payment ── credit_lot   (pagamento di un pacchetto)
 
-login_code      (codici di accesso, legati all'email)
+login_code      (codici di accesso, legati a una destinazione: email, dal pezzo 6 anche il telefono)
 app_user ──< push_subscription   (chi può accedere e con quale ruolo; dispositivi per le notifiche push)
 stripe_event    (eventi Stripe già elaborati)
 ```
@@ -82,14 +83,21 @@ Orizzonte, limite, anticipo minimo e approvazione valgono solo quando prenota il
 | last_name | text | |
 
 ### `login_code`
+Migrazione V5, passo 8 (D-050). Vale solo l'ultimo codice chiesto per una destinazione.
+
 | Colonna | Tipo | Note |
 |---|---|---|
 | id | bigint | |
-| email | text | |
-| code_hash | text | mai il codice in chiaro |
-| expires_at | timestamptz | 10 minuti dopo la creazione |
-| attempts | int | massimo 5 |
+| channel | text | `EMAIL`; `SMS` dal pezzo 6 del passo 8 (D-042: il `check` ha solo i valori prodotti) |
+| destination | text | l'email normalizzata (D-020); dal pezzo 6 anche un numero in E.164 |
+| code_hash | text | HMAC-SHA256 di destinazione e codice con una chiave segreta fuori dal database, in esadecimale: mai il codice in chiaro |
+| requested_from | inet | per il limite per IP: l'indirizzo IPv4, o la rete `/64` di un indirizzo IPv6 (il resto azzerato) |
+| created_at | timestamptz | scritto da Java con il `Clock`, come `booking` |
+| expires_at | timestamptz | 10 minuti dopo la creazione (`check`: dopo `created_at`) |
+| attempts | int | da 0 a 5 (`check`) |
 | used_at | timestamptz | null finché non viene usato |
+
+Indici `(channel, destination, created_at)`, `(requested_from, created_at)`, `(created_at)`. Le righe si cancellano 24 ore dopo la richiesta (lavoro programmato ogni ora): gli IP sono dati personali.
 
 ## Quando
 

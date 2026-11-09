@@ -62,6 +62,21 @@ class ApiExceptionHandler extends ResponseEntityExceptionHandler {
         return problem;
     }
 
+    // 429 with Retry-After in whole seconds, rounded up: retrying a moment too early would fail again
+    @ExceptionHandler(TooManyRequestsException.class)
+    ResponseEntity<ProblemDetail> tooManyRequests(TooManyRequestsException e) {
+        long seconds = Math.max(1, (e.getRetryAfter().toMillis() + 999) / 1000);
+        return ResponseEntity.status(HttpStatus.TOO_MANY_REQUESTS)
+                .header(HttpHeaders.RETRY_AFTER, String.valueOf(seconds))
+                .body(ProblemDetail.forStatusAndDetail(HttpStatus.TOO_MANY_REQUESTS, e.getMessage()));
+    }
+
+    // 503: the request was right, a server it needs did not answer (already logged where it happened)
+    @ExceptionHandler(DeliveryFailedException.class)
+    ProblemDetail deliveryFailed(DeliveryFailedException e) {
+        return ProblemDetail.forStatusAndDetail(HttpStatus.SERVICE_UNAVAILABLE, e.getMessage());
+    }
+
     // a constraint of the database: validation and rules should have stopped it, unless two
     // requests raced. The database message names tables and constraints: log only
     @ExceptionHandler(DataIntegrityViolationException.class)

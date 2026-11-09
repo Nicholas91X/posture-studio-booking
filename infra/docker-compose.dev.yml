@@ -12,5 +12,15 @@ services:
     volumes:
       - postgres-data:/var/lib/postgresql/data
 
+  # A fake mail server (step 8, guide 24, 7.4): it receives emails over SMTP and shows them in a web page,
+  # without ever delivering them. Nothing to configure: no volume, the emails are lost at every restart
+  mailpit:
+    image: axllent/mailpit:v1.33
+    ports:
+      # SMTP, where the backend sends (spring.mail.port)
+      - "127.0.0.1:${MAIL_PORT:-1025}:1025"
+      # the web page with the received emails: http://localhost:8025
+      - "127.0.0.1:${MAILPIT_UI_PORT:-8025}:8025"
+
 volumes:
   postgres-data:

@@ -10,7 +10,18 @@
       "name": "booking.jobs.enabled",
       "type": "java.lang.Boolean",
       "defaultValue": true,
-      "description": "Turns on the scheduled jobs that close expired holds and unanswered requests (guide 21). False switches them off, for example on a second instance of the application."
+      "description": "Turns on the scheduled jobs of every module: expired holds and unanswered requests (guide 21), cleanup of old access codes (guide 24). False switches them off, for example on a second instance of the application."
+    },
+    {
+      "name": "auth.login-code.hmac-key",
+      "type": "java.lang.String",
+      "description": "SECRET (AUTH_CODE_HMAC_KEY). Base64 of at least 32 random bytes: the HMAC key of the access codes (guide 24, part 3). No default: without it the application does not start."
+    },
+    {
+      "name": "notification.mail.from",
+      "type": "java.lang.String",
+      "defaultValue": "no-reply@posture-studio.local",
+      "description": "The sender of the emails of the system (MAIL_FROM). The real address of the studio comes before step 14."
     }
   ]
 }

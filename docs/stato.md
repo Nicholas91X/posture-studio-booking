@@ -1,6 +1,6 @@
 # Stato del progetto
 
-Ultimo aggiornamento: 2026-11-07 (chiusura del passo 7)
+Ultimo aggiornamento: 2026-11-09 (passo 8, pezzo 1 fatto)
 
 ## Dove siamo
 
@@ -23,6 +23,10 @@ Fatto nel passo 4: struttura del repository, progetto Spring Boot 4.1.1 su Java 
 
 437 test verdi (`mvnw clean test`). Le notifiche passano al passo 8 (D-039). Punti aperti 10, 11 e 12 chiusi; aperto il 16 (link di pagamento, prima del passo 9). **Prossimo: passo 8, accesso** (e notifiche).
 
+**Passo 8 in corso** (accesso e notifiche, dal brief del 2026-11-09). **Pezzo 1 fatto** (guida 24, D-050): codice di accesso via email. Costruiti: migrazione V5 (`login_code` con canale e destinazione, pronta per l'SMS); impronta HMAC-SHA256 con chiave segreta (`AUTH_CODE_HMAC_KEY`); verifica che restituisce una `sealed interface CodeCheck` invece di lanciare, con il lucchetto sulla riga; account `CUSTOMER` creato alla prima verifica giusta (precisa D-014); account disattivati rifiutati, senza riattivazione automatica; limiti nel database (3 in 15 minuti e 10 al giorno per email, 30 l'ora per IP, `/64` in IPv6) con 429 e `Retry-After`; pulizia oraria delle righe con più di 24 ore; `POST /api/public/auth/login-code` (202 sempre uguale); modulo `notification` con `EmailLoginCodeSender`; **Mailpit** in `infra/docker-compose.dev.yml` (anticipato dal pezzo 4). 478 test verdi (`mvnw clean test`), compresa la prova che senza il lucchetto 10 ipotesi in parallelo passano tutte. Prossimo: **pezzo 2**, sessione e Spring Security.
+
+**Da fare nel proprio `.env` per avviare il backend** (dal pezzo 1 del passo 8): aggiungere `AUTH_CODE_HMAC_KEY` (Base64 di 32 byte casuali: `openssl rand -base64 32`) e le righe `MAIL_*` di `.env.example`. Senza la chiave l'applicazione non parte, apposta. Le email arrivate si leggono su `http://localhost:8025`.
+
 **Per provare in locale il pagamento simulato**: aggiungere `BOOKING_SIMULATED_PAYMENTS=true` al proprio `.env` (è in `.env.example`).
 
 Risposte dello studio del 2026-11-02 e 2026-11-06 sul calendario (requisiti, "Calendario"): scatto di un'ora, ma valutazione da 30 minuti e seduta successiva possono iniziare alla mezz'ora; nessuna pausa; seduta sempre dentro la fascia; niente prenotazioni per il giorno stesso (punto 14 chiuso); orari lunedì–venerdì 9–13 e 14–19, modificabili anche per date future; **stanza unica**, ma la sovrapposizione con una valutazione si **segnala**, non si impedisce. Punti 3 e 13 chiusi con D-033 e D-034.
@@ -34,7 +38,7 @@ Decisioni del 2026-11-06:
 
 Decisioni del 2026-10-29 (solo documentazione): niente IVA perché entrambi i professionisti sono forfettari (D-022, modifica D-011 e D-012); calendario non pubblico (requisiti, "Riservatezza del calendario"); orizzonte di prenotazione e limite di sedute future (D-023); prenotazione dal pannello per conto di un cliente (D-024).
 
-Avvio del database in locale, dalla radice: `docker compose -f infra/docker-compose.dev.yml --env-file .env up -d`
+Avvio di database e Mailpit in locale, dalla radice: `docker compose -f infra/docker-compose.dev.yml --env-file .env up -d`
 
 ## Percorso
 
@@ -47,7 +51,7 @@ Avvio del database in locale, dalla radice: `docker compose -f infra/docker-comp
 | 5 | Catalogo e professionisti: servizi, prezzi, impostazioni | Claude, su richiesta di Nicholas | ✅ fatto → `passi/05-catalogo.md` |
 | 6 | Calendario: orari di lavoro, indisponibilità, calcolo degli orari liberi | Claude, su richiesta di Nicholas | ✅ fatto → `passi/06-calendario.md` |
 | 7 | Prenotazione: blocco dell'orario, approvazione (D-030), vincolo di non sovrapposizione, lavori programmati, eventi di dominio | Claude, su richiesta di Nicholas | ✅ fatto → `passi/07-prenotazione.md` |
-| 8 | Accesso: codice via email, sessioni, ruoli (Spring Security); notifiche email e push lato backend (D-032, D-039) | Nicholas, o Claude su sua richiesta | |
+| 8 | Accesso: codice via email, sessioni, ruoli (Spring Security); notifiche email e push lato backend (D-032, D-039) | Claude, su richiesta di Nicholas | in corso: pezzo 1 di 6 fatto (guida 24) |
 | 9 | Pagamenti: Stripe Checkout con *manual capture* (D-031) e webhook | Nicholas, o Claude su sua richiesta | |
 | 10 | Crediti e pacchetti: lotti, movimenti, acquisto, prenotazione con credito | Nicholas, o Claude su sua richiesta | |
 | 11 | Cancellazioni | Nicholas, o Claude su sua richiesta | |
@@ -73,8 +77,8 @@ Elencati in `requisiti.md`, sezione "Punti aperti". Da chiudere prima del passo 
 - ~~Modo di pagamento delle prenotazioni dal pannello~~ → chiuso il 2026-11-06: in studio (D-040)
 - ~~Valori iniziali di orizzonte e limite~~ → chiuso il 2026-11-06: 21 giorni, 4 prenotazioni future (D-041)
 - Link di pagamento per le prenotazioni dal pannello (requisiti, punto aperto 16) → prima del passo 9
-- Servizio email (orientamento: Brevo) → prima del passo 8
-- Codice di accesso anche via SMS → al passo 8 o dopo la prima versione
+- Servizio email (orientamento: Brevo) → **prima del passo 14** (spostato il 2026-11-09: in sviluppo basta Mailpit, D-050; servono anche il dominio e l'indirizzo mittente dello studio)
+- Codice di accesso anche via SMS → al passo 8, pezzo 6 (da chiudere con la sua scheda)
 - Concessioni discrezionali del professionista (crediti, omaggi) → prima del passo 10
 - Cancellazione dei dati di un cliente (GDPR, anonimizzazione) → prima del passo 14
 
@@ -95,6 +99,8 @@ Elencati in `requisiti.md`, sezione "Punti aperti". Da chiudere prima del passo 
 - **Passo 8 (accesso), riservatezza del calendario**: ogni regola di "Riservatezza del calendario" (requisiti) diventa un **test automatico**. Almeno: utente anonimo rifiutato su prenotazioni e sedute (vede solo gli orari liberi); professionista A rifiutato sulle prenotazioni di B; cliente rifiutato sulle sedute di altri. **Criterio di "fatto" del passo 8**: questi test esistono e sono verdi.
 - **Passo 8 (accesso)**: sessione lunga che si rinnova a ogni visita (ordine di grandezza 30–90 giorni), per ridurre i codici via email senza introdurre password (D-014). Valutare il codice via SMS (requisiti, punto aperto 7): costo per messaggio, verifica del numero, limiti contro gli abusi (invio di SMS a raffica verso numeri a pagamento), consenso. Se il telefono diventa un modo per accedere, deve stare in `app_user`, unico e in un formato standard (internazionale, es. `+39...`), con la data di verifica.
 - **Passi 10–11 (crediti, cancellazioni)**: concessioni discrezionali del professionista (requisiti, punto aperto 6). Il modello a lotti e movimenti (D-009, D-010) le regge senza stravolgimenti: un omaggio o un credito concesso su una cancellazione tardiva è un **lotto** con una nuova origine (es. `GRANT`), una correzione è un **movimento** con un nuovo motivo (es. `ADJUSTMENT`). Serve la traccia: chi l'ha concesso, quando, con una nota. Una concessione non cambia lo stato della prenotazione (resta `CANCELLED_LATE`): cambia solo il credito. Perimetro deciso: credito su cancellazione tardiva, sedute omaggio, proroga di una scadenza, ognuno per i propri clienti. Attenzione alla **proroga**: è l'unica che *modifica* qualcosa (la scadenza di un lotto) invece di aggiungere; per non perdere la storia va registrato anche l'evento (vecchia e nuova scadenza, chi, quando, perché).
-- **Passo 8 (accesso), riattivazione**: con `unique` sull'email, un cliente disattivato che torna con la stessa email va **riattivato**, non registrato di nuovo.
+- **Passo 8 (accesso), riattivazione**: con `unique` sull'email, un cliente disattivato che torna con la stessa email non si registra di nuovo. **Precisato da D-050** (2026-11-09): il login **non** riattiva; un account disattivato è rifiutato all'accesso, e la riattivazione è solo esplicita (prenotazione dal pannello, D-048, o l'admin).
+- **Passo 8, pezzo 2 (sessione)**: verifica `POST /api/public/auth/session` sopra `LoginCodeService.verify` (uno `switch` su `CodeCheck` senza `default`; codici `CODE_WRONG`, `CODE_EXPIRED`, `ACCOUNT_DEACTIVATED`); `POST /api/customer/profile` per nome e cognome dopo il primo accesso, e 409 `PROFILE_INCOMPLETE` finché manca la riga `customer` (D-050). Sessione lunga che si rinnova a ogni visita (30–90 giorni, nota qui sotto): con la sessione di Tomcat in memoria un riavvio farebbe uscire tutti, quindi va valutata la sessione salvata nel database (Spring Session JDBC, tabelle con una migrazione Flyway).
+- **Passo 14, accesso**: verificare che Caddy **sostituisca** `X-Forwarded-For` invece di accodarlo (il limite per IP si fida di Tomcat, `server.forward-headers-strategy=native`, D-050); configurare il fornitore email (credenziali SMTP o API, `MAIL_FROM` dello studio); generare un `AUTH_CODE_HMAC_KEY` di produzione diverso da quello di sviluppo.
 - **Passo 13 (pannello)**: gestione dei professionisti da parte dell'admin (D-021), compresa la disattivazione. Prenotazione per conto di un cliente e creazione del cliente con nome, cognome ed email (D-024). Da chiarire prima: quali clienti può cercare e vedere un professionista.
 

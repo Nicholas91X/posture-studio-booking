@@ -154,7 +154,7 @@ Formato: contesto → decisione → alternative scartate → conseguenze.
 ---
 
 ## D-014 — Accesso senza password con codice via email
-**Stato:** accettata · 2026-10-13
+**Stato:** accettata · 2026-10-13 · **precisata da D-050** (2026-11-09): l'account nasce alla prima verifica giusta del codice, non alla prima prenotazione; il codice si salva come HMAC con una chiave segreta
 
 **Decisione.** L'utente inserisce l'email e riceve un codice di 6 cifre (validità 10 minuti, massimo 5 tentativi, salvato solo come hash). La prima prenotazione crea l'account. Stesso meccanismo per i professionisti, con ruolo diverso. Sessione in cookie `HttpOnly`.
 
@@ -790,3 +790,25 @@ Implementazione (pezzo 3, guida 16): `FreeSlots.compute(SlotQuery)` nel package 
 **Alternative scartate.** *Una join SQL tra prenotazioni, clienti e servizi*: attraverserebbe tre moduli (D-026). *Leggere le prenotazioni degli altri come entità e filtrare la risposta*: riservatezza per filtro, non per costruzione; un campo aggiunto per errore uscirebbe. *Fotografare "valutazione" nella prenotazione*: D-043 lo esclude. *Un limite alla lunghezza del periodo*: dati propri e pochi.
 
 **Conseguenze.** Numero di query costante per lista (righe, altri, valutazioni, orari, nomi). Il frontend del passo 13 mostra la segnalazione anche prima di confermare una prenotazione dal pannello (punto aperto 12, "quando compare"), chiedendo la lista del giorno.
+
+---
+
+## D-050 — Codice di accesso via email: HMAC, risultato invece di eccezione, account alla verifica, limiti nel database
+**Stato:** accettata · 2026-11-09 · precisa D-014 · confronto completo: `docs/studio/24-codice-di-accesso-email.md` · scelte di Claude secondo le raccomandazioni della guida, su indicazione di Nicholas
+
+**Contesto.** Il pezzo 1 del passo 8 costruisce richiesta e verifica del codice di D-014 (6 cifre, 10 minuti, 5 tentativi, solo l'impronta). Da decidere: la tabella, pensando all'SMS del pezzo 6; quale impronta, visto che i codici possibili sono solo un milione; come restano scritti i tentativi sbagliati; quando nasce l'account; cosa succede agli account disattivati; dove si contano i limiti; chi spedisce il codice, visto che `auth` non dipende da nessun modulo.
+
+**Decisione.**
+- **Tabella** `login_code` (V5), una per tutti i canali: `channel` (`check` con il solo `EMAIL`, il pezzo 6 aggiunge `SMS`), `destination` (l'email normalizzata), `code_hash`, `requested_from` (`inet`), `created_at` scritto da Java con il `Clock`, `expires_at`, `attempts` (`check` da 0 a 5), `used_at`. Lo scopo del codice (`purpose`) arriverà con il pezzo 6.
+- **Impronta**: HMAC-SHA256 di `destinazione:codice` con una chiave segreta fuori dal database (`AUTH_CODE_HMAC_KEY`, Base64 di almeno 32 byte; senza, l'applicazione non parte). Confronto con `MessageDigest.isEqual`, a tempo costante. Codice da `SecureRandom`, con gli zeri davanti. La chiave non sta in un `record`, perché il suo `toString` la stamperebbe.
+- **Verifica**: restituisce una `sealed interface CodeCheck` (`Valid(userId, newAccount)`, `Wrong`, `Expired`, `AccountDeactivated`) invece di lanciare. Un'eccezione annullerebbe con il rollback anche il tentativo contato. **Lucchetto pessimistico** sull'ultimo codice della destinazione. Vale solo l'ultimo codice chiesto: il quinto sbagliato risponde già `Expired`.
+- **Primo accesso**: alla prima verifica giusta di un'email mai vista nasce l'account `CUSTOMER` (precisa D-014: non alla prima prenotazione). La richiesta non crea niente. Nome e cognome si chiedono dopo la verifica, una volta, nel pezzo 2.
+- **Account disattivati**: l'accesso è rifiutato per ogni ruolo e non c'è riattivazione automatica. Alla richiesta la risposta è identica, ma l'email dice "account disattivato" invece di portare il codice; alla verifica, `AccountDeactivated`. La riattivazione avviene solo con un atto esplicito (prenotazione dal pannello, D-048, o l'admin).
+- **Nessuna enumerazione**: ogni richiesta accettata fa lo stesso lavoro (una riga, un'email), quindi stessa risposta (202 senza corpo) e stesso tempo, che l'email esista o no.
+- **Limiti**, contati sulle righe di `login_code`: 3 in 15 minuti e 10 in 24 ore per destinazione; 30 l'ora per IP. Oltre il limite, 429 con `Retry-After`. I valori stanno in un `record` `@ConfigurationProperties` (`auth.login-code.*`). Per IPv6 si salva e si conta solo la rete `/64`; l'IP arriva da Tomcat con `server.forward-headers-strategy=native`, mai leggendo `X-Forwarded-For` a mano. Un lavoro ogni ora cancella le righe con più di 24 ore: gli IP sono dati personali.
+- **Spedizione**: `LoginCodeSender`, dichiarata da `auth` e implementata da `notification` (`EmailLoginCodeSender`, Spring Mail), come D-044. Prima il commit, poi la spedizione, fuori dalla transazione; se fallisce, 503. Mailpit in `infra/docker-compose.dev.yml` già dal pezzo 1. Timeout SMTP di 5 secondi.
+
+**Alternative scartate.** *SHA-256 semplice*: un milione di codici si provano in meno di un secondo. *BCrypt*: lento a ogni verifica, e comunque in pochi minuti su una scheda grafica. *Una tabella per canale*: la stessa logica due volte. *Codice legato a `user_id`*: al primo accesso l'utente non esiste. *`noRollbackFor` o `REQUIRES_NEW` per i tentativi*: corretti, ma fragili o con due transazioni. *Account creato alla richiesta*: account spazzatura per ogni email digitata. *Account alla prima prenotazione*: sessioni senza utente. *Riattivazione al login*: renderebbe inutile la disattivazione. *Contatori in memoria*: azzerati a ogni riavvio, doppi con due istanze. *Codice nel log al posto dell'email*: un altro sostituto provvisorio, e un buco se finisse in produzione. *Un evento per spedire*: il codice in chiaro in un evento, e nessun modo di rispondere 503.
+
+**Conseguenze.** `auth` resta senza dipendenze; nasce il modulo `notification` (→ `auth`). Il lavoro di pulizia si accende e si spegne con gli altri (`booking.jobs.enabled`, D-047). **Provato**: senza il lucchetto, 10 ipotesi sbagliate in parallelo sono state contate tutte come `Wrong`, cioè 10 tentativi invece di 5. L'endpoint della verifica, la sessione e `POST /api/customer/profile` sono del pezzo 2. Al passo 14: controllare che Caddy sostituisca `X-Forwarded-For` invece di accodarlo; il fornitore email vero (punto aperto 5) con il suo indirizzo mittente (`MAIL_FROM`) e le credenziali SMTP o API.
+

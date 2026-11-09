@@ -110,8 +110,8 @@ Un'unica applicazione, divisa in package per area. Ogni modulo espone verso gli 
 ## Accesso e sessioni
 
 1. L'utente inserisce l'email.
-2. Il backend genera un codice di 6 cifre, ne salva solo l'impronta (hash), con scadenza di 10 minuti e un massimo di 5 tentativi, e lo invia via email.
-3. L'utente inserisce il codice. Se è corretto, il backend crea la sessione e la invia come cookie `HttpOnly`, `Secure`, `SameSite=Lax`.
+2. Il backend genera un codice di 6 cifre, ne salva solo l'impronta (HMAC con una chiave segreta, D-050), con scadenza di 10 minuti e un massimo di 5 tentativi, e lo invia via email. La risposta è identica che l'email esista o no; limiti per email e per IP (429).
+3. L'utente inserisce il codice. Se è corretto, e l'email non era mai stata vista, nasce l'account `CUSTOMER` (D-050). Il backend crea la sessione e la invia come cookie `HttpOnly`, `Secure`, `SameSite=Lax`.
 4. Frontend e backend sono sullo stesso dominio (grazie a Caddy), quindi il cookie funziona senza configurazioni particolari.
 
 Lo stesso meccanismo vale per i professionisti: la loro email ha il ruolo `PRACTITIONER`, che apre il pannello.
@@ -172,7 +172,7 @@ Cosa si usa e cosa va documentato oltre al webhook:
 ## Docker e messa online
 
 ### In locale
-- `infra/docker-compose.dev.yml` avvia solo PostgreSQL. Backend e frontend girano dall'IDE, per avere riavvii rapidi e debug.
+- `infra/docker-compose.dev.yml` avvia PostgreSQL e **Mailpit**, un finto server di posta che mostra le email ricevute su `http://localhost:8025` senza spedirle (D-050). Backend e frontend girano dall'IDE, per avere riavvii rapidi e debug.
 
 ### In produzione (Hetzner)
 - `infra/docker-compose.yml` con quattro servizi: `caddy`, `frontend`, `backend`, `postgres`.
