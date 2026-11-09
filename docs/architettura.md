@@ -64,7 +64,7 @@ Un'unica applicazione, divisa in package per area. Ogni modulo espone verso gli 
 | `booking` | Prenotazioni, blocco temporaneo, approvazione (D-030), cancellazioni |
 | `credit` | Lotti e movimenti dei crediti |
 | `payment` | Integrazione Stripe, webhook |
-| `notification` | Invio email e notifiche push, dispositivi registrati (D-032). Ascolta gli eventi di `booking` dopo il commit, in un altro thread (D-053); nessun modulo dipende da lui |
+| `notification` | Invio email e notifiche push, dispositivi registrati (D-032). Ascolta gli eventi di `booking` dopo il commit, in un altro thread (D-053); push cifrate e firmate con le classi del JDK, solo verso i servizi push noti, con l'email al professionista come riserva (D-054); nessun modulo dipende da lui |
 
 ### Livelli dentro ogni modulo
 
@@ -131,7 +131,7 @@ Lo stesso meccanismo vale per i professionisti: la loro email ha il ruolo `PRACT
 5. Stripe avvisa il backend con il webhook `checkout.session.completed`. La prenotazione passa ad "in attesa di approvazione", con la scadenza fotografata.
 6. **Approvazione**:
    - automatica: il backend approva subito;
-   - manuale: il backend avvisa il professionista con una notifica push (email di riserva), e lui approva o rifiuta dal pannello entro la scadenza.
+   - manuale: il backend avvisa il professionista con una notifica push su tutti i suoi dispositivi; se nessuno la accetta, con un'email (D-054). Lui approva o rifiuta dal pannello entro la scadenza.
 7. **Approvata**: il backend chiede a Stripe l'incasso. Quando Stripe risponde che è riuscito, la prenotazione è confermata e il cliente riceve l'email di conferma.
 8. **Rifiutata, scaduta o ritirata dal cliente**: il backend annulla il blocco sulla carta, l'orario si libera, e il cliente riceve un'email. Non è stato addebitato niente.
 

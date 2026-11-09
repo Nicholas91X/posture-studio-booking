@@ -6,6 +6,7 @@ Modifiche dovute alle migrazioni:
 - **V1 (passo 4)**: `customer.full_name` e `practitioner.display_name` sostituiti da `first_name` + `last_name`; `phone` spostato in `app_user` (facoltativo, per utenti di ogni ruolo); aggiunto `app_user.active` per la cancellazione morbida; ruolo `ADMIN` (D-021).
 - **V2 (passo 5)**: `service` e `package_offer` come da progettazione, con `created_at`; foreign key composta per il servizio del pacchetto (D-025); indici su `practitioner_id`.
 - **V3 (passo 6)**: `working_schedule`, `working_hours` e `unavailability` come da progettazione (D-034), con `created_at`; fasce all'ora piena o alla mezz'ora e non sovrapposte (*exclusion constraint* su `timerange`, estensione `btree_gist`, D-036); cascata da una versione alle sue fasce; in `practitioner` scatto solo 30 o 60 con default 60, `min_booking_notice_hours` e `booking_horizon_days` (D-033, D-035).
+- **V7 (passo 8)**: `push_subscription` riferita a `practitioner` invece che ad `app_user` (solo i professionisti ricevono push, D-054), con `registered_at`; `endpoint` unico; indice su `practitioner_id, registered_at`.
 - **V6 (passo 8)**: `spring_session` e `spring_session_attributes`, le tabelle di Spring Session JDBC copiate dal suo schema 4.1.1 (D-051).
 - **V5 (passo 8)**: `login_code` con `channel` + `destination` al posto di `email`, `requested_from` per il limite per IP, `created_at` scritto da Java, `code_hash` come HMAC con chiave segreta (D-050).
 - **V4 (passo 7)**: `booking` come qui sotto, con `booked_by`, `paid_with` solo `CARD` e `IN_STUDIO`, i sette stati del passo 7, `IN_STUDIO` solo con `booked_by = PRACTITIONER`, e il vincolo di non sovrapposizione parziale su `tstzrange` (D-042); `service.evaluation` (D-043); in `practitioner` `max_future_bookings`, `booking_approval` e `approval_window_hours` con il `check` su due colonne (D-041, D-042).
@@ -38,7 +39,8 @@ payment ── booking      (pagamento di una seduta)
 payment ── credit_lot   (pagamento di un pacchetto)
 
 login_code      (codici di accesso, legati a una destinazione: email, dal pezzo 6 anche il telefono)
-app_user ──< push_subscription   (chi può accedere e con quale ruolo; dispositivi per le notifiche push)
+app_user        (chi può accedere e con quale ruolo)
+practitioner ──< push_subscription   (dispositivi per le notifiche push, D-054)
 stripe_event    (eventi Stripe già elaborati)
 ```
 
@@ -272,14 +274,15 @@ Le sessioni degli utenti collegati, gestite da **Spring Session JDBC** (D-051). 
 ## Notifiche
 
 ### `push_subscription`
-Un dispositivo registrato per le notifiche push (D-032). Un utente può averne più di uno.
+Un dispositivo registrato per le notifiche push (D-032, D-054). Un professionista può averne più di uno, fino a 10. Migrazione V7.
 
 | Colonna | Tipo | Note |
 |---|---|---|
 | id | bigint | |
-| user_id | bigint | → `app_user` |
-| endpoint | text | unico: l'indirizzo del servizio push del browser |
-| p256dh | text | chiave pubblica del dispositivo, per cifrare il messaggio |
-| auth | text | segreto del dispositivo, per cifrare il messaggio |
+| practitioner_id | bigint | → `practitioner`: solo i professionisti ricevono push |
+| endpoint | text | unico: l'indirizzo del servizio push del browser, solo `https` verso un servizio push noto (`@PushEndpoint`). Mai intero nei log |
+| p256dh | text | chiave pubblica P-256 del browser (Base64url), per cifrare il messaggio |
+| auth | text | segreto di 16 byte del browser (Base64url), per cifrare il messaggio |
+| registered_at | timestamptz | l'ultima registrazione: il frontend la ripete a ogni visita; oltre il limite escono le più vecchie |
 
-Quando il servizio push risponde che il dispositivo non esiste più, la riga si cancella. Migrazione del passo 8 (D-039; prima era prevista al passo 7).
+La registrazione è un `insert ... on conflict (endpoint) do update`: lo stesso browser aggiorna la sua riga, anche se ora la usa un altro professionista. Quando il servizio push risponde 404 o 410, la riga si cancella.

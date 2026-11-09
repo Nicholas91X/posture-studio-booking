@@ -1,6 +1,6 @@
 # Passo 08 — Accesso e notifiche
 
-> **Stato: in corso** (dal 2026-11-09). Pezzi 1–4 di 6 fatti, 559 test verdi (`mvnw clean test`). Branch `feat/step-8-access` dal pezzo 2 (il pezzo 1 è su `main`).
+> **Stato: in corso** (dal 2026-11-09). Pezzi 1–5 di 6 fatti, 601 test verdi (`mvnw clean test`). Branch `feat/step-8-access` dal pezzo 2 (il pezzo 1 è su `main`).
 
 ## Obiettivo
 Il sistema sa chi lo sta usando: accesso con un codice via email o via SMS (solo da un numero verificato), sessione con cookie, ruoli, account disattivati fuori. I sostituti provvisori (`DevHeaderCurrentPractitioner`, `DevHeaderCurrentCustomer`) spariscono. Le notifiche email e push si agganciano agli eventi del passo 7.
@@ -10,7 +10,7 @@ I pezzi (guida 24, parte 0):
 2. Sessione e Spring Security, ruoli, via i due DevHeader, test della riservatezza — ✅ fatto (guida 25, D-051)
 3. Admin e professionisti (D-021) — ✅ fatto (guida 26, D-052)
 4. Notifiche email sugli eventi del passo 7 — ✅ fatto (guida 27, D-053)
-5. Notifiche push (D-032, D-039), con riserva email
+5. Notifiche push (D-032, D-039), con riserva email — ✅ fatto lato backend (guida 28, D-054)
 6. Codice di accesso via SMS da numero verificato
 
 ## Criteri di "fatto" (dal brief)
@@ -23,9 +23,9 @@ I pezzi (guida 24, parte 0):
 | Ogni area solo al suo ruolo; account disattivati fuori | ✅ | `ConfidentialityTest`, `SessionApiTest` |
 | L'admin crea e disattiva professionisti; primo admin senza segreti | ✅ (`ADMIN_EMAIL` all'avvio, solo nel `.env`) | `PractitionerAdminApiTest`, `AdminBootstrapTest`, `AdminBootstrapStartupTest` |
 | Email in Mailpit per ogni evento; un invio fallito non annulla la prenotazione | ✅ (email dopo il commit in un altro thread; un invio rifiutato non tocca la prenotazione né l'altra email) | `BookingNotificationsTest`, `MailpitDeliveryTest`, `BookingEmailsTest` |
-| Push con riserva email provata | pezzo 5 | |
+| Push con riserva email provata | ✅ con un finto servizio push e un finto browser che decifra: push accettata → niente email al professionista; nessun dispositivo, 410 o 500 → email. Servizio push vero al passo 13 | `BookingNotificationsTest`, `PushEncryptionTest` (vettore RFC 8291), `VapidTest`, `PushSubscriptionApiTest` |
 | Punto aperto 7 chiuso; punto 5 spostato al passo 14; nuovo punto sul fornitore SMS | punto 5 spostato; 7 e fornitore SMS al pezzo 6 | `stato.md`, `requisiti.md` |
-| `modello-dati.md` aggiornato; test verdi; branch e PR | V5 e V6 descritte, note del pezzo 3, nessuna migrazione nel pezzo 4; 559 verdi; branch aperto, PR a fine passo | `modello-dati.md` |
+| `modello-dati.md` aggiornato; test verdi; branch e PR | V5 e V6 descritte, note del pezzo 3, nessuna migrazione nel pezzo 4, V7 nel pezzo 5 (descritta); 601 verdi; branch aperto, PR a fine passo | `modello-dati.md` |
 
 ## Cosa è stato costruito
 
@@ -76,6 +76,19 @@ I pezzi (guida 24, parte 0):
 - `pom.xml`: i test girano con lingua inglese e fuso UTC, come il server (`maven-surefire-plugin`, `argLine`).
 - Test: `BookingEmailsTest` (unitario), `BookingNotificationsTest` (commit veri, `RecordingMailSender`, Awaitility), `MailpitDeliveryTest` (Mailpit in un container, letto con la sua API), e casi nuovi in `CustomerServiceTest`, `PractitionerServiceTest`, `CatalogServiceTest`.
 
+### Pezzo 5 — Notifiche push
+- `V7__create_push_subscription.sql`: i dispositivi, riferiti a `practitioner`, `endpoint` unico.
+- `notification/P256`: chiavi P-256 nei formati di Web Push (65 byte non compressi, 32 byte grezzi, Base64url), con il controllo che il punto stia sulla curva.
+- `notification/PushEncryption`: la cifratura RFC 8291 (ECDH, HKDF, AES-128-GCM, intestazione `aes128gcm`).
+- `notification/Vapid`: il JWT ES256 di RFC 8292 e l'intestazione `Authorization: vapid t=..., k=...`; fail fast sulle chiavi.
+- `notification/WebPushClient`: il `POST` con `HttpClient` del JDK, `TTL`, `Urgency`, l'esito (`ACCEPTED`, `GONE`, `FAILED`).
+- `notification/PushSender`: la push a ogni dispositivo di un professionista, i 404/410 cancellati.
+- `notification/PushMessages` (funzione pura) e `PushMessage` con `PushPayload`.
+- `notification/PushSubscriptionController`, `PushSubscriptionService`, `PushSubscriptionRepository` (`on conflict do update`, i 10 più recenti, cancellazione dei propri), `PushSubscription`, `NewPushSubscription`, i vincoli `@PushEndpoint` e `@BrowserPublicKey`.
+- `notification/BookingNotifications`: prima la push, poi l'email al professionista solo come riserva.
+- `tools/GenerateVapidKeys.java`; `notification.push.vapid.*` in `application.properties`; `VAPID_*` in `.env.example`; le chiavi dell'RFC nelle proprietà dei test.
+- Test: `PushEncryptionTest` (vettore RFC), `VapidTest`, `PushMessagesTest`, `PushEndpointTest`, `PushSubscriptionApiTest`, casi nuovi in `BookingNotificationsTest`; `FakePushService` (server HTTP del JDK) e `FakeBrowser` (la decifratura, scritta a parte).
+
 ## Concetti chiave
 
 - **Perché l'hash da solo non basta.** I codici a 6 cifre sono un milione. Chi ruba la tabella calcola tutte le impronte SHA-256 in meno di un secondo; anche BCrypt cede in pochi minuti su una scheda grafica. Un **HMAC** con una chiave fuori dal database rende le impronte inutili senza la chiave. La difesa vera resta il limite di tentativi con la scadenza breve.
@@ -104,13 +117,21 @@ I pezzi (guida 24, parte 0):
 - **Funzione pura per la parte con più casi.** I testi delle email non leggono e non spediscono niente: si provano senza Spring, in millisecondi. L'ascoltatore, che ha meno casi, si prova con Spring.
 - **Un bean di test può spegnere un'autoconfigurazione.** Spring Boot crea il suo `JavaMailSender` solo se non esiste un `MailSender` (`@ConditionalOnMissingBean`): un finto `MailSender` non lo sostituisce, lo fa sparire.
 - **Asincrono nei test.** Awaitility ripete un'asserzione fino a un tempo massimo; per un "non succede niente", `during(...)`: la condizione deve restare vera per tutto l'intervallo.
-- **Java moderno usato qui:** `sealed interface` e *record pattern* (21), `record` con costruttore compatto come configurazione, *text block* (15), `RandomGenerator` (17), `HexFormat` (17), `List.reversed()` e `getFirst()` delle *sequenced collection* (21), virtual thread (21, pezzo 4), `switch` con *pattern matching* su una `sealed interface` senza `default` (21, pezzo 4), `Thread.isVirtual()` nei test.
+- **Web Push.** Browser, servizio push del produttore, nostro server. L'iscrizione è `endpoint` + chiave pubblica del browser + segreto `auth`; il server cifra per quel browser, firma con VAPID, e fa `POST` all'`endpoint`.
+- **ECDH, HKDF, AES-GCM.** Due parti arrivano allo stesso segreto senza trasmetterlo; HKDF ne ricava chiavi diverse per usi diversi; AES-GCM cifra e autentica. Una coppia di chiavi nuova per ogni messaggio.
+- **Vettori di prova.** Un RFC con un esempio completo permette di verificare un'implementazione byte per byte: è ciò che separa "comporre primitive standard" da "scrivere la propria crittografia".
+- **Firma DER o P1363.** La stessa firma ECDSA ha due formati; JWT vuole `r | s`, 64 byte.
+- **SSRF.** Se il server chiama URL dati dal client, un elenco degli host ammessi, controllato all'ingresso.
+- **`on conflict do update`.** L'*upsert* in un'istruzione sola; `excluded` è la riga che si voleva inserire.
+- **Una riserva decisa dall'esito.** L'email parte se nessun dispositivo ha accettato la push, non "per sicurezza".
+- **Java moderno usato qui:** `sealed interface` e *record pattern* (21), `record` con costruttore compatto come configurazione, *text block* (15), `RandomGenerator` (17), `HexFormat` (17), `List.reversed()` e `getFirst()` delle *sequenced collection* (21), virtual thread (21, pezzo 4), `switch` con *pattern matching* su una `sealed interface` senza `default` (21, pezzo 4), `Thread.isVirtual()` nei test; `HttpClient` del JDK (11) chiuso come `AutoCloseable` (21); un programma di un solo file lanciato senza compilarlo (JEP 330, `tools/GenerateVapidKeys.java`).
 
 ## Decisioni
 - **D-050** — codice di accesso via email (precisa **D-014**: l'account nasce alla prima verifica giusta; l'impronta è un HMAC).
 - **D-051** — sessione e Spring Security.
 - **D-052** — admin e professionisti.
 - **D-053** — notifiche email (completa **D-039** e **D-046**: `serviceId` negli eventi, `@Async` dopo il commit, nessuna *outbox*).
+- **D-054** — notifiche push (completa **D-032** e **D-039**; precisa `modello-dati.md`: dispositivi riferiti a `practitioner`).
 
 ## Errori fatti e come sono stati corretti
 
@@ -125,7 +146,9 @@ I pezzi (guida 24, parte 0):
 9. **(Pezzo 4) Un finto `MailSender` che ha spento quello vero.** Il primo `RecordingMailSender` implementava `MailSender`. Spring Boot crea il suo `JavaMailSender` solo se non esiste già un `MailSender`: vedendo il finto si è tirato indietro, e `EmailLoginCodeSender`, che chiede un `JavaMailSender`, è rimasto senza. Il contesto non partiva. Corretto facendo estendere al finto `JavaMailSenderImpl`: sostituisce il mittente vero per intero. La lezione: un bean di test non si aggiunge soltanto, può cambiare quali autoconfigurazioni scattano.
 10. **(Pezzo 4, errore di Claude) Un totale stampato da un comando che non era partito.** Il primo `mvnw clean test` della suite completa aveva un percorso del log sbagliato: la shell ha rifiutato il comando prima di lanciarlo, e il conteggio successivo ha sommato i report vecchi rimasti in `target`, dando un totale credibile. Mancava la riga con il codice di uscita di Maven. Rilanciato con il percorso giusto e il codice di uscita stampato. È lo stesso errore del punto 8: un risultato si guarda insieme alla prova che il comando sia girato davvero.
 11. **(Pezzo 4) Un test che sul PC di sviluppo non poteva fallire.** La JVM di questo PC è in italiano: togliere `Locale.ITALIAN` dai testi lasciava i test verdi, ma su un server in inglese le date sarebbero uscite in inglese ("Thursday"). Ora i test girano con lingua inglese e fuso UTC (`argLine` di Surefire), come il server: la stessa mutazione fa fallire i test.
-12. **Porta 5432 occupata** durante la prova a mano: in locale gira già il database di un altro progetto. Il PostgreSQL di questo progetto è stato avviato sulla 5433 solo per la prova (`POSTGRES_PORT=5433` davanti al comando). Da ricordare se l'avvio di Compose fallisce con "port is already allocated".
+12. **(Pezzo 5, errore di Claude) Le mutazioni che si contaminavano a vicenda.** Lo script che ripristinava il codice dopo ogni mutazione *spostava* la copia di backup al posto del file. Una copia spostata conserva la sua data di modifica, più vecchia della classe compilata dalla mutazione, e Maven poteva tenere in `target` la classe mutata. Sintomo: togliendo il controllo della curva falliva anche il test del vettore RFC, che non c'entrava (l'intestazione era giusta, il testo cifrato no: era ancora la mutazione precedente su `key_info`). Con `mvnw clean` falliva solo il test giusto. Corretto riscrivendo il file invece di spostarlo, e rifatte tutte e dieci le mutazioni con `clean`. La lezione: un risultato strano di un test va spiegato, non contato.
+13. **(Pezzo 5) Un *text block* Java dentro uno script Python.** Lo script che aggiungeva i test usava le stringhe `"""` di Python, e il `"""` di un *text block* Java le chiudeva a metà: lo script si è fermato con un errore di sintassi prima di scrivere, quindi senza danni. Riscritto con `'''`.
+14. **Porta 5432 occupata** durante la prova a mano: in locale gira già il database di un altro progetto. Il PostgreSQL di questo progetto è stato avviato sulla 5433 solo per la prova (`POSTGRES_PORT=5433` davanti al comando). Da ricordare se l'avvio di Compose fallisce con "port is already allocated".
 
 ## Domande da colloquio
 
@@ -151,3 +174,9 @@ Le domande del pezzo 1 sono nella guida 24 (sei domande, con le risposte modello
 
 ### Domanda 7: I test passano sul tuo PC e falliscono sul server, o il contrario. Cosa controlli prima?
 **Risposta modello.** Le cose che il codice prende dall'ambiente senza dirlo: lingua (`Locale` di default), fuso orario, codifica dei caratteri, separatore di riga. Il codice le deve dire in modo esplicito (`Locale.ITALIAN`, `ZoneId` del dominio, UTF-8), e i test conviene farli girare con i valori del server, così una dimenticanza si vede subito: qui lingua inglese e fuso UTC nell'`argLine` di Surefire.
+
+### Domanda 8: Come verifichi un'implementazione crittografica scritta componendo primitive standard?
+**Risposta modello.** Con i vettori di prova pubblicati dallo standard: stesse chiavi, stesso sale, stesso testo, e il risultato deve essere identico byte per byte. Poi un giro completo con un ricevitore scritto a parte, che decifra ciò che il mittente produce con valori casuali. E le mutazioni: tolgo un byte da una stringa `info`, cambio il formato della firma, e i test devono fallire. Resta da provare l'interoperabilità con i servizi veri, che si fa con un dispositivo reale.
+
+### Domanda 9: Un utente può registrare un URL a cui il tuo server farà richieste. Come lo proteggi?
+**Risposta modello.** È il caso tipico di SSRF. Accetto solo `https` sulla porta standard e solo host di un elenco chiuso (qui i servizi push dei browser e i loro sottodomini), con un confronto sull'host intero e sul suffisso preceduto da un punto, così `fcm.googleapis.com.example.com` non passa. Il controllo è all'ingresso, come vincolo di validazione: un 400 sul campo. Non scrivo l'URL intero nei log.

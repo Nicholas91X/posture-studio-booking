@@ -1,5 +1,10 @@
 package com.posturestudio.booking.notification;
 
+import static com.posturestudio.booking.notification.PushEncryptionTest.AUTH;
+import static com.posturestudio.booking.notification.PushEncryptionTest.BROWSER_PRIVATE;
+import static com.posturestudio.booking.notification.PushEncryptionTest.BROWSER_PUBLIC;
+import static com.posturestudio.booking.notification.PushEncryptionTest.bytes;
+import static java.nio.charset.StandardCharsets.UTF_8;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.awaitility.Awaitility.await;
 
@@ -7,7 +12,9 @@ import java.time.Duration;
 import java.time.OffsetDateTime;
 import java.util.List;
 
+import org.junit.jupiter.api.AfterAll;
 import org.junit.jupiter.api.AfterEach;
+import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -23,6 +30,7 @@ import com.posturestudio.booking.booking.BookingService;
 import com.posturestudio.booking.booking.NewBooking;
 import com.posturestudio.booking.booking.NewPanelBooking;
 import com.posturestudio.booking.customer.CustomerDetails;
+import com.posturestudio.booking.notification.FakePushService.Received;
 import com.posturestudio.booking.notification.RecordingMailSender.Sent;
 
 // The booking emails end to end (guide 27, part 9): real commits, the real listener, the real executor,
@@ -40,6 +48,9 @@ class BookingNotificationsTest {
     // Monday 9 November, 9:00 in Rome: on the grid, past the notice of 24 hours from Friday 6 November, 10:00
     private static final OffsetDateTime MONDAY_9 = OffsetDateTime.parse("2026-11-09T09:00+01:00");
     private static final Duration PATIENCE = Duration.ofSeconds(5);
+
+    // the devices of Anna, from piece 5 (guide 28, part 11): a push service on localhost
+    private static FakePushService pushService;
 
     @Autowired
     BookingService bookings;
@@ -60,9 +71,20 @@ class BookingNotificationsTest {
     private long maria;
     private long seduta;
 
+    @BeforeAll
+    static void startThePushService() throws Exception {
+        pushService = new FakePushService();
+    }
+
+    @AfterAll
+    static void stopThePushService() {
+        pushService.close();
+    }
+
     @BeforeEach
     void annaWorksAndMariaIsACustomer() {
         mail.clear();
+        pushService.clear();
         clock.reset();
         Long annaUser = jdbc.queryForObject(
                 "insert into app_user (role, email) values ('PRACTITIONER', ?) returning id", Long.class, ANNA);
@@ -90,6 +112,7 @@ class BookingNotificationsTest {
     void deleteWhatWasCommitted() {
         mail.clear();
         clock.reset();
+        jdbc.update("delete from push_subscription where practitioner_id = ?", anna);
         jdbc.update("delete from booking where practitioner_id = ?", anna);
         jdbc.update("delete from working_schedule where practitioner_id = ?", anna);
         jdbc.update("delete from service where practitioner_id = ?", anna);
@@ -228,6 +251,88 @@ class BookingNotificationsTest {
         // a negative in another thread: wait a while, and the list must stay empty all along
         await().during(Duration.ofMillis(500)).atMost(PATIENCE).until(() -> mail.sent().isEmpty());
         assertThat(statusOf(booking)).isEqualTo("PENDING_APPROVAL");
+    }
+
+    // ***** push (piece 5, guide 28) *****
+
+    // D-032: a device took the push, so the email to Anna is not needed; Maria's email does not depend on it.
+    // The push is decrypted as Anna's browser would: no customer, no treatment on a locked screen
+    @Test
+    void aDeviceThatTakesThePushReplacesTheEmailToAnna() {
+        aDevice("phone");
+
+        long booking = aPaidRequestWithPush();
+
+        assertThat(mail.sentTo(ANNA)).isEmpty();
+        assertThat(mail.sentTo(MARIA)).hasSize(1);
+        Received push = pushService.received().getFirst();
+        assertThat(push.headers().get("authorization")).startsWith("vapid t=");
+        assertThat(push.headers().get("content-encoding")).isEqualTo("aes128gcm");
+        assertThat(push.headers().get("urgency")).isEqualTo("high");
+        // until the deadline: 12 hours after the request of Friday 10:00
+        assertThat(push.headers().get("ttl")).isEqualTo("43200");
+        String payload = new String(FakeBrowser.decrypt(push.body(), bytes(BROWSER_PRIVATE), bytes(BROWSER_PUBLIC), bytes(AUTH)), UTF_8);
+        assertThat(payload).isEqualTo("""
+                {"title":"Nuova prenotazione da approvare",\
+                "body":"lunedì 9 novembre, 9:00 · rispondi entro venerdì 6 novembre, 22:00",\
+                "url":"http://localhost:3000","tag":"booking-%d"}""".formatted(booking));
+    }
+
+    // 410: the browser dropped the subscription. The row goes, and Anna gets the email instead
+    @Test
+    void aDeviceThatNoLongerExistsIsDeletedAndAnnaGetsTheEmail() {
+        aDevice("old-phone");
+        pushService.answer("old-phone", 410);
+
+        aPaidRequest();
+
+        assertThat(mail.sentTo(ANNA)).hasSize(1);
+        assertThat(devicesOfAnna()).isZero();
+    }
+
+    // 500: the push service is down. The device stays (next time it may work), and the email goes
+    @Test
+    void aPushServiceDownKeepsTheDeviceAndAnnaGetsTheEmail() {
+        aDevice("phone");
+        pushService.answer("phone", 500);
+
+        aPaidRequest();
+
+        assertThat(mail.sentTo(ANNA)).hasSize(1);
+        assertThat(devicesOfAnna()).isOne();
+    }
+
+    // one device reached is enough: no email, and the dead one is cleaned up on the way
+    @Test
+    void oneDeviceReachedOutOfTwoIsEnough() {
+        aDevice("old-phone");
+        aDevice("laptop");
+        pushService.answer("old-phone", 410);
+
+        aPaidRequestWithPush();
+
+        assertThat(mail.sentTo(ANNA)).isEmpty();
+        assertThat(pushService.received()).extracting(Received::device).containsExactlyInAnyOrder("old-phone", "laptop");
+        assertThat(jdbc.queryForList("select endpoint from push_subscription where practitioner_id = ?", String.class, anna))
+                .containsExactly(pushService.endpoint("laptop"));
+    }
+
+    private void aDevice(String name) {
+        jdbc.update("insert into push_subscription (practitioner_id, endpoint, p256dh, auth) values (?, ?, ?, ?)",
+                anna, pushService.endpoint(name), BROWSER_PUBLIC, AUTH);
+    }
+
+    // Maria asks and pays; returns once her email has arrived. The push and the decision about Anna's email
+    // come before it in the same task (BookingNotifications), so by then they are done
+    private long aPaidRequestWithPush() {
+        long booking = bookings.request(maria, new NewBooking(anna, seduta, MONDAY_9)).id();
+        bookings.paymentAuthorized(booking);
+        await().atMost(PATIENCE).untilAsserted(() -> assertThat(mail.sentTo(MARIA)).hasSize(1));
+        return booking;
+    }
+
+    private long devicesOfAnna() {
+        return jdbc.queryForObject("select count(*) from push_subscription where practitioner_id = ?", Long.class, anna);
     }
 
     // Maria asks and pays, in MANUAL mode; returns once the two emails of ApprovalRequested have arrived
