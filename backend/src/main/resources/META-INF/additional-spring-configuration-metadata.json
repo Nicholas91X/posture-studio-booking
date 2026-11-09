@@ -1,0 +1,16 @@
+{
+  "properties": [
+    {
+      "name": "booking.simulated-payments",
+      "type": "java.lang.Boolean",
+      "defaultValue": false,
+      "description": "PROVISIONAL until step 9 (guide 20, part 5). Exposes POST /api/dev/bookings/{id}/payment-authorized, which simulates the card authorization. Never true in production."
+    },
+    {
+      "name": "booking.jobs.enabled",
+      "type": "java.lang.Boolean",
+      "defaultValue": true,
+      "description": "Turns on the scheduled jobs that close expired holds and unanswered requests (guide 21). False switches them off, for example on a second instance of the application."
+    }
+  ]
+}
