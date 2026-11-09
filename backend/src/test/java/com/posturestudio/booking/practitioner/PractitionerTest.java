@@ -25,6 +25,30 @@ public class PractitionerTest {
         assertThat(practitioner.settings()).isEqualTo(new PractitionerSettings(48, 60, 30, 48, 14, 6, AUTOMATIC, 24));
     }
 
+    // ***** names (guide 26) *****
+
+    @Test
+    void namesAreStrippedAtCreationAndAtRename() {
+        Practitioner practitioner = new Practitioner(1L, "  Anna ", " Rossi  ");
+        assertThat(practitioner.getFirstName()).isEqualTo("Anna");
+        assertThat(practitioner.getLastName()).isEqualTo("Rossi");
+
+        practitioner.rename(" Anna Maria ", "Rossi Bianchi");
+        assertThat(practitioner.getFirstName()).isEqualTo("Anna Maria");
+        assertThat(practitioner.getLastName()).isEqualTo("Rossi Bianchi");
+    }
+
+    @Test
+    void blankNamesAreRejected() {
+        Practitioner practitioner = new Practitioner(1L, "Anna", "Rossi");
+
+        var exception = Assertions.assertThrows(IllegalArgumentException.class, () -> practitioner.rename("Anna", " "));
+        assertThat(exception.getMessage()).contains("lastName");
+        // nothing changed
+        assertThat(practitioner.getLastName()).isEqualTo("Rossi");
+        Assertions.assertThrows(IllegalArgumentException.class, () -> new Practitioner(1L, null, "Rossi"));
+    }
+
     @Test
     void zeroCancellationNoticeIsRejected() {
         Practitioner practitioner = new Practitioner();

@@ -1,7 +1,9 @@
 package com.posturestudio.booking.auth;
 
 import java.util.Collection;
+import java.util.Map;
 import java.util.Set;
+import java.util.stream.Collectors;
 
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -34,12 +36,47 @@ public class AccountService {
         return users.findActiveIdsAmong(userIds);
     }
 
+    // Email and state of these accounts, by user id (guide 26, part 7): one query whatever their number,
+    // as activeAmong. A record, never the entity: outside auth nobody can change an account by mistake.
+    // An id without an account is simply missing from the map
+    @Transactional(readOnly = true)
+    public Map<Long, AccountSummary> summariesOf(Collection<Long> userIds) {
+        if (userIds.isEmpty()) {
+            return Map.of();
+        }
+        return users.findAllById(userIds).stream()
+                .collect(Collectors.toMap(AppUser::getId, AccountSummary::from));
+    }
+
+    // A new practitioner account, for the admin (D-021, guide 26, part 4); its id. Joins the caller's
+    // transaction: if the practitioner row then fails, the account is rolled back too.
+    // Any account already on this email is refused, whatever its role: one role per user, nobody is promoted.
+    // Two creations at the same moment: the unique constraint stops the second (409 DATA_CONFLICT)
+    @Transactional
+    public long createPractitionerAccount(String email) {
+        Email normalized = new Email(email);
+        if (users.existsByEmail(normalized)) {
+            throw new BusinessRuleException(ErrorCode.EMAIL_ALREADY_IN_USE, "This email already has an account");
+        }
+        return users.save(new AppUser(normalized, Role.PRACTITIONER)).getId();
+    }
+
+    // Deactivating and reactivating are idempotent (guide 26, 6.1). The sessions already open end at their
+    // next request (SessionAccounts reads the account every time), and no code lets it in (D-050)
+    @Transactional
+    public void deactivate(long userId) {
+        find(userId).deactivate();
+    }
+
+    @Transactional
+    public void activate(long userId) {
+        find(userId).activate();
+    }
+
     // The email of an account, normalized (D-020): for the profile of the customer (guide 25, 7.3)
     @Transactional(readOnly = true)
     public String emailOf(long userId) {
-        return users.findById(userId)
-                .map(user -> user.getEmail().value())
-                .orElseThrow(() -> new NotFoundException("User " + userId + " not found"));
+        return find(userId).getEmail().value();
     }
 
     // The customer account of this email, found or created (D-024, guide 22, part 3); its id.
@@ -59,5 +96,9 @@ public class AccountService {
         // idempotent: an active account stays active (managed entity, written at commit)
         user.activate();
         return user.getId();
+    }
+
+    private AppUser find(long userId) {
+        return users.findById(userId).orElseThrow(() -> new NotFoundException("User " + userId + " not found"));
     }
 }

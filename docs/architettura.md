@@ -118,7 +118,7 @@ Un'unica applicazione, divisa in package per area. Ogni modulo espone verso gli 
 7. **CSRF**: ogni richiesta che cambia qualcosa, accesso compreso, rimanda nell'header `X-XSRF-TOKEN` il token del cookie `XSRF-TOKEN`.
 8. Un cliente appena entrato senza nome e cognome li dà una volta (`PUT /api/customer/profile`); prima riceve 409 `PROFILE_INCOMPLETE`.
 
-Lo stesso meccanismo vale per i professionisti: la loro email ha il ruolo `PRACTITIONER`, che apre il pannello.
+Lo stesso meccanismo vale per i professionisti: la loro email ha il ruolo `PRACTITIONER`, che apre il pannello. I professionisti li crea e li disattiva l'admin (`/api/admin/practitioners`, D-052). Il primo admin nasce all'avvio dall'email in `ADMIN_EMAIL`, una variabile d'ambiente: nel repository non c'è.
 
 ## Flussi principali
 

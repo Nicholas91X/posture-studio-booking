@@ -53,7 +53,7 @@ Chiunque possa accedere. Separato da cliente e professionista perché l'accesso 
 |---|---|---|
 | id | bigint | |
 | email | text | unica, salvata in minuscolo |
-| role | text | `CUSTOMER`, `PRACTITIONER` o `ADMIN` (D-021), senza default |
+| role | text | `CUSTOMER`, `PRACTITIONER` o `ADMIN` (D-021), senza default. Il primo `ADMIN` nasce all'avvio dall'email in `ADMIN_EMAIL` (D-052); i `PRACTITIONER` li crea l'admin, insieme alla loro riga `practitioner` |
 | active | boolean | default true. Cancellazione morbida (*soft delete*) per ogni ruolo: un account disattivato non può accedere e la sua storia resta. Vuol dire "l'account esiste", non "prenotabile" (per le assenze ci sono le indisponibilità) |
 | phone | text | facoltativo, non unico (unicità, formato e verifica solo se diventerà un modo per accedere: requisiti, punto aperto 7) |
 
@@ -74,6 +74,8 @@ Chiunque possa accedere. Separato da cliente e professionista perché l'accesso 
 | min_booking_notice_hours | int | anticipo minimo per prenotare, default 24: si prenotano solo orari che iniziano più di N ore dopo (D-030). Migrazione V3, passo 6 |
 
 Orizzonte, limite, anticipo minimo e approvazione valgono solo quando prenota il cliente, non per le prenotazioni fatte dal pannello (D-024), che però contano nel limite. Nel conteggio entrano le prenotazioni `PENDING_PAYMENT`, `PENDING_APPROVAL` (D-030) e `CONFIRMED` con `starts_at` nel futuro.
+
+Un professionista nuovo (creato dall'admin, D-052) prende tutte le impostazioni dai default di queste colonne: Java non li ripete, e l'entità li rilegge dopo l'`insert` (`@Generated`).
 
 ### `customer`
 | Colonna | Tipo | Note |

@@ -1,6 +1,6 @@
 # Passo 08 — Accesso e notifiche
 
-> **Stato: in corso** (dal 2026-11-09). Pezzi 1 e 2 di 6 fatti, 505 test verdi (`mvnw clean test`). Branch `feat/step-8-access` dal pezzo 2 (il pezzo 1 è su `main`).
+> **Stato: in corso** (dal 2026-11-09). Pezzi 1–3 di 6 fatti, 534 test verdi (`mvnw clean test`). Branch `feat/step-8-access` dal pezzo 2 (il pezzo 1 è su `main`).
 
 ## Obiettivo
 Il sistema sa chi lo sta usando: accesso con un codice via email o via SMS (solo da un numero verificato), sessione con cookie, ruoli, account disattivati fuori. I sostituti provvisori (`DevHeaderCurrentPractitioner`, `DevHeaderCurrentCustomer`) spariscono. Le notifiche email e push si agganciano agli eventi del passo 7.
@@ -8,7 +8,7 @@ Il sistema sa chi lo sta usando: accesso con un codice via email o via SMS (solo
 I pezzi (guida 24, parte 0):
 1. Codice di accesso via email: richiesta, verifica, limiti — ✅ fatto (guida 24, D-050)
 2. Sessione e Spring Security, ruoli, via i due DevHeader, test della riservatezza — ✅ fatto (guida 25, D-051)
-3. Admin e professionisti (D-021)
+3. Admin e professionisti (D-021) — ✅ fatto (guida 26, D-052)
 4. Notifiche email sugli eventi del passo 7
 5. Notifiche push (D-032, D-039), con riserva email
 6. Codice di accesso via SMS da numero verificato
@@ -21,11 +21,11 @@ I pezzi (guida 24, parte 0):
 | I due DevHeader rimossi; nessun test li usa più | ✅ | `SessionCurrentPractitioner`, `SessionCurrentCustomer`, `TestSessions`; nessun `X-Practitioner-Id` o `X-Customer-Id` nel codice |
 | Test della riservatezza esistono e sono verdi | ✅ | `ConfidentialityTest` |
 | Ogni area solo al suo ruolo; account disattivati fuori | ✅ | `ConfidentialityTest`, `SessionApiTest` |
-| L'admin crea e disattiva professionisti; primo admin senza segreti | pezzo 3 | |
+| L'admin crea e disattiva professionisti; primo admin senza segreti | ✅ (`ADMIN_EMAIL` all'avvio, solo nel `.env`) | `PractitionerAdminApiTest`, `AdminBootstrapTest`, `AdminBootstrapStartupTest` |
 | Email in Mailpit per ogni evento; un invio fallito non annulla la prenotazione | Mailpit attivo e codice di accesso provato a mano; eventi al pezzo 4 | `infra/docker-compose.dev.yml` |
 | Push con riserva email provata | pezzo 5 | |
 | Punto aperto 7 chiuso; punto 5 spostato al passo 14; nuovo punto sul fornitore SMS | punto 5 spostato; 7 e fornitore SMS al pezzo 6 | `stato.md`, `requisiti.md` |
-| `modello-dati.md` aggiornato; test verdi; branch e PR | V5 e V6 descritte; 505 verdi; branch aperto, PR a fine passo | `modello-dati.md` |
+| `modello-dati.md` aggiornato; test verdi; branch e PR | V5 e V6 descritte, note del pezzo 3; 534 verdi; branch aperto, PR a fine passo | `modello-dati.md` |
 
 ## Cosa è stato costruito
 
@@ -56,6 +56,16 @@ I pezzi (guida 24, parte 0):
 - `ApiExceptionHandler`: `AuthenticationException` → 401, `AccessDeniedException` → 403 (`CSRF_TOKEN_INVALID` per il CSRF). `ErrorCode.PROFILE_INCOMPLETE`.
 - Test: `TestSessions` (sessioni vere per i test d'API), `SessionApiTest`, `ConfidentialityTest`; riscritti i sei test d'API che usavano gli header.
 
+### Pezzo 3 — Admin e professionisti
+- `auth/AdminBootstrap`: l'`ApplicationRunner` che crea il primo admin da `ADMIN_EMAIL`, con un `TransactionTemplate` e un esito `enum` letto da uno `switch` senza `default`.
+- `auth/AppUserRepository.insertAdminIfAbsent`: `insert ... on conflict (email) do nothing`, nativo.
+- `auth/AccountService`: `createPractitionerAccount`, `summariesOf` (con il `record` pubblico `AccountSummary`), `deactivate`, `activate`.
+- `practitioner/Practitioner`: costruttore *package-private* e `rename`; `@Generated` sulle otto impostazioni.
+- `practitioner/PractitionerService`: `listForAdmin`, `getForAdmin`, `create`, `rename`, `deactivate`, `activate`.
+- `practitioner/PractitionerAdminController` sotto `/api/admin/practitioners`, con `NewPractitioner`, `PractitionerNames`, `AdminPractitionerView`.
+- `ErrorCode.EMAIL_ALREADY_IN_USE`; `auth.admin-email` in `application.properties`; `ADMIN_EMAIL=` in `.env.example`.
+- Test: `AdminBootstrapTest`, `AdminBootstrapStartupTest`, `PractitionerAdminApiTest`, e casi nuovi in `AccountServiceTest`, `PractitionerServiceTest`, `PractitionerTest`; `ConfidentialityTest` aggiornato.
+
 ## Concetti chiave
 
 - **Perché l'hash da solo non basta.** I codici a 6 cifre sono un milione. Chi ruba la tabella calcola tutte le impronte SHA-256 in meno di un secondo; anche BCrypt cede in pochi minuti su una scheda grafica. Un **HMAC** con una chiave fuori dal database rende le impronte inutili senza la chiave. La difesa vera resta il limite di tentativi con la scadenza breve.
@@ -73,6 +83,12 @@ I pezzi (guida 24, parte 0):
 - **CSRF, SameSite, *login CSRF*.** Il cookie viaggia da solo, quindi un sito estraneo può far partire richieste a nome della vittima. Il token in un header non può copiarlo. `SameSite=Lax` è la seconda difesa.
 - ***Session fixation*.** All'accesso l'id della sessione cambia.
 - ***Default deny*.** `denyAll()` per tutto ciò che non è assegnato.
+- **L'uovo e la gallina del primo admin.** Identità e segreto sono cose diverse: con l'accesso via codice, l'email dell'admin è configurazione. Si legge all'avvio, e il codice di avvio crea soltanto, senza mai promuovere.
+- **`ApplicationRunner`.** Gira a contesto pronto, dopo Flyway, e un'eccezione ferma l'avvio (*fail fast*). `@PostConstruct` girerebbe troppo presto.
+- **`on conflict do nothing`.** L'`insert` idempotente: la gara tra "controllo" e "inserisco" la chiude il database.
+- **Propagazione `REQUIRED`.** Due righe di due moduli in una transazione: il servizio chiamato entra in quella del chiamante, e un *rollback* annulla tutto.
+- **Default del database e JPA.** Un campo `int` vale 0 e scavalca il default; `@Generated` lascia decidere il database e rilegge il valore con `returning`.
+- **Una verità sola.** Disattivare un professionista è una riga, perché "attivo" sta in un posto solo (D-029).
 - **Java moderno usato qui:** `sealed interface` e *record pattern* (21), `record` con costruttore compatto come configurazione, *text block* (15), `RandomGenerator` (17), `HexFormat` (17), `List.reversed()` delle *sequenced collection* (21, nel finto mittente dei test).
 
 ## Decisioni
@@ -86,7 +102,9 @@ I pezzi (guida 24, parte 0):
 4. **(Pezzo 2) La cache di Hibernate nei test `@Transactional`.** Le richieste MockMvc di un test condividono la transazione e la cache di primo livello: un `update` con SQL diretto non si vedeva. `flush()` e `clear()` intorno all'`update`.
 5. **(Pezzo 2) La chiave nel `.env` tra virgolette.** Spring legge il `.env` come file di proprietà e tiene le virgolette nel valore. La chiave non era più Base64, e l'avvio si è fermato con il messaggio di `LoginCodeHasher`, come previsto. È l'errore del passo 4 (D-018). Da correggere togliendo le virgolette.
 6. **(Pezzo 2, errore di Claude) Un backend lasciato acceso.** Nella prova del pezzo 1, fermando `mvnw spring-boot:run` si chiudeva Maven ma non il processo Java figlio, che è rimasto sulla porta 8080 per un'ora. Alla prova del pezzo 2 la porta era occupata. Da allora si ferma il processo che ascolta sulla porta, e il suo padre.
-7. **Porta 5432 occupata** durante la prova a mano: in locale gira già il database di un altro progetto. Il PostgreSQL di questo progetto è stato avviato sulla 5433 solo per la prova (`POSTGRES_PORT=5433` davanti al comando). Da ricordare se l'avvio di Compose fallisce con "port is already allocated".
+7. **(Pezzo 3) Un dubbio verificato invece che supposto.** Non era chiaro se `@Generated` avrebbe escluso le colonne anche dagli `update`. Invece di fidarsi della documentazione, un test di prova ha stampato l'SQL di un `insert` e di un `update`: le colonne restano negli `update`, e l'`insert` le rilegge con `returning`. Poi il test di prova è stato cancellato, e due test veri hanno preso il suo posto.
+8. **(Pezzo 3, errore di Claude) Uno script che diceva "nessun fallimento" senza aver eseguito niente.** La prova che i test sanno fallire l'ha fatta prima uno script Python, che non riusciva a lanciare Maven su Windows e leggeva i risultati vecchi. Quattro mutazioni, quattro "nessun test fallito": un risultato impossibile, e il segnale per controllare. Rifatta a mano dalla shell, ogni mutazione è stata presa. La lezione: un verde troppo veloce va guardato come un rosso.
+9. **Porta 5432 occupata** durante la prova a mano: in locale gira già il database di un altro progetto. Il PostgreSQL di questo progetto è stato avviato sulla 5433 solo per la prova (`POSTGRES_PORT=5433` davanti al comando). Da ricordare se l'avvio di Compose fallisce con "port is already allocated".
 
 ## Domande da colloquio
 
@@ -100,3 +118,9 @@ Le domande del pezzo 1 sono nella guida 24 (sei domande, con le risposte modello
 
 ### Domanda 3: Hai configurato una proprietà e l'applicazione parte. Come sai che la configurazione è applicata davvero?
 **Risposta modello.** Con un test che osserva l'effetto, non la proprietà: qui l'header `Set-Cookie` con i suoi attributi. È così che si è scoperto che le proprietà del cookie valevano solo con Tomcat vero, e non in MockMvc. Poi una prova a mano nell'ambiente reale, perché i test girano in un ambiente un po' diverso.
+
+### Domanda 4: Come crei il primo amministratore senza mettere credenziali nel codice?
+**Risposta modello.** Separo identità e segreto. Qui si entra con un codice mandato all'email, quindi l'email dell'admin è configurazione: la leggo da una variabile d'ambiente all'avvio, con un `ApplicationRunner`, e creo l'account se manca. Il codice crea soltanto, non promuove mai un account esistente, perché un errore di battitura diventerebbe un'escalation di privilegi; nel dubbio ferma l'avvio. È idempotente con `insert ... on conflict do nothing`, così regge riavvii e più istanze.
+
+### Domanda 5: L'entità JPA ha un campo `int` e la colonna ha un default nel database. Cosa succede al primo `insert`, e come lo risolvi?
+**Risposta modello.** Hibernate scrive tutte le colonne mappate, quindi manda lo zero del campo e il default non scatta: qui lo zero violava anche i `check`. Le strade: ripetere i default in Java (due verità), un `insert` nativo, oppure `@Generated`, che esclude la colonna dall'`insert` e la rilegge. Con PostgreSQL, Hibernate 7 la rilegge nello stesso comando con `returning`. Prima di fidarmi ho verificato con un test che le colonne restassero negli `update`.

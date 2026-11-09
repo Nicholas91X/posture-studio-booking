@@ -7,6 +7,8 @@
  * Whether a practitioner is active is the state of their account: asked to auth's
  * AccountService, never read from app_user (D-029).
  * The current practitioner comes from the signed-in user (SessionCurrentPractitioner, guide 25, 7.2).
- * Creating and deactivating practitioners belongs to the admin (D-021, step 8 piece 3).
+ * The admin creates, renames, deactivates and reactivates practitioners (D-021, guide 26) through
+ * PractitionerAdminController under /api/admin: the account is created and changed by auth's AccountService,
+ * in the same transaction as the practitioner row.
  */
 package com.posturestudio.booking.practitioner;

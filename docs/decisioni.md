@@ -242,7 +242,7 @@ In Java la conversione in minuscolo avviene **in un posto solo**, prima di salva
 ---
 
 ## D-021 — Ruolo `ADMIN` per chi gestisce la piattaforma
-**Stato:** accettata · 2026-10-16
+**Stato:** accettata · 2026-10-16 · **completata da D-052** (2026-11-09): l'API dell'admin per i professionisti, e il primo admin da `ADMIN_EMAIL`
 
 **Contesto.** I requisiti dicono che i professionisti gestiscono tutto dal pannello, ma non chi crea i professionisti stessi. Nicholas, durante la scrittura di V1, ha individuato il buco.
 
@@ -836,3 +836,21 @@ Implementazione (pezzo 3, guida 16): `FreeSlots.compute(SlotQuery)` nel package 
 
 **Conseguenze.** Una query per chiave primaria in più per ogni richiesta autenticata. Il frontend (passi 12 e 13) legge `XSRF-TOKEN` e lo rimanda in ogni richiesta che cambia qualcosa. Dopo l'accesso di un cliente chiede `GET /api/customer/profile`, e con 409 mostra il modulo dei nomi. Al passo 9 il webhook di Stripe si aggiunge alle eccezioni CSRF, con la sua firma, e `/api/dev/**` sparisce. **Provato**: tolto il controllo dell'account attivo, tolto `changeSessionId`, o messo `authenticated()` al posto di `denyAll()`, fallisce ogni volta il test che lo protegge. Il token CSRF non cambia all'accesso: accettato, perché il token sta in un cookie del nostro dominio e non nella sessione.
 
+---
+
+## D-052 — Admin e professionisti: primo admin da `ADMIN_EMAIL`, API nel modulo `practitioner`, impostazioni iniziali dal database
+**Stato:** accettata · 2026-11-09 · completa D-021 · confronto completo: `docs/studio/26-admin-e-professionisti.md` · scelte di Claude secondo le raccomandazioni della guida, su indicazione di Nicholas
+
+**Contesto.** Il pezzo 3 del passo 8 deve far creare e disattivare i professionisti all'admin (D-021). Un professionista disattivato non deve entrare né essere prenotabile. E il primo admin deve nascere senza segreti nel repository, anche se solo un admin può creare account speciali.
+
+**Decisione.**
+- **Primo admin**: `AdminBootstrap`, un `ApplicationRunner` di `auth`, legge `auth.admin-email` (`ADMIN_EMAIL` nel `.env`, vuota per default) dopo Flyway. Vuota: niente. Email non valida: l'avvio si ferma. Nessun account: crea l'`ADMIN`, con `insert ... on conflict (email) do nothing`, sicuro con due istanze. Già `ADMIN`: niente, anche se disattivato (con un avviso). Un altro ruolo: l'avvio si ferma. **Crea soltanto, non promuove e non riattiva mai.** L'email non è un segreto, perché per entrare serve il codice che arriva in quella casella; è un dato personale, quindi sta solo nel `.env`, e non finisce nel log.
+- **API** sotto `/api/admin/practitioners`, nel modulo `practitioner` (`PractitionerAdminController`): elenco, lettura, creazione (201 + `Location`), rinomina (`PUT`, solo nome e cognome), `POST .../deactivate` e `.../activate`, idempotenti. L'area la protegge la regola per prefisso di D-051; il modulo è quello che possiede i dati.
+- **Creazione**: account e professionista nella stessa transazione. `AccountService.createPractitionerAccount` entra in quella di `PractitionerService.create`. Un'email che ha già un account, di **qualunque** ruolo, riceve 409 `EMAIL_ALREADY_IN_USE`: nessuna promozione, nessun riuso (D-021). Due creazioni contemporanee: il vincolo `unique` ferma la seconda (409 `DATA_CONFLICT`).
+- **Impostazioni iniziali**: i default del database, non ripetuti in Java. Le otto colonne hanno `@Generated` di Hibernate: escluse dall'`insert`, rilette con `insert ... returning`, ancora scritte negli `update` (verificato). `Practitioner` ha ora un costruttore *package-private* (account, nome, cognome) e `rename`.
+- **Disattivazione**: solo l'account (`AccountService.deactivate` e `activate`). Accesso, sessioni aperte, elenco pubblico, catalogo, orari liberi e nuove prenotazioni seguono da soli (D-029, D-050, D-051). Le prenotazioni già fatte **non si toccano**: le richieste in attesa scadono da sole (D-047), le confermate future sono una cancellazione da parte dello studio (punto aperto, prima del passo 11).
+- **Elenco**: `AccountService.summariesOf(Collection<Long>)` restituisce una `Map` di `AccountSummary(email, active)`, un `record` e mai l'entità; una query sola, come `activeAmong`.
+
+**Alternative scartate.** *Admin in una migrazione*: l'email personale nel repository per sempre, lo stesso admin in ogni ambiente, una riga in più in ogni database di test. *Script SQL a mano*: un passo che si dimentica o si sbaglia, e che nessun test prova. *Il primo che entra diventa admin*: una gara alla messa online. *Promuovere l'account esistente*: un errore di battitura nel `.env` diventerebbe un'escalation di privilegi. *Un modulo `admin`*: un inoltro senza dati propri. *Valori iniziali in Java*: due verità sullo stesso fatto. *`insert` nativo*: scavalca l'entità, non serve dopo la verifica di `@Generated`. *Rifiutare la disattivazione con prenotazioni future*: la disattivazione deve funzionare anche in urgenza, e servirebbe una dipendenza rovesciata verso `booking` per una regola non ancora decisa. *Cambiare l'email dall'admin*: cambia il modo di entrare, scelta a parte se servirà.
+
+**Conseguenze.** Nessuna migrazione nuova. `.env.example` ha `ADMIN_EMAIL=`; ognuno mette la sua nel proprio `.env`, e al passo 14 va impostata in produzione. **Provato**: tolto `@Generated` da una colonna, tolto il controllo dell'email già usata, tolto il controllo del ruolo all'avvio, tolta la disattivazione dell'account, fallisce ogni volta il test che lo protegge. Per il passo 13: la pagina dell'admin, che mostra le prenotazioni future di un professionista prima di disattivarlo. Per il passo 11: cosa succede alle prenotazioni confermate di un professionista disattivato.

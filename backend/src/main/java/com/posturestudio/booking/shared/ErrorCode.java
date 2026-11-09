@@ -35,6 +35,10 @@ public enum ErrorCode {
     // booking from the panel for an email that belongs to a practitioner or the admin: one role per user (D-021)
     EMAIL_NOT_A_CUSTOMER,
 
+    // the admin creates a practitioner with an email that already has an account, of any role:
+    // one role per user (D-021), nobody is promoted (guide 26, 4.1)
+    EMAIL_ALREADY_IN_USE,
+
     // a customer signed in for the first time and has not given first and last name yet (D-050, guide 25, 7.3)
     PROFILE_INCOMPLETE
 }

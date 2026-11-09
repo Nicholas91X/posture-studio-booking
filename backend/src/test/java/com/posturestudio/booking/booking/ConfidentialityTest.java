@@ -148,8 +148,8 @@ class ConfidentialityTest {
     void theAdminStaysOutOfThePanelAndOfTheCustomerArea() {
         assertThat(mvc.get().uri("/api/panel/bookings/requests").with(sessions.user(admin))).hasStatus(HttpStatus.FORBIDDEN);
         assertThat(mvc.get().uri("/api/customer/bookings").with(sessions.user(admin))).hasStatus(HttpStatus.FORBIDDEN);
-        // its own area lets it in: nothing there yet (step 8 piece 3), so 404 and not 401 or 403
-        assertThat(mvc.get().uri("/api/admin/practitioners").with(sessions.user(admin))).hasStatus(HttpStatus.NOT_FOUND);
+        // its own area lets it in (guide 26)
+        assertThat(mvc.get().uri("/api/admin/practitioners").with(sessions.user(admin))).hasStatusOk();
     }
 
     // denyAll (guide 25, 6.1): an address outside every area is closed to everyone, signed in or not
