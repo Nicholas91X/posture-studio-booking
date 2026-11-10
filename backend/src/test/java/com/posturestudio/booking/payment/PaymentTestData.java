@@ -42,6 +42,26 @@ final class PaymentTestData {
                 """, Long.class, customerId, practitionerId, serviceId, start, start.plusHours(1));
     }
 
+    // a request of a customer waiting for its payment, held until 7 November (far after the fixed clock)
+    long pendingBooking(long practitionerId, String customerEmail) {
+        Long userId = jdbc.queryForObject(
+                "insert into app_user (role, email) values ('CUSTOMER', ?) returning id", Long.class, customerEmail);
+        Long customerId = jdbc.queryForObject(
+                "insert into customer (user_id, first_name, last_name) values (?, 'Test', 'Customer') returning id",
+                Long.class, userId);
+        Long serviceId = jdbc.queryForObject(
+                "insert into service (practitioner_id, name, duration_minutes, price_cents) values (?, 'Seduta', 60, 3000) returning id",
+                Long.class, practitionerId);
+        OffsetDateTime start = OffsetDateTime.parse("2026-11-20T09:00+01:00").plusHours(bookings++);
+        return jdbc.queryForObject("""
+                insert into booking (customer_id, practitioner_id, service_id, starts_at, ends_at, status,
+                                     booked_by, paid_with, price_cents, hold_expires_at, created_at)
+                values (?, ?, ?, ?, ?, 'PENDING_PAYMENT', 'CUSTOMER', 'CARD', 3000, '2026-11-07T10:00+01:00',
+                        '2026-11-06T09:00:00Z')
+                returning id
+                """, Long.class, customerId, practitionerId, serviceId, start, start.plusHours(1));
+    }
+
     long payment(long bookingId, String account, String status, String checkoutSessionId) {
         return jdbc.queryForObject("""
                 insert into payment (booking_id, account, amount_cents, status, stripe_checkout_session_id, checkout_url)

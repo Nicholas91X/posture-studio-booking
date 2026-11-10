@@ -26,7 +26,12 @@ public class FakeStripeGateway implements StripeGateway {
                        Instant expiresAt, URI successUrl, URI cancelUrl, String idempotencyKey, URI returnedUrl) {
     }
 
+    // a release asked: on which account, which PaymentIntent, with which key
+    public record Cancel(String account, String paymentIntentId, String idempotencyKey) {
+    }
+
     private final List<Call> calls = new CopyOnWriteArrayList<>();
+    private final List<Cancel> cancels = new CopyOnWriteArrayList<>();
     volatile boolean down;
 
     @Override
@@ -43,9 +48,22 @@ public class FakeStripeGateway implements StripeGateway {
         return new CheckoutSession(id, url);
     }
 
+    @Override
+    public void cancelPaymentIntent(PaymentAccount account, String paymentIntentId, String idempotencyKey) {
+        if (down) {
+            throw new ServiceUnavailableException(ErrorCode.PAYMENT_PROVIDER_UNAVAILABLE, "The fake Stripe is down", null);
+        }
+        cancels.add(new Cancel(account.name(), paymentIntentId, idempotencyKey));
+    }
+
     public void reset() {
         calls.clear();
+        cancels.clear();
         down = false;
+    }
+
+    public List<Cancel> cancels() {
+        return List.copyOf(cancels);
     }
 
     public void goDown() {

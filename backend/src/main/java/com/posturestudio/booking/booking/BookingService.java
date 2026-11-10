@@ -25,6 +25,7 @@ import com.posturestudio.booking.booking.BookingEvent.ApprovalRequested;
 import com.posturestudio.booking.booking.BookingEvent.BookingConfirmed;
 import com.posturestudio.booking.booking.BookingEvent.BookingRejected;
 import com.posturestudio.booking.booking.BookingEvent.BookingWithdrawn;
+import com.posturestudio.booking.booking.BookingEvent.LatePaymentReleased;
 import com.posturestudio.booking.catalog.CatalogService;
 import com.posturestudio.booking.catalog.ServiceOnSale;
 import com.posturestudio.booking.customer.CustomerName;
@@ -165,21 +166,26 @@ public class BookingService {
 
     // ***** PAYMENT *****
 
-    // The card hold is in place. Called by the simulated payment now, by the Stripe webhook at step 9.
-    // One path for both approval modes (D-030): PENDING_APPROVAL first, then AUTOMATIC approves at once
-    // with the same confirm() a practitioner uses, inside the same transaction
+    // A card hold is in place: called by the Stripe webhook (guide 32), which has already made sure that
+    // THIS payment is new. One path for both approval modes (D-030): PENDING_APPROVAL first, then AUTOMATIC
+    // approves at once with the same confirm() a practitioner uses, inside the same transaction.
+    // It answers instead of acting (guide 32, part 7): only the webhook knows which payment arrived, so it is
+    // the webhook that releases a payment the booking does not want
     @Transactional
-    public CustomerBookingView paymentAuthorized(long bookingId) {
+    public PaymentOutcome paymentAuthorized(long bookingId) {
         Instant now = clock.instant();
         Booking booking = bookings.findLockedById(bookingId).orElseThrow(() -> notFound(bookingId));
 
-        // paid too late: the booking expired and its slot may be someone else's. Release the money,
-        // change nothing, no error: at step 9 the webhook must answer "received" (D-031, guide 20, 6.3).
-        // A PENDING_PAYMENT whose hold expired is still accepted: nobody took the slot, or the lazy
-        // expiry would have made it EXPIRED
-        if (booking.getStatus() == BookingStatus.EXPIRED) {
-            cards.cancel(booking.getId());
-            return CustomerBookingView.from(booking);
+        // A PENDING_PAYMENT whose hold expired is still accepted: nobody took the slot, or the lazy expiry
+        // would have made it EXPIRED (D-046). Any other state does not want this money, with no error: for
+        // Stripe an error means "try again" (D-031, D-059, guide 32, part 7)
+        if (booking.getStatus() != BookingStatus.PENDING_PAYMENT) {
+            if (booking.getStatus() == BookingStatus.EXPIRED) {
+                // paid too late: the slot may be someone else's. The customer saw "paid" on Stripe's page,
+                // and is told by email, after the commit, that nothing was charged (guide 32, part 9)
+                events.publishEvent(LatePaymentReleased.of(booking));
+            }
+            return new PaymentOutcome.NotWanted(booking.getStatus());
         }
 
         PractitionerSettings settings = practitioners.getSettings(booking.getPractitionerId());
@@ -188,7 +194,7 @@ public class BookingService {
             case AUTOMATIC -> confirm(booking, now);
             case MANUAL -> events.publishEvent(ApprovalRequested.of(booking));
         }
-        return CustomerBookingView.from(booking);
+        return new PaymentOutcome.Accepted(booking.getStatus());
     }
 
     // ***** PRACTITIONER *****

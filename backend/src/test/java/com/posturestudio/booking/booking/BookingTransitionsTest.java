@@ -23,6 +23,7 @@ import com.posturestudio.booking.booking.BookingEvent.ApprovalRequested;
 import com.posturestudio.booking.booking.BookingEvent.BookingConfirmed;
 import com.posturestudio.booking.booking.BookingEvent.BookingRejected;
 import com.posturestudio.booking.booking.BookingEvent.BookingWithdrawn;
+import com.posturestudio.booking.booking.BookingEvent.LatePaymentReleased;
 import com.posturestudio.booking.booking.BookingTestDoubles.RecordingCardHolds;
 import com.posturestudio.booking.catalog.CatalogService;
 import com.posturestudio.booking.customer.CustomerService;
@@ -84,9 +85,10 @@ public class BookingTransitionsTest {
     void aPaymentInManualModeWaitsForThePractitioner() {
         long id = requested();
 
-        CustomerBookingView paid = service.paymentAuthorized(id);
+        PaymentOutcome outcome = service.paymentAuthorized(id);
 
-        assertThat(paid.status()).isEqualTo(BookingStatus.PENDING_APPROVAL);
+        assertThat(outcome).isEqualTo(new PaymentOutcome.Accepted(BookingStatus.PENDING_APPROVAL));
+        CustomerBookingView paid = service.findForCustomer(cliente, id);
         // requested at 10:00, default window of 12 hours
         assertThat(paid.approvalDeadline()).isEqualTo(OffsetDateTime.parse("2026-11-06T22:00+01:00"));
         assertThat(cards.calls).isEmpty();
@@ -98,9 +100,9 @@ public class BookingTransitionsTest {
         jdbc.update("update practitioner set booking_approval = 'AUTOMATIC' where id = ?", anna);
         long id = requested();
 
-        CustomerBookingView paid = service.paymentAuthorized(id);
+        PaymentOutcome outcome = service.paymentAuthorized(id);
 
-        assertThat(paid.status()).isEqualTo(BookingStatus.CONFIRMED);
+        assertThat(outcome).isEqualTo(new PaymentOutcome.Accepted(BookingStatus.CONFIRMED));
         assertThat(cards.calls).containsExactly("capture " + id + " 3000");
         // no request reaches the practitioner: only the confirmation
         assertThat(events.stream(BookingEvent.class)).singleElement().isInstanceOf(BookingConfirmed.class);
@@ -108,11 +110,19 @@ public class BookingTransitionsTest {
         assertThat(row(id)).containsEntry("status", "CONFIRMED");
     }
 
+    // D-059, guide 32, part 7: a second payment is not an error (for Stripe an error means "try again"),
+    // it is a payment the booking does not want: the webhook releases it
     @Test
-    void aSecondPaymentOfTheSameBookingIsRefused() {
+    void aSecondPaymentOfTheSameBookingIsNotWanted() {
         long id = paid();
+        cards.reset();
 
-        assertRejected(ErrorCode.BOOKING_TRANSITION_NOT_ALLOWED, () -> service.paymentAuthorized(id));
+        PaymentOutcome outcome = service.paymentAuthorized(id);
+
+        assertThat(outcome).isEqualTo(new PaymentOutcome.NotWanted(BookingStatus.PENDING_APPROVAL));
+        persisted();
+        assertThat(row(id)).containsEntry("status", "PENDING_APPROVAL");
+        assertThat(cards.calls).isEmpty();
     }
 
     @Test
@@ -121,12 +131,13 @@ public class BookingTransitionsTest {
         persisted();
         jdbc.update("update booking set status = 'EXPIRED' where id = ?", id);
 
-        CustomerBookingView late = service.paymentAuthorized(id);
+        PaymentOutcome outcome = service.paymentAuthorized(id);
 
-        // D-031: no credit, no error, the money is simply released
-        assertThat(late.status()).isEqualTo(BookingStatus.EXPIRED);
-        assertThat(cards.calls).containsExactly("cancel " + id);
-        assertThat(events.stream(BookingEvent.class)).isEmpty();
+        // D-031: no credit, no error. The booking does not release the money any more: it answers, and the
+        // webhook releases THAT payment (guide 32, part 7). The customer is told by email (part 9)
+        assertThat(outcome).isEqualTo(new PaymentOutcome.NotWanted(BookingStatus.EXPIRED));
+        assertThat(cards.calls).isEmpty();
+        assertThat(events.stream(BookingEvent.class)).singleElement().isInstanceOf(LatePaymentReleased.class);
     }
 
     @Test

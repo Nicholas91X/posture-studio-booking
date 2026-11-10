@@ -1,0 +1,277 @@
+package com.posturestudio.booking.payment;
+
+import static org.assertj.core.api.Assertions.assertThat;
+
+import java.time.Duration;
+import java.time.Instant;
+import java.util.Map;
+
+import org.junit.jupiter.api.BeforeEach;
+import org.junit.jupiter.api.Test;
+import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.boot.test.context.SpringBootTest;
+import org.springframework.boot.webmvc.test.autoconfigure.AutoConfigureMockMvc;
+import org.springframework.context.annotation.Import;
+import org.springframework.http.HttpStatus;
+import org.springframework.http.MediaType;
+import org.springframework.jdbc.core.JdbcTemplate;
+import org.springframework.test.web.servlet.assertj.MockMvcTester;
+import org.springframework.test.web.servlet.assertj.MvcTestResult;
+import org.springframework.transaction.annotation.Transactional;
+
+import com.posturestudio.booking.FixedClockConfiguration;
+import com.posturestudio.booking.TestcontainersConfiguration;
+
+import jakarta.persistence.EntityManager;
+
+// The webhook from outside (guide 32, part 11): real signatures computed by hand, the real controller and
+// service, the fake Stripe for the releases. No session and NO CSRF token in any request: Stripe has neither.
+// The rows are written with SQL, so that no entity of the test's transaction is already in memory.
+// Today is Friday 6 November 2026, 10:00 in Rome: the signatures are made at that instant
+@SpringBootTest
+@AutoConfigureMockMvc
+@Import({TestcontainersConfiguration.class, FixedClockConfiguration.class})
+@Transactional
+public class StripeWebhookApiTest {
+
+    // the webhook secrets of the test configuration (src/test/resources/config/application.properties)
+    private static final String ALPHA_SECRET = "whsec_alpha_not_a_real_secret";
+    private static final String BETA_SECRET = "whsec_beta_not_a_real_secret";
+    private static final Instant NOW = FixedClockConfiguration.NOW;
+
+    @Autowired
+    MockMvcTester mvc;
+
+    @Autowired
+    JdbcTemplate jdbc;
+
+    @Autowired
+    FakeStripeGateway stripe;
+
+    @Autowired
+    EntityManager entityManager;
+
+    private long anna;
+    private long booking;
+    private long payment;
+
+    @BeforeEach
+    void aCustomerOfAnnaIsOnTheStripePage() {
+        stripe.reset();
+        PaymentTestData data = new PaymentTestData(jdbc);
+        anna = data.practitioner("anna@example.com");
+        data.assign(anna, "alpha");
+        booking = data.pendingBooking(anna, "cliente@example.com");
+        payment = data.payment(booking, "alpha", "PENDING", "cs_test_A");
+    }
+
+    // ***** the payment *****
+
+    @Test
+    void aCompletedSessionHoldsThePaymentAndTheRequestWaitsForThePractitioner() {
+        assertThat(post("alpha", StripeEvents.sessionCompleted("evt_1", "cs_test_A", "pi_A"), ALPHA_SECRET))
+                .hasStatusOk();
+
+        persisted();
+        assertThat(paymentRow()).containsEntry("status", "AUTHORIZED").containsEntry("stripe_payment_intent_id", "pi_A");
+        assertThat(bookingStatus()).isEqualTo("PENDING_APPROVAL");
+        assertThat(jdbc.queryForMap("select account, type from stripe_event where event_id = 'evt_1'"))
+                .containsEntry("account", "alpha").containsEntry("type", "checkout.session.completed");
+        assertThat(stripe.cancels()).isEmpty();
+    }
+
+    @Test
+    void inAutomaticModeThePaymentConfirmsTheBooking() {
+        jdbc.update("update practitioner set booking_approval = 'AUTOMATIC' where id = ?", anna);
+
+        assertThat(post("alpha", StripeEvents.sessionCompleted("evt_1", "cs_test_A", "pi_A"), ALPHA_SECRET))
+                .hasStatusOk();
+
+        persisted();
+        assertThat(bookingStatus()).isEqualTo("CONFIRMED");
+    }
+
+    // ***** "at least once" (guide 32, part 5) *****
+
+    @Test
+    void theSameEventTwiceHasOneEffect() {
+        String event = StripeEvents.sessionCompleted("evt_1", "cs_test_A", "pi_A");
+
+        assertThat(post("alpha", event, ALPHA_SECRET)).hasStatusOk();
+        assertThat(post("alpha", event, ALPHA_SECRET)).hasStatusOk();
+
+        persisted();
+        assertThat(jdbc.queryForObject("select count(*) from stripe_event", Long.class)).isEqualTo(1);
+        assertThat(paymentRow()).containsEntry("status", "AUTHORIZED").containsEntry("version", 1L);
+        assertThat(bookingStatus()).isEqualTo("PENDING_APPROVAL");
+        assertThat(stripe.cancels()).isEmpty();
+    }
+
+    // the dangerous one (guide 32, 5.2): if the second event reached the booking, already PENDING_APPROVAL, it
+    // would answer NotWanted, and a VALID hold would be released
+    @Test
+    void twoDifferentEventsForTheSameSessionHaveOneEffectAndReleaseNothing() {
+        assertThat(post("alpha", StripeEvents.sessionCompleted("evt_1", "cs_test_A", "pi_A"), ALPHA_SECRET)).hasStatusOk();
+        assertThat(post("alpha", StripeEvents.sessionCompleted("evt_2", "cs_test_A", "pi_A"), ALPHA_SECRET)).hasStatusOk();
+
+        persisted();
+        assertThat(paymentRow()).containsEntry("status", "AUTHORIZED");
+        assertThat(bookingStatus()).isEqualTo("PENDING_APPROVAL");
+        assertThat(stripe.cancels()).isEmpty();
+    }
+
+    // ***** late payment (D-031, D-046, guide 32, part 7) *****
+
+    @Test
+    void aPaymentForAnExpiredBookingIsReleasedOnItsAccount() {
+        jdbc.update("update booking set status = 'EXPIRED' where id = ?", booking);
+
+        assertThat(post("alpha", StripeEvents.sessionCompleted("evt_1", "cs_test_A", "pi_A"), ALPHA_SECRET))
+                .hasStatusOk();
+
+        assertThat(stripe.cancels()).containsExactly(new FakeStripeGateway.Cancel("alpha", "pi_A", "cancel-pi_A"));
+        persisted();
+        assertThat(paymentRow()).containsEntry("status", "CANCELED").containsEntry("stripe_payment_intent_id", "pi_A");
+        assertThat(bookingStatus()).isEqualTo("EXPIRED");
+    }
+
+    // D-057: the release goes to the account of the PAYMENT, even after the practitioner moved
+    @Test
+    void aLatePaymentIsReleasedOnTheAccountItWasMadeOnEvenAfterAReassignment() {
+        jdbc.update("update booking set status = 'EXPIRED' where id = ?", booking);
+        jdbc.update("update practitioner_payment_account set account = 'beta' where practitioner_id = ?", anna);
+
+        assertThat(post("alpha", StripeEvents.sessionCompleted("evt_1", "cs_test_A", "pi_A"), ALPHA_SECRET))
+                .hasStatusOk();
+
+        assertThat(stripe.cancels()).extracting(FakeStripeGateway.Cancel::account).containsExactly("alpha");
+    }
+
+    @Test
+    void anExpiredSessionExpiresThePaymentAndLeavesTheBookingToTheJob() {
+        assertThat(post("alpha", StripeEvents.sessionExpired("evt_1", "cs_test_A"), ALPHA_SECRET)).hasStatusOk();
+
+        persisted();
+        assertThat(paymentRow()).containsEntry("status", "EXPIRED");
+        assertThat(bookingStatus()).isEqualTo("PENDING_PAYMENT");
+    }
+
+    // ***** the signature (guide 32, part 3) *****
+
+    @Test
+    void aSignatureMadeWithAnotherSecretIsRefused() {
+        assertRefusedAndNothingChanged(post("alpha", StripeEvents.sessionCompleted("evt_1", "cs_test_A", "pi_A"), BETA_SECRET));
+    }
+
+    @Test
+    void aBodyChangedAfterTheSignatureIsRefused() {
+        String signed = StripeEvents.sessionCompleted("evt_1", "cs_test_A", "pi_A");
+        String header = StripeEvents.signature(signed, ALPHA_SECRET, NOW);
+        String changed = signed.replace("pi_A", "pi_B");
+
+        assertRefusedAndNothingChanged(mvc.post().uri("/api/webhooks/stripe/alpha").contentType(MediaType.APPLICATION_JSON)
+                .header("Stripe-Signature", header).content(changed).exchange());
+    }
+
+    // a replay: a real signature, but older than the 5 minutes of tolerance
+    @Test
+    void aSignatureOlderThanFiveMinutesIsRefused() {
+        String event = StripeEvents.sessionCompleted("evt_1", "cs_test_A", "pi_A");
+
+        assertRefusedAndNothingChanged(mvc.post().uri("/api/webhooks/stripe/alpha").contentType(MediaType.APPLICATION_JSON)
+                .header("Stripe-Signature", StripeEvents.signature(event, ALPHA_SECRET, NOW.minus(Duration.ofMinutes(6))))
+                .content(event).exchange());
+    }
+
+    @Test
+    void aMissingSignatureIsRefused() {
+        assertRefusedAndNothingChanged(mvc.post().uri("/api/webhooks/stripe/alpha").contentType(MediaType.APPLICATION_JSON)
+                .content(StripeEvents.sessionCompleted("evt_1", "cs_test_A", "pi_A")).exchange());
+    }
+
+    @Test
+    void anUnknownAccountIsNotFound() {
+        assertThat(post("rossi", StripeEvents.sessionCompleted("evt_1", "cs_test_A", "pi_A"), ALPHA_SECRET))
+                .hasStatus(HttpStatus.NOT_FOUND);
+    }
+
+    // ***** what is not ours *****
+
+    // guide 32, part 4: the endpoint of beta, a payment of alpha: a misconfiguration, never an effect
+    @Test
+    void anEventOfOneAccountAboutAPaymentOfTheOtherIsIgnored() {
+        assertThat(post("beta", StripeEvents.sessionCompleted("evt_1", "cs_test_A", "pi_A"), BETA_SECRET)).hasStatusOk();
+
+        persisted();
+        assertThat(paymentRow()).containsEntry("status", "PENDING");
+        assertThat(bookingStatus()).isEqualTo("PENDING_PAYMENT");
+    }
+
+    @Test
+    void aSessionThatIsNotOursIsAnsweredAndIgnored() {
+        assertThat(post("alpha", StripeEvents.sessionCompleted("evt_1", "cs_test_somebody_else", "pi_X"), ALPHA_SECRET))
+                .hasStatusOk();
+
+        persisted();
+        assertThat(paymentRow()).containsEntry("status", "PENDING");
+    }
+
+    // defensive: what counts is "complete" with a PaymentIntent, never payment_status (guide 32, part 2)
+    @Test
+    void aCompletedEventWithoutAHeldPaymentHoldsNothing() {
+        String notComplete = StripeEvents.event("evt_1", "checkout.session.completed", """
+                {"id": "cs_test_A", "object": "checkout.session", "status": "open", "payment_intent": "pi_A"}
+                """);
+        String withoutIntent = StripeEvents.event("evt_2", "checkout.session.completed", """
+                {"id": "cs_test_A", "object": "checkout.session", "status": "complete", "payment_intent": null}
+                """);
+
+        assertThat(post("alpha", notComplete, ALPHA_SECRET)).hasStatusOk();
+        assertThat(post("alpha", withoutIntent, ALPHA_SECRET)).hasStatusOk();
+
+        persisted();
+        assertThat(paymentRow()).containsEntry("status", "PENDING");
+        assertThat(bookingStatus()).isEqualTo("PENDING_PAYMENT");
+    }
+
+    @Test
+    void anEventOfATypeWeDoNotUseIsAnsweredAndNotRecorded() {
+        String event = StripeEvents.event("evt_1", "payment_intent.created", """
+                {"id": "pi_A", "object": "payment_intent"}
+                """);
+
+        assertThat(post("alpha", event, ALPHA_SECRET)).hasStatusOk();
+
+        assertThat(jdbc.queryForObject("select count(*) from stripe_event", Long.class)).isZero();
+    }
+
+    private MvcTestResult post(String account, String body, String secret) {
+        return mvc.post().uri("/api/webhooks/stripe/" + account)
+                .contentType(MediaType.APPLICATION_JSON)
+                .header("Stripe-Signature", StripeEvents.signature(body, secret, NOW))
+                .content(body)
+                .exchange();
+    }
+
+    private void assertRefusedAndNothingChanged(MvcTestResult result) {
+        assertThat(result).hasStatus(HttpStatus.BAD_REQUEST);
+        persisted();
+        assertThat(paymentRow()).containsEntry("status", "PENDING");
+        assertThat(bookingStatus()).isEqualTo("PENDING_PAYMENT");
+        assertThat(jdbc.queryForObject("select count(*) from stripe_event", Long.class)).isZero();
+    }
+
+    // what the commit would do: the changes of the request written, so that plain SQL sees them
+    private void persisted() {
+        entityManager.flush();
+        entityManager.clear();
+    }
+
+    private Map<String, Object> paymentRow() {
+        return jdbc.queryForMap("select status, stripe_payment_intent_id, version from payment where id = ?", payment);
+    }
+
+    private String bookingStatus() {
+        return jdbc.queryForObject("select status from booking where id = ?", String.class, booking);
+    }
+}

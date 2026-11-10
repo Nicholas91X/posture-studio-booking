@@ -18,6 +18,10 @@ interface StripeGateway {
     // throws ServiceUnavailableException (PAYMENT_PROVIDER_UNAVAILABLE) if Stripe does not answer or refuses
     CheckoutSession createCheckoutSession(PaymentAccount account, NewCheckoutSession session, String idempotencyKey);
 
+    // Releases a card hold (cancel of the PaymentIntent, guide 32, part 7). Already canceled is fine: done.
+    // Throws ServiceUnavailableException if Stripe does not answer
+    void cancelPaymentIntent(PaymentAccount account, String paymentIntentId, String idempotencyKey);
+
     // Records nested in an interface are implicitly public, and so must be their compact constructors.
     // A Checkout session for one booking, amount held and not captured (D-031)
     record NewCheckoutSession(long bookingId, long amountCents, String description, String customerEmail,

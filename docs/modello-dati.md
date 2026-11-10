@@ -7,6 +7,7 @@ Modifiche dovute alle migrazioni:
 - **V2 (passo 5)**: `service` e `package_offer` come da progettazione, con `created_at`; foreign key composta per il servizio del pacchetto (D-025); indici su `practitioner_id`.
 - **V3 (passo 6)**: `working_schedule`, `working_hours` e `unavailability` come da progettazione (D-034), con `created_at`; fasce all'ora piena o alla mezz'ora e non sovrapposte (*exclusion constraint* su `timerange`, estensione `btree_gist`, D-036); cascata da una versione alle sue fasce; in `practitioner` scatto solo 30 o 60 con default 60, `min_booking_notice_hours` e `booking_horizon_days` (D-033, D-035).
 - **V8 (passo 8)**: `app_user.phone` in E.164, unico, scritto solo dopo la verifica, con `phone_verified_at` (D-055; i valori della V1 azzerati, mai scritti da nessun codice); in `login_code` il canale `SMS`, `purpose` (`SIGN_IN`, `VERIFY_PHONE`), `requested_by` (l'account che chiede una verifica) e `message_sent`.
+- **V12 (passo 9, pezzo 3)**: `stripe_event` come da progettazione, con in più `account` (il conto il cui indirizzo l'ha ricevuto); scritta nella stessa transazione dell'elaborazione (D-062).
 - **V11 (passo 9, pezzo 2)**: `payment.checkout_url`, l'indirizzo della pagina di Stripe (D-061). Il blocco dell'orario passa da 30 a 32 minuti nel codice (D-061), senza cambiare lo schema.
 - **V10 (passo 9, pezzo 1)**: `practitioner_payment_account` (il conto di incasso di ogni professionista, D-057); `payment` solo per le sedute, con `account` (il conto su cui è fatto, mai cambiato), `version` e `created_at` scritto da Java; un solo `PENDING` per prenotazione (indice unico parziale). `purpose`, `package_offer_id`, `credit_lot_id` e `customer_id` arrivano con i pacchetti al passo 10 (D-060).
 - **V9 (correzione del passo 8)**: `app_user_admin_no_phone_ck`, l'admin non ha un numero e accede solo con l'email (D-056).
@@ -284,13 +285,16 @@ Indice su `booking_id`. **Al massimo un pagamento `PENDING` per prenotazione**: 
 Previsto per il passo 10: `purpose` (`BOOKING` o `PACKAGE`), `package_offer_id`, `credit_lot_id` (valorizzato dopo la conferma), `customer_id`.
 
 ### `stripe_event`
+Gli eventi di Stripe già elaborati (V12, D-062).
+
 | Colonna | Tipo | Note |
 |---|---|---|
-| event_id | text | chiave primaria: l'id dell'evento Stripe |
+| event_id | text | chiave primaria: l'id dell'evento Stripe (`evt_...`) |
+| account | text | il conto di incasso il cui indirizzo ha ricevuto l'evento (D-057) |
 | type | text | |
 | received_at | timestamptz | |
 
-Se un evento con lo stesso `event_id` è già presente, si ignora.
+Si scrive con `insert ... on conflict (event_id) do nothing` **nella stessa transazione** dell'elaborazione: nessuna riga inserita vuol dire evento già elaborato, e si ignora; se l'elaborazione fallisce, sparisce anche la riga e il nuovo tentativo di Stripe si elabora. Solo i tipi usati si registrano.
 
 ## Sessioni
 

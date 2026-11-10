@@ -40,6 +40,9 @@ class StripeClientGateway implements StripeGateway {
     static final int READ_TIMEOUT_MILLIS = 5_000;
     static final int MAX_NETWORK_RETRIES = 1;
 
+    // Stripe's code for "this PaymentIntent is not in a state that allows the request" (e.g. already canceled)
+    static final String UNEXPECTED_STATE = "payment_intent_unexpected_state";
+
     private final Map<String, StripeClient> clients;
 
     // apiBase: Stripe's address; only the tests change it, to a fake HTTP server (guide 31, part 10)
@@ -98,6 +101,25 @@ class StripeClientGateway implements StripeGateway {
             return new CheckoutSession(created.getId(), URI.create(created.getUrl()));
         } catch (StripeException e) {
             throw unavailable("create a Checkout session for booking " + bookingId, account, e);
+        }
+    }
+
+    @Override
+    public void cancelPaymentIntent(PaymentAccount account, String paymentIntentId, String idempotencyKey) {
+        RequestOptions options = RequestOptions.builder().setIdempotencyKey(idempotencyKey).build();
+        try {
+            clientOf(account).v1().paymentIntents().cancel(paymentIntentId, options);
+        } catch (InvalidRequestException e) {
+            // already canceled (from the dashboard, or the hold expired): the goal is reached, nothing to retry.
+            // Asking again would get the same answer, and Stripe would send the event again for three days
+            if (UNEXPECTED_STATE.equals(e.getCode())) {
+                log.warn("PaymentIntent {} on account {} not canceled: it is no longer cancelable (request {})",
+                        paymentIntentId, account.name(), e.getRequestId());
+                return;
+            }
+            throw unavailable("cancel PaymentIntent " + paymentIntentId, account, e);
+        } catch (StripeException e) {
+            throw unavailable("cancel PaymentIntent " + paymentIntentId, account, e);
         }
     }
 

@@ -15,7 +15,7 @@ import java.time.Instant;
  */
 public sealed interface BookingEvent
         permits BookingEvent.ApprovalRequested, BookingEvent.BookingConfirmed, BookingEvent.BookingRejected,
-                BookingEvent.BookingWithdrawn, BookingEvent.ApprovalExpired {
+                BookingEvent.BookingWithdrawn, BookingEvent.ApprovalExpired, BookingEvent.LatePaymentReleased {
 
     long bookingId();
 
@@ -64,6 +64,17 @@ public sealed interface BookingEvent
 
         static ApprovalExpired of(Booking booking) {
             return new ApprovalExpired(booking.getId(), booking.getPractitionerId(), booking.getCustomerId(),
+                    booking.getServiceId(), booking.getStartsAt());
+        }
+    }
+
+    // paid after the booking had expired: this payment is released by the webhook (email to the customer,
+    // guide 32, part 9). Published only after the release: if it fails, everything rolls back, event included
+    record LatePaymentReleased(long bookingId, long practitionerId, long customerId, long serviceId, Instant startsAt)
+            implements BookingEvent {
+
+        static LatePaymentReleased of(Booking booking) {
+            return new LatePaymentReleased(booking.getId(), booking.getPractitionerId(), booking.getCustomerId(),
                     booking.getServiceId(), booking.getStartsAt());
         }
     }

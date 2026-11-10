@@ -161,17 +161,6 @@ public class BookingCustomerApiTest {
                 .bodyJson().extractingPath("$.code").isEqualTo("BOOKING_TRANSITION_NOT_ALLOWED");
     }
 
-    @Test
-    void withoutTheSwitchTheSimulatedPaymentDoesNotExist() throws Exception {
-        // booking.simulated-payments is false by default: the controller is not even created (guide 20, part 5)
-        int pending = JsonPath.read(request(cliente, "2026-11-09T09:00:00+01:00").getResponse().getContentAsString(), "$.id");
-
-        assertThat(mvc.post().uri("/api/dev/bookings/" + pending + "/payment-authorized"))
-                .hasStatus(HttpStatus.NOT_FOUND);
-        String status = jdbc.queryForObject("select status from booking where id = ?", String.class, pending);
-        assertThat(status).isEqualTo("PENDING_PAYMENT");
-    }
-
     private MvcTestResult request(String customer, String startsAt) {
         return mvc.post().uri("/api/customer/bookings").with(sessions.customer(customer))
                 .contentType(MediaType.APPLICATION_JSON)

@@ -8,8 +8,9 @@ import org.springframework.stereotype.Component;
  * PROVISIONAL (guide 20, part 3). TODO (step 9): remove this class; the payment module implements
  * CardHolds with Stripe (capture or cancel of the PaymentIntent). A "done" criterion of step 9.
  *
- * Harmless on its own: without the simulated payment (booking.simulated-payments, off by default)
- * no booking ever reaches PENDING_APPROVAL, so nothing is ever "captured" here.
+ * NO LONGER HARMLESS since step 9, piece 3: the Stripe webhook brings real bookings to PENDING_APPROVAL,
+ * and an approval here CONFIRMS A BOOKING WITHOUT CAPTURING the money (the hold dissolves after ~7 days).
+ * Test mode only: piece 4 replaces this class, and pieces 3 and 4 reach main together (guide 32, part 10).
  */
 @Component
 class LoggingCardHolds implements CardHolds {

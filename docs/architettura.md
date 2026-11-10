@@ -167,10 +167,11 @@ Cosa si usa e cosa va documentato oltre al webhook:
 - **Manual capture** (D-031): per le sedute, la sessione Checkout blocca l'importo senza incassarlo. Il backend chiama poi Stripe per **incassare**, all'approvazione, o per **annullare** il blocco, al rifiuto, alla scadenza o al ritiro. Il blocco dura in genere circa 7 giorni. I pacchetti si incassano subito.
 - **Webhook**, gli eventi gestiti:
   - `checkout.session.completed` → seduta: importo bloccato, prenotazione in attesa di approvazione; pacchetto: crea il lotto
-  - `checkout.session.expired` → prenotazione scaduta, orario libero
-  - eventi di incasso e annullamento del PaymentIntent: da scegliere al passo 9
+  - `checkout.session.expired` → pagamento scaduto; la prenotazione la chiude il lavoro programmato entro un minuto
+  - con l'incasso manuale la sessione completata dice `payment_status = unpaid`: conta `status = complete` (D-062)
+  - un indirizzo per conto (`/api/webhooks/stripe/{conto}`), fuori dal CSRF, protetto dalla firma (D-062)
 - **Verifica della firma**: ogni webhook arriva firmato. Il backend controlla la firma con il segreto del webhook prima di fidarsi.
-- **Idempotenza**: Stripe può mandare lo stesso evento più volte. Il backend salva l'id di ogni evento elaborato e ignora i doppioni.
+- **Idempotenza**: Stripe può mandare lo stesso evento più volte, e a volte due eventi per la stessa cosa. Il backend salva l'id di ogni evento elaborato nella stessa transazione dell'elaborazione, e ogni passaggio del pagamento ha lo stato di partenza nel `where` (D-062).
 - **Pagamento arrivato tardi**: se un pagamento viene confermato per una prenotazione già scaduta, il backend **annulla il blocco** sulla carta (D-031, prima era un credito) e avvisa il cliente via email.
 - **Modalità test**: in sviluppo si usano le chiavi di test e le carte di prova di Stripe. La Stripe CLI inoltra i webhook al backend in esecuzione sul computer locale.
 - **Rimborsi**: non gestiti dal sistema. In casi eccezionali si fanno a mano dalla dashboard Stripe.
