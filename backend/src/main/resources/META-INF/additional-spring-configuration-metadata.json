@@ -1,12 +1,6 @@
 {
   "properties": [
     {
-      "name": "booking.simulated-payments",
-      "type": "java.lang.Boolean",
-      "defaultValue": false,
-      "description": "PROVISIONAL until step 9 (guide 20, part 5). Exposes POST /api/dev/bookings/{id}/payment-authorized, which simulates the card authorization. Never true in production."
-    },
-    {
       "name": "booking.jobs.enabled",
       "type": "java.lang.Boolean",
       "defaultValue": true,
@@ -22,6 +16,30 @@
       "type": "java.lang.String",
       "defaultValue": "no-reply@posture-studio.local",
       "description": "The sender of the emails of the system (MAIL_FROM). The real address of the studio comes before step 14."
+    },
+    {
+      "name": "payment.accounts",
+      "type": "java.lang.String",
+      "defaultValue": "",
+      "description": "The Stripe accounts the studio collects on (PAYMENT_ACCOUNTS), comma separated names of lower case letters and digits (D-057, D-060). For each name the SECRETS STRIPE_<NAME>_SECRET_KEY and STRIPE_<NAME>_WEBHOOK_SECRET come from the environment. Empty: no card payments."
+    },
+    {
+      "name": "payment.live",
+      "type": "java.lang.Boolean",
+      "defaultValue": false,
+      "description": "PAYMENT_LIVE: true only in production. Every key must then be a live one; false wants test keys only. A mismatch stops the startup (guide 30, 4.2)."
+    },
+    {
+      "name": "payment.return-base-url",
+      "type": "java.lang.String",
+      "defaultValue": "http://localhost:3000",
+      "description": "Where Stripe sends the customer back after the payment page (APP_URL), with placeholder paths until step 12 (D-061). Coming back confirms nothing (D-007)."
+    },
+    {
+      "name": "payment.stripe.api-base",
+      "type": "java.lang.String",
+      "defaultValue": "https://api.stripe.com",
+      "description": "The address of Stripe's API. Only the tests change it, to a fake HTTP server on localhost (guide 31, part 10)."
     }
   ]
 }

@@ -1,6 +1,7 @@
 package com.posturestudio.booking.booking;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.springframework.security.test.web.servlet.request.SecurityMockMvcRequestPostProcessors.csrf;
 
 import java.time.Instant;
 
@@ -162,6 +163,20 @@ class ConfidentialityTest {
     }
 
     // ***** sessions already open, and CSRF *****
+
+    // Step 9, piece 6 (guide 35, part 2): the simulated payment of step 7 is gone, and its address fell into
+    // denyAll. Closed to everyone, so that putting /api/dev/** back "for convenience" would show here
+    @Test
+    void theOldSimulatedPaymentAddressIsClosedToEveryone() {
+        assertThat(mvc.post().uri("/api/dev/bookings/1/payment-authorized").with(csrf()))
+                .hasStatus(HttpStatus.UNAUTHORIZED);
+        assertThat(mvc.post().uri("/api/dev/bookings/1/payment-authorized").with(sessions.customer(mario)))
+                .hasStatus(HttpStatus.FORBIDDEN);
+        assertThat(mvc.post().uri("/api/dev/bookings/1/payment-authorized").with(sessions.practitioner(anna)))
+                .hasStatus(HttpStatus.FORBIDDEN);
+        assertThat(mvc.post().uri("/api/dev/bookings/1/payment-authorized").with(sessions.user(admin)))
+                .hasStatus(HttpStatus.FORBIDDEN);
+    }
 
     @Test
     void aPractitionerDeactivatedWithAnOpenSessionIsOut() {
