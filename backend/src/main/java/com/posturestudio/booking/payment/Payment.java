@@ -39,6 +39,7 @@ class Payment {
                            String checkoutSessionId, URI checkoutUrl, Instant now) {
         Objects.requireNonNull(account, "account must not be null");
         Payment payment = new Payment();
+        payment.purpose = PaymentPurpose.BOOKING;
         payment.source = Objects.requireNonNull(source, "source must not be null");
         payment.bookingId = bookingId;
         payment.account = account.name();
@@ -65,6 +66,11 @@ class Payment {
     // copied from the booking (D-011)
     @Column(updatable = false)
     private long amountCents;
+
+    // a session or a package (V15, D-069); the package columns arrive with piece 2 of step 10
+    @Column(updatable = false)
+    @Enumerated(EnumType.STRING)
+    private PaymentPurpose purpose;
 
     // a customer's request, or a payment link (V14, D-065)
     @Column(updatable = false)

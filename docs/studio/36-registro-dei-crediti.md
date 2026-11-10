@@ -497,6 +497,46 @@ Dopo le tue scelte: la V15, il modulo `credit` con le entità e `ValidUntil`, un
 
 ---
 
+## Parte 15 — Com'è andata (implementazione)
+
+Costruito come raccomandato nella parte 14 (D-069), 85 test nuovi (897 in tutto, `mvnw clean test` verde), su richiesta di Nicholas del 2026-11-10, che ha confermato le scelte una per una e ne ha precisate due: il `check` "`source = 'PACKAGE'` se e solo se c'è `payment_id`", e l'aiutante della pulizia solo nel codice di test.
+
+**I file:**
+
+| File | Cosa fa |
+|---|---|
+| `V15__create_credit_lots_and_movements.sql` | Le tre tabelle, le colonne dei pacchetti in `payment`, `CREDIT` in `booking`, i trigger |
+| `ValidUntil` | La regola della scadenza, in un posto solo: `daysAfter(istante, giorni)`, `covers(istante)` |
+| `LotSource`, `MovementReason` | Le origini e i motivi del passo 10, come i `check` |
+| `CreditLot` | Il lotto: `fromPackage`, `grant`, e `extendTo`, che sposta la data in avanti e restituisce la riga della proroga |
+| `CreditMovement`, `CreditLotExtension` | Una riga del registro e una proroga: `@Immutable`, una *factory* per motivo |
+| tre repository | `Repository` e non `JpaRepository`: nessun `delete` da offrire; `balanceOf` è la somma |
+| `PaymentPurpose`, `Payment.purpose` | Lo scopo, che ogni pagamento ora dichiara (oggi sempre `BOOKING`) |
+| `LedgerCleanup` (test) | La pulizia dei test che fanno commit veri, con i trigger spenti per una transazione |
+
+**Una differenza dalla guida**: nel trigger del saldo `for no key update` invece di `for update`. Il motivo: l'`insert` di un movimento fa controllare la foreign key verso il lotto, e quel controllo prende un lucchetto leggero sulla riga del lotto (`for key share`). `for update` è in conflitto con lui, quindi una restituzione (+1) aspetterebbe un addebito in corso sullo stesso lotto senza motivo; `for no key update` no. Tra due addebiti invece il conflitto resta (il lucchetto è in conflitto con sé stesso), ed è quello che serve.
+
+**Due errori nei test, corretti prima di lanciarli:**
+- PostgreSQL controlla i `check` di una tabella **in ordine alfabetico**. Un `insert` che ne violava due (`credit_lot_package_columns_ck` e `credit_lot_payment_ck`) avrebbe risposto con il primo, e il test ne aspettava l'altro. Riscritto perché ne violi uno solo;
+- i trigger `before` partono **prima** dei `check`: un `LOT_CREATED` di −3 su un lotto vuoto sarebbe stato rifiutato dal trigger del saldo, non dal `check` della forma. Il test ora parte da un lotto con dei crediti.
+
+**Un errore nella prova delle difese, corretto**: per rimettere a posto la migrazione dopo una prova ho usato `git checkout`, che non tocca un file **mai entrato in un commit**: la V15 era rimasta senza lucchetto. Me ne sono accorto controllando il file subito dopo, e l'ho rimessa dalla copia. Lezione: un ripristino si verifica, non si presume.
+
+**I test sanno fallire.** Sei difese tolte una alla volta:
+
+| Tolto | Test che se ne accorge |
+|---|---|
+| Il lucchetto del trigger del saldo | `CreditBalanceConcurrencyTest`: le due transazioni prendono entrambe l'ultimo credito (`[true, true]`) |
+| Il trigger di `truncate` su `credit_movement` | `CreditLedgerImmutabilityTest` |
+| L'`is not null` di `package_credits` | `PaymentSchemaTest` (la trappola del `NULL`) |
+| L'indice "una sola restituzione" | `CreditSchemaTest` |
+| `unique (payment_id)` | `CreditSchemaTest` |
+| Il controllo della traccia nel trigger del lotto | `CreditLedgerImmutabilityTest`, `CreditRepositoryTest` |
+
+**Verificato anche con JPA**: la riga della proroga parte al `save` (id dal database) e l'`update` del lotto al *flush*, quindi il trigger trova la traccia; senza `save`, il *flush* è rifiutato.
+
+---
+
 ## Domande da colloquio
 
 ### Domanda 1: Perché un registro di movimenti invece di una colonna con il saldo?

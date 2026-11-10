@@ -7,6 +7,7 @@ Modifiche dovute alle migrazioni:
 - **V2 (passo 5)**: `service` e `package_offer` come da progettazione, con `created_at`; foreign key composta per il servizio del pacchetto (D-025); indici su `practitioner_id`.
 - **V3 (passo 6)**: `working_schedule`, `working_hours` e `unavailability` come da progettazione (D-034), con `created_at`; fasce all'ora piena o alla mezz'ora e non sovrapposte (*exclusion constraint* su `timerange`, estensione `btree_gist`, D-036); cascata da una versione alle sue fasce; in `practitioner` scatto solo 30 o 60 con default 60, `min_booking_notice_hours` e `booking_horizon_days` (D-033, D-035).
 - **V8 (passo 8)**: `app_user.phone` in E.164, unico, scritto solo dopo la verifica, con `phone_verified_at` (D-055; i valori della V1 azzerati, mai scritti da nessun codice); in `login_code` il canale `SMS`, `purpose` (`SIGN_IN`, `VERIFY_PHONE`), `requested_by` (l'account che chiede una verifica) e `message_sent`.
+- **V15 (passo 10, pezzo 1)**: `credit_lot`, `credit_movement` e `credit_lot_extension` (D-069), con i trigger che difendono il registro (a sola aggiunta, saldo mai negativo, scadenza cambiata solo con la sua traccia); `valid_until date` al posto di `expires_at`, niente `initial_credits`, collegamento al pagamento in `credit_lot.payment_id`; in `payment` i pacchetti (`purpose`, `package_offer_id`, `customer_id`, `package_credits`, `package_validity_days`, `booking_id` facoltativa); in `booking.paid_with` il valore `CREDIT`.
 - **V14 (passo 9, pezzo 5)**: `payment.source` (`REQUEST`, `LINK`): il pagamento di una richiesta o di un link di pagamento (D-065).
 - **V13 (dopo il pezzo 4)**: in `payment` `release_attempts` e `next_release_at`, per riprovare gli annullamenti falliti (D-064).
 - **V12 (passo 9, pezzo 3)**: `stripe_event` come da progettazione, con in più `account` (il conto il cui indirizzo l'ha ricevuto); scritta nella stessa transazione dell'elaborazione (D-062).
@@ -40,10 +41,11 @@ practitioner ─┬─< working_schedule ──< working_hours
               ├─< booking >───── customer
               └─< credit_lot >── customer
                      │
-                     └─< credit_movement >── booking (opzionale)
+                     ├─< credit_movement >── booking (opzionale)
+                     └─< credit_lot_extension   (le proroghe)
 
 payment ── booking      (pagamento di una seduta)
-payment ── credit_lot   (pagamento di un pacchetto, dal passo 10)
+credit_lot ── payment   (il pacchetto comprato: un lotto per pagamento, dal passo 10)
 practitioner ── practitioner_payment_account   (il conto di incasso, D-057)
 
 login_code      (codici di accesso, legati a una destinazione: email, dal pezzo 6 anche il telefono)
@@ -193,7 +195,7 @@ Il pacchetto "in vendita".
 | ends_at | timestamptz | maggiore di `starts_at` |
 | status | text | vedi sotto |
 | booked_by | text | `CUSTOMER` o `PRACTITIONER` (dal pannello, D-024): chi ha prenotato. La persona si ricava da `customer_id` o `practitioner_id` (D-042) |
-| paid_with | text | `CARD` o `IN_STUDIO` (prenotazione dal pannello senza crediti, D-040; solo con `booked_by = PRACTITIONER`). `CREDIT` si aggiunge al passo 10 |
+| paid_with | text | `CARD`, `IN_STUDIO` (prenotazione dal pannello senza crediti, D-040; solo con `booked_by = PRACTITIONER`) o `CREDIT` (V15, per il cliente e per il professionista; mai in `PENDING_PAYMENT`) |
 | price_cents | bigint | fotografato al momento della prenotazione |
 | hold_expires_at | timestamptz | obbligatoria per `PENDING_PAYMENT` (un `check`); resta valorizzata dopo |
 | approval_deadline | timestamptz | obbligatoria per `PENDING_APPROVAL` (un `check`): richiesta + `approval_window_hours`, fotografata (D-030); resta valorizzata dopo |
@@ -227,33 +229,59 @@ Indici `(practitioner_id, starts_at)` e `(customer_id, starts_at)`. Il `check` d
 Attenzione: una prenotazione `PENDING_PAYMENT` con blocco scaduto occupa ancora l'orario finché il lavoro programmato non la porta a `EXPIRED`. Per questo il lavoro gira ogni minuto, e il calcolo degli orari liberi considera libere anche quelle con `hold_expires_at` passato.
 
 ### `credit_lot`
-Un gruppo di crediti con la stessa origine e la stessa scadenza. **Un pacchetto acquistato è un lotto.** Anche una seduta singola cancellata in tempo diventa un lotto (da 1).
+Un gruppo di crediti con la stessa origine e lo stesso ultimo giorno valido (V15, D-069). **Un pacchetto acquistato è un lotto.** Anche un omaggio (D-067) e, dal passo 11, una seduta pagata con carta cancellata in tempo (un lotto da 1). I crediti non sono qui: sono la somma dei movimenti.
 
 | Colonna | Tipo | Note |
 |---|---|---|
 | id | bigint | |
 | customer_id | bigint | |
 | practitioner_id | bigint | |
-| service_id | bigint | per quale servizio valgono i crediti |
-| source | text | `PACKAGE`, `CANCELLATION`, e l'origine della seduta omaggio (D-067, nome al passo 10). `LATE_PAYMENT` tolta (D-068): un pagamento tardivo si annulla |
-| package_offer_id | bigint | solo se `PACKAGE` |
-| origin_booking_id | bigint | solo se `CANCELLATION` (passo 11) |
-| initial_credits | int | |
-| expires_at | timestamptz | |
-| price_cents | bigint | fotografato, solo se `PACKAGE` |
+| service_id | bigint | per quale servizio valgono i crediti; dello stesso professionista (foreign key composta verso `service (id, practitioner_id)`, D-025) |
+| source | text | `PACKAGE` o `GRANT` (omaggio, D-067); `CANCELLATION` arriva al passo 11. `LATE_PAYMENT` non esiste (D-068) |
+| payment_id | bigint | il pagamento che l'ha comprato; **unico** (un pagamento, un lotto: un avviso doppio non regala un pacchetto) e presente **se e solo se** `source = 'PACKAGE'` (`check`) |
+| package_offer_id | bigint | il pacchetto comprato, solo con `payment_id` |
+| price_cents | bigint | il prezzo pagato, fotografato dal pagamento, solo con `payment_id` (copia tra moduli, D-011) |
+| granted_by | bigint | → `app_user`: chi ha regalato l'omaggio; presente se e solo se `source = 'GRANT'` |
+| note | text | perché, obbligatoria con `granted_by`, mai vuota |
+| valid_until | date | l'**ultimo giorno valido**, un giorno di Europe/Rome: quel giorno si usa, il giorno dopo no. "Valido N giorni" = giorno dell'acquisto a Roma + N (`ValidUntil`). Cambia solo con una proroga, in avanti, con la sua riga in `credit_lot_extension` (trigger) |
+| created_at | timestamptz | scritto da Java con il `Clock` |
+
+Scostamenti dalla progettazione: niente `initial_credits` (lo dice il movimento `LOT_CREATED`, e due colonne per un fatto possono non essere d'accordo); `valid_until date` al posto di `expires_at timestamptz` (eccezione alla convenzione, come `working_schedule.valid_from`); il collegamento con il pagamento sta qui (`payment_id`), non in `payment.credit_lot_id`; `origin_booking_id` arriva al passo 11.
+
+Indici `(customer_id, practitioner_id, service_id, valid_until)` (la scelta del lotto) e `(practitioner_id)`. **Il database lo difende** (trigger): un lotto non si cancella né si svuota con `truncate`, e un `update` può cambiare solo `valid_until`, solo se esiste la riga della proroga con la vecchia e la nuova data.
 
 ### `credit_movement`
-Il registro. Non si modifica e non si cancella mai una riga: si aggiungono solo movimenti nuovi.
+Il registro (V15, D-009, D-069). Non si modifica e non si cancella mai una riga: si aggiungono solo movimenti nuovi.
 
 | Colonna | Tipo | Note |
 |---|---|---|
 | id | bigint | |
 | credit_lot_id | bigint | |
-| amount | int | +N o −1 |
-| reason | text | `LOT_CREATED`, `BOOKING`, `CANCELLATION_RESTORE`, `APPROVAL_RELEASE` (credito che torna per rifiuto, scadenza o ritiro, D-030; nome da fissare al passo 10) |
-| booking_id | bigint | per `BOOKING`, `CANCELLATION_RESTORE` e `APPROVAL_RELEASE` |
+| amount | int | mai zero; la forma dipende dal motivo (`check`) |
+| reason | text | `LOT_CREATED` (+N), `BOOKING` (−1), `BOOKING_RELEASE` (+1: rifiuto, risposta scaduta o ritiro, D-030), `ADJUSTMENT` (±N, correzione, D-067); `CANCELLATION_RESTORE` (+1) arriva al passo 11 |
+| booking_id | bigint | obbligatoria per `BOOKING` e `BOOKING_RELEASE`, assente per gli altri |
+| created_by | bigint | → `app_user`: chi ha fatto la correzione; presente se e solo se `ADJUSTMENT` |
+| note | text | perché, obbligatoria con `created_by`, mai vuota |
+| created_at | timestamptz | scritto da Java con il `Clock` |
 
-**Saldo** di un lotto = somma dei movimenti. Un lotto è utilizzabile se saldo > 0 e `expires_at` nel futuro. Quando si prenota con credito, si usa il lotto utilizzabile che scade prima.
+Indici unici parziali: un `LOT_CREATED` per lotto; un `BOOKING` per prenotazione; **una sola restituzione** (movimento positivo) per prenotazione. Indice su `credit_lot_id`.
+
+**Saldo** di un lotto = somma dei movimenti. La scadenza non scrive movimenti: un lotto scaduto tiene il suo saldo, ma non si usa. Un lotto è utilizzabile se saldo > 0 e il suo ultimo giorno valido non è passato. Quando si prenota con credito, si usa il lotto utilizzabile che scade prima.
+
+**Il database lo difende** (trigger): niente `update`, `delete` né `truncate`, anche per il superuser; e un movimento negativo che porterebbe il lotto sotto zero è rifiutato, dopo aver preso il lucchetto sulla riga del lotto (`for no key update`). Il trigger del saldo regge solo in `READ COMMITTED` (D-069).
+
+### `credit_lot_extension`
+La storia delle proroghe (V15, D-067, D-069). A sola aggiunta, come il registro.
+
+| Colonna | Tipo | Note |
+|---|---|---|
+| id | bigint | |
+| credit_lot_id | bigint | |
+| old_valid_until | date | l'ultimo giorno valido prima della proroga |
+| new_valid_until | date | dopo: **solo in avanti** (`check`, maggiore di `old_valid_until`) |
+| extended_by | bigint | → `app_user`: chi ha prorogato |
+| note | text | perché, obbligatoria, mai vuota |
+| created_at | timestamptz | scritto da Java con il `Clock` |
 
 ### `practitioner_payment_account`
 Il conto di incasso di un professionista, scelto dall'admin (D-057, V10). Decide solo il conto dei pagamenti **nuovi**.
@@ -287,7 +315,17 @@ Dalla V10, solo per le **sedute** (D-060). Le colonne dei pacchetti arrivano al 
 
 Indice su `booking_id`. **Al massimo un pagamento `PENDING` per prenotazione**: indice unico parziale `payment_one_pending_per_booking_uq` (`where status = 'PENDING'`). La valuta è sempre l'euro, scritta nel codice che crea la sessione.
 
-Previsto per il passo 10: `purpose` (`BOOKING` o `PACKAGE`), `package_offer_id`, `credit_lot_id` (valorizzato dopo la conferma), `customer_id`.
+Dalla V15 (passo 10, D-069) anche i **pacchetti**:
+
+| Colonna | Tipo | Note |
+|---|---|---|
+| purpose | text | `BOOKING` (una seduta) o `PACKAGE`; senza default: chi scrive lo dice (le righe esistenti sono diventate `BOOKING`) |
+| package_offer_id | bigint | il pacchetto comprato, solo per `PACKAGE` |
+| customer_id | bigint | chi compra, solo per `PACKAGE` (per una seduta è il cliente della prenotazione) |
+| package_credits | int | le sedute che il cliente ha visto sulla pagina di Stripe, almeno 2, fotografate alla **creazione della sessione**: il pacchetto in vendita può cambiare o essere disattivato prima dell'avviso |
+| package_validity_days | int | la validità vista, fotografata con le sedute |
+
+`booking_id` è facoltativa: obbligatoria per `BOOKING`, assente per `PACKAGE`. Un `check` (`payment_purpose_columns_ck`) tiene coerenti scopo e colonne, con un `is not null` per ogni colonna obbligatoria; un pacchetto è sempre `REQUEST` e mai `AUTHORIZED` né `CANCELED` (incasso immediato, D-031). Il lotto nato dal pagamento lo dice `credit_lot.payment_id`, non una colonna qui. Indice parziale su `customer_id`.
 
 ### `stripe_event`
 Gli eventi di Stripe già elaborati (V12, D-062).

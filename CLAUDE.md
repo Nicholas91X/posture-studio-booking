@@ -63,7 +63,7 @@ Nicholas studia con test interattivi: una domanda alla volta, da punti di vista 
 - **Lingua**: codice, nomi di classi/tabelle/variabili e messaggi di commit in inglese. Documentazione in italiano. Interfaccia utente in italiano.
 - **Commit**: formato Conventional Commits (`feat:`, `fix:`, `test:`, `docs:`, `refactor:`, `chore:`). Un commit per ogni pezzo funzionante. I commit li fa Claude (deciso da Nicholas il 2026-11-10), dopo che la suite completa è verde, e li dice nel riepilogo.
 - **Soldi**: sempre in centesimi interi (`long` in Java, `bigint` in SQL). Mai `double` o `float`.
-- **Date e ore**: nel database in UTC (`timestamptz`). Si convertono in `Europe/Rome` solo per mostrarle. Gli orari di lavoro settimanali sono un'eccezione: sono ore locali (`LocalTime`), convertite al momento del calcolo.
+- **Date e ore**: nel database in UTC (`timestamptz`). Si convertono in `Europe/Rome` solo per mostrarle. Gli orari di lavoro settimanali sono un'eccezione: sono ore locali (`LocalTime`), convertite al momento del calcolo. Anche i **giorni di calendario** sono un'eccezione: la data d'inizio di uno schema settimanale (`working_schedule.valid_from`, D-034) e l'ultimo giorno valido di un lotto di crediti (`credit_lot.valid_until`, D-069) sono giorni di Europe/Rome (`LocalDate` in Java, `date` in SQL), confrontati con il giorno di un istante a Roma.
 - **Segreti** (chiavi Stripe, password del database, chiavi email): mai nel repository. Il file `.env` non si versiona, `.env.example` sì.
 - **Modifiche al database**: solo tramite migrazioni Flyway numerate. Una migrazione già eseguita non si modifica mai: se serve una correzione, se ne scrive una nuova.
 

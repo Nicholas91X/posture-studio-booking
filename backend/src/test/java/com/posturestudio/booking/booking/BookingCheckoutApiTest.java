@@ -130,8 +130,8 @@ public class BookingCheckoutApiTest {
         long booking = data.booking(anna, seduta, cliente, "2026-11-09T09:00+01:00", "2026-11-09T10:00+01:00",
                 "PENDING_PAYMENT", "2026-11-06T09:59+01:00");
         jdbc.update("""
-                insert into payment (booking_id, account, amount_cents, status, stripe_checkout_session_id, checkout_url)
-                values (?, 'alpha', 3000, 'PENDING', 'cs_test_old', 'https://checkout.stripe.test/c/pay/cs_test_old')
+                insert into payment (purpose, booking_id, account, amount_cents, status, stripe_checkout_session_id, checkout_url)
+                values ('BOOKING', ?, 'alpha', 3000, 'PENDING', 'cs_test_old', 'https://checkout.stripe.test/c/pay/cs_test_old')
                 """, booking);
 
         assertThat(mvc.get().uri("/api/customer/bookings/" + booking).with(sessions.customer(cliente)))

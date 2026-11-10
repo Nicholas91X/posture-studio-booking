@@ -93,9 +93,9 @@ final class BookingTestData {
     // on the test account "alpha", that the capture of an approval needs (guide 33)
     void heldPayment(long bookingId) {
         jdbc.update("""
-                insert into payment (booking_id, account, amount_cents, status, stripe_checkout_session_id, checkout_url,
+                insert into payment (purpose, booking_id, account, amount_cents, status, stripe_checkout_session_id, checkout_url,
                                      stripe_payment_intent_id)
-                values (?, 'alpha', 3000, 'AUTHORIZED', 'cs_test_seed_' || ?, 'https://checkout.stripe.test/c/pay/seed',
+                values ('BOOKING', ?, 'alpha', 3000, 'AUTHORIZED', 'cs_test_seed_' || ?, 'https://checkout.stripe.test/c/pay/seed',
                         'pi_test_seed_' || ?)
                 """, bookingId, bookingId, bookingId);
     }
