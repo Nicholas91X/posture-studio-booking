@@ -18,6 +18,8 @@ class StripeNotices {
 
     static final String SESSION_COMPLETED = "checkout.session.completed";
     static final String SESSION_EXPIRED = "checkout.session.expired";
+    static final String PAYMENT_INTENT_SUCCEEDED = "payment_intent.succeeded";
+    static final String PAYMENT_INTENT_CANCELED = "payment_intent.canceled";
 
     private final JsonMapper json;
 
@@ -33,6 +35,10 @@ class StripeNotices {
                         text(session, "payment_intent"));
             }
             case SESSION_EXPIRED -> new StripeNotice.SessionExpired(event.getId(), text(objectOf(event), "id"));
+            case PAYMENT_INTENT_SUCCEEDED ->
+                    new StripeNotice.PaymentIntentSucceeded(event.getId(), text(objectOf(event), "id"));
+            case PAYMENT_INTENT_CANCELED ->
+                    new StripeNotice.PaymentIntentCanceled(event.getId(), text(objectOf(event), "id"));
             default -> new StripeNotice.Ignored(event.getId(), event.getType());
         };
     }

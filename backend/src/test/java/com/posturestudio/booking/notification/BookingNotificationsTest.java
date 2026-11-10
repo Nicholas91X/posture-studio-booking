@@ -59,6 +59,9 @@ class BookingNotificationsTest {
     RecordingMailSender mail;
 
     @Autowired
+    com.posturestudio.booking.payment.FakeStripeGateway stripe;
+
+    @Autowired
     MovableClock clock;
 
     @Autowired
@@ -85,6 +88,7 @@ class BookingNotificationsTest {
     void annaWorksAndMariaIsACustomer() {
         mail.clear();
         pushService.clear();
+        stripe.reset();
         clock.reset();
         Long annaUser = jdbc.queryForObject(
                 "insert into app_user (role, email) values ('PRACTITIONER', ?) returning id", Long.class, ANNA);
@@ -210,12 +214,35 @@ class BookingNotificationsTest {
         jdbc.update("update practitioner set booking_approval = 'AUTOMATIC' where id = ?", anna);
         long booking = bookings.request(maria, new NewBooking(anna, seduta, MONDAY_9)).id();
 
-        bookings.paymentAuthorized(booking);
+        paid(booking);
 
         assertThat(awaitEmails(1)).singleElement().satisfies(email -> {
             assertThat(email.to()).isEqualTo(MARIA);
             assertThat(email.subject()).startsWith("Prenotazione confermata");
         });
+    }
+
+    // AUTOMATIC, but the capture is refused for good (the hold released by hand on Stripe): the request goes back
+    // to Anna as in manual mode, so she is told it waits for her answer, and Maria that it was sent with its
+    // deadline (D-063, the check asked by Nicholas after piece 4)
+    @Test
+    void inAutomaticModeARefusedCaptureAsksAnnaToDecide() {
+        jdbc.update("update practitioner set booking_approval = 'AUTOMATIC' where id = ?", anna);
+        stripe.refuseCaptures();
+        long booking = bookings.request(maria, new NewBooking(anna, seduta, MONDAY_9)).id();
+
+        paid(booking);
+
+        await().atMost(PATIENCE).untilAsserted(() -> {
+            assertThat(mail.sentTo(ANNA)).singleElement().extracting(Sent::subject)
+                    .isEqualTo("Nuova richiesta da approvare: lunedì 9 novembre, 9:00");
+            assertThat(mail.sentTo(MARIA)).singleElement().satisfies(email -> assertThat(email.text())
+                    .contains("entro venerdì 6 novembre 2026, ore 22:00"));
+        });
+        assertThat(jdbc.queryForMap("select status, approval_deadline from booking where id = ?", booking))
+                .containsEntry("status", "PENDING_APPROVAL")
+                .hasEntrySatisfying("approval_deadline", deadline -> assertThat(((java.sql.Timestamp) deadline).toInstant())
+                        .isEqualTo(java.time.Instant.parse("2026-11-06T21:00:00Z")));
     }
 
     // The criterion of the brief: a failed email undoes nothing. The booking stays where the service put it,
@@ -225,7 +252,7 @@ class BookingNotificationsTest {
         mail.failNextTo(ANNA);
         long booking = bookings.request(maria, new NewBooking(anna, seduta, MONDAY_9)).id();
 
-        bookings.paymentAuthorized(booking);
+        paid(booking);
 
         await().atMost(PATIENCE).untilAsserted(() -> assertThat(mail.sentTo(MARIA)).hasSize(1));
         assertThat(mail.sentTo(ANNA)).isEmpty();
@@ -332,7 +359,7 @@ class BookingNotificationsTest {
     // come before it in the same task (BookingNotifications), so by then they are done
     private long aPaidRequestWithPush() {
         long booking = bookings.request(maria, new NewBooking(anna, seduta, MONDAY_9)).id();
-        bookings.paymentAuthorized(booking);
+        paid(booking);
         await().atMost(PATIENCE).untilAsserted(() -> assertThat(mail.sentTo(MARIA)).hasSize(1));
         return booking;
     }
@@ -344,7 +371,7 @@ class BookingNotificationsTest {
     // Maria asks and pays, in MANUAL mode; returns once the two emails of ApprovalRequested have arrived
     private long aPaidRequest() {
         long booking = bookings.request(maria, new NewBooking(anna, seduta, MONDAY_9)).id();
-        bookings.paymentAuthorized(booking);
+        paid(booking);
         await().atMost(PATIENCE).untilAsserted(() -> assertThat(mail.sent()).hasSize(2));
         return booking;
     }
@@ -363,5 +390,13 @@ class BookingNotificationsTest {
 
     private String statusOf(long booking) {
         return jdbc.queryForObject("select status from booking where id = ?", String.class, booking);
+    }
+
+    // what the webhook does before asking the booking (guides 32 and 33): the payment held, with its PaymentIntent,
+    // so that an approval has something to capture
+    private void paid(long booking) {
+        jdbc.update("update payment set status = 'AUTHORIZED', stripe_payment_intent_id = 'pi_test_' || booking_id where booking_id = ?",
+                booking);
+        bookings.paymentAuthorized(booking);
     }
 }

@@ -89,6 +89,63 @@ public class StripeWebhookApiTest {
 
         persisted();
         assertThat(bookingStatus()).isEqualTo("CONFIRMED");
+        // captured for real now (guide 33), on the account of the payment
+        assertThat(stripe.captures()).containsExactly(new FakeStripeGateway.Capture("alpha", "pi_A", "capture-pi_A"));
+        assertThat(paymentRow()).containsEntry("status", "SUCCEEDED");
+    }
+
+    // guide 33, part 4: a refusal for good is not an error for Stripe to retry for three days; the request goes
+    // to the practitioner as in manual mode
+    @Test
+    void inAutomaticModeARefusedCaptureLeavesTheRequestToThePractitioner() {
+        jdbc.update("update practitioner set booking_approval = 'AUTOMATIC' where id = ?", anna);
+        stripe.refuseCaptures();
+
+        assertThat(post("alpha", StripeEvents.sessionCompleted("evt_1", "cs_test_A", "pi_A"), ALPHA_SECRET))
+                .hasStatusOk();
+
+        persisted();
+        assertThat(bookingStatus()).isEqualTo("PENDING_APPROVAL");
+        assertThat(paymentRow()).containsEntry("status", "AUTHORIZED");
+        // requested at 09:00 UTC, default window of 12 hours: the practitioner has a real deadline
+        assertThat(jdbc.queryForObject("select approval_deadline from booking where id = ?", java.sql.Timestamp.class, booking)
+                .toInstant()).isEqualTo(Instant.parse("2026-11-06T21:00:00Z"));
+    }
+
+    // ***** the PaymentIntent events (guide 33, parts 6 and 7) *****
+
+    // the normal case: our commit came first, the event finds the payment already SUCCEEDED
+    @Test
+    void paymentIntentSucceededAfterOurOwnCommitChangesNothing() {
+        jdbc.update("update payment set status = 'SUCCEEDED', stripe_payment_intent_id = 'pi_A' where id = ?", payment);
+        jdbc.update("update booking set status = 'CONFIRMED', approval_deadline = '2026-11-06T22:00+01:00' where id = ?", booking);
+
+        assertThat(post("alpha", paymentIntentEvent("evt_1", "payment_intent.succeeded"), ALPHA_SECRET)).hasStatusOk();
+
+        persisted();
+        assertThat(paymentRow()).containsEntry("status", "SUCCEEDED").containsEntry("version", 0L);
+        assertThat(bookingStatus()).isEqualTo("CONFIRMED");
+        assertThat(stripe.captures()).isEmpty();
+    }
+
+    // a hold Stripe released by itself after 7 days, or a release of ours that Stripe did not answer
+    @Test
+    void paymentIntentCanceledClosesAPaymentStillHeld() {
+        jdbc.update("update payment set status = 'AUTHORIZED', stripe_payment_intent_id = 'pi_A' where id = ?", payment);
+        jdbc.update("update booking set status = 'REJECTED' where id = ?", booking);
+
+        assertThat(post("alpha", paymentIntentEvent("evt_1", "payment_intent.canceled"), ALPHA_SECRET)).hasStatusOk();
+
+        persisted();
+        assertThat(paymentRow()).containsEntry("status", "CANCELED");
+    }
+
+    @Test
+    void aPaymentIntentThatIsNotOursIsAnsweredAndIgnored() {
+        assertThat(post("alpha", paymentIntentEvent("evt_1", "payment_intent.succeeded"), ALPHA_SECRET)).hasStatusOk();
+
+        persisted();
+        assertThat(paymentRow()).containsEntry("status", "PENDING");
     }
 
     // ***** "at least once" (guide 32, part 5) *****
@@ -243,6 +300,12 @@ public class StripeWebhookApiTest {
         assertThat(post("alpha", event, ALPHA_SECRET)).hasStatusOk();
 
         assertThat(jdbc.queryForObject("select count(*) from stripe_event", Long.class)).isZero();
+    }
+
+    private static String paymentIntentEvent(String eventId, String type) {
+        return StripeEvents.event(eventId, type, """
+                {"id": "pi_A", "object": "payment_intent", "amount": 3000}
+                """);
     }
 
     private MvcTestResult post(String account, String body, String secret) {

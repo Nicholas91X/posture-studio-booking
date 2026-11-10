@@ -191,10 +191,36 @@ public class BookingService {
         PractitionerSettings settings = practitioners.getSettings(booking.getPractitionerId());
         booking.paymentAuthorized(Duration.ofHours(settings.approvalWindowHours()));
         switch (settings.bookingApproval()) {
-            case AUTOMATIC -> confirm(booking, now);
+            case AUTOMATIC -> {
+                // a capture refused right after the payment (a hold released by hand on Stripe): the request goes
+                // to the practitioner as in manual mode, who decides. No exception: the webhook would make Stripe
+                // retry for three days, and the answer would never change (guide 33, part 4)
+                if (!captureAndConfirm(booking, now)) {
+                    events.publishEvent(ApprovalRequested.of(booking));
+                }
+            }
             case MANUAL -> events.publishEvent(ApprovalRequested.of(booking));
         }
         return new PaymentOutcome.Accepted(booking.getStatus());
+    }
+
+    // "Stripe captured, our commit failed" (guide 33, part 6): Stripe's payment_intent.succeeded found the payment
+    // still AUTHORIZED. A capture happens only after an approval, so confirming respects that decision, WITHOUT
+    // capturing again. NotWanted: the booking can no longer be confirmed, and money was taken for it (the webhook
+    // logs it as an error: refund by hand from the dashboard, D-015)
+    @Transactional
+    public PaymentOutcome paymentCaptured(long bookingId) {
+        Instant now = clock.instant();
+        Booking booking = bookings.findLockedById(bookingId).orElseThrow(() -> notFound(bookingId));
+        return switch (booking.getStatus()) {
+            case PENDING_APPROVAL -> {
+                booking.approve(now);
+                events.publishEvent(BookingConfirmed.of(booking));
+                yield new PaymentOutcome.Accepted(BookingStatus.CONFIRMED);
+            }
+            case CONFIRMED -> new PaymentOutcome.Accepted(BookingStatus.CONFIRMED);
+            default -> new PaymentOutcome.NotWanted(booking.getStatus());
+        };
     }
 
     // ***** PRACTITIONER *****
@@ -244,7 +270,11 @@ public class BookingService {
         Instant now = clock.instant();
         Booking booking = lockedForPractitioner(practitionerId, bookingId);
         requireBeforeDeadline(booking, now);
-        confirm(booking, now);
+        // the request stays PENDING_APPROVAL: the practitioner may reject it, or let it expire (guide 33, part 5)
+        if (!captureAndConfirm(booking, now)) {
+            throw new BusinessRuleException(ErrorCode.CARD_CAPTURE_FAILED,
+                    "The amount held for booking " + bookingId + " can no longer be captured");
+        }
         return PanelBookingView.from(booking);
     }
 
@@ -390,10 +420,19 @@ public class BookingService {
 
     // The order matters (guide 20, 3.5): the state machine first, so a refused step never reaches Stripe;
     // then the capture, whose failure rolls the transaction back and leaves PENDING_APPROVAL
-    private void confirm(Booking booking, Instant now) {
-        booking.approve(now);
-        cards.capture(booking.getId(), booking.getPriceCents());
-        events.publishEvent(BookingConfirmed.of(booking));
+    // Check, capture, and only then change (guide 33, part 3, D-063): a forbidden step never reaches Stripe, and a
+    // refused capture leaves the booking exactly as it was, so the caller decides without throwing the
+    // transaction away. false: Stripe refused the capture for good. Stripe not answering throws: all rolls back
+    private boolean captureAndConfirm(Booking booking, Instant now) {
+        booking.checkMove(BookingStatus.CONFIRMED);
+        return switch (cards.capture(booking.getId(), booking.getPriceCents())) {
+            case CardHolds.CaptureResult.Captured captured -> {
+                booking.approve(now);
+                events.publishEvent(BookingConfirmed.of(booking));
+                yield true;
+            }
+            case CardHolds.CaptureResult.Refused refused -> false;
+        };
     }
 
     // The request is already void after the deadline (D-030): the job of piece 4 closes it within a minute.

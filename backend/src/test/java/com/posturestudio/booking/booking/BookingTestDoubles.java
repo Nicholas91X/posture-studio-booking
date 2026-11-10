@@ -29,18 +29,17 @@ public class BookingTestDoubles {
         return new CommittedEvents();
     }
 
-    // CardHolds that remembers what it was asked, and can refuse a capture like a declined card
+    // CardHolds that remembers what it was asked, and can refuse a capture like a hold already gone (guide 33)
     static class RecordingCardHolds implements CardHolds {
 
         final List<String> calls = new CopyOnWriteArrayList<>();
         volatile boolean declineCaptures;
 
         @Override
-        public void capture(long bookingId, long amountCents) {
-            if (declineCaptures) {
-                throw new IllegalStateException("card declined");
-            }
+        public CaptureResult capture(long bookingId, long amountCents) {
             calls.add("capture " + bookingId + " " + amountCents);
+            return declineCaptures ? new CaptureResult.Refused("payment_intent_unexpected_state")
+                    : new CaptureResult.Captured();
         }
 
         @Override

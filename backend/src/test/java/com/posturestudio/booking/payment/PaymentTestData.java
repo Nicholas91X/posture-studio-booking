@@ -62,6 +62,20 @@ final class PaymentTestData {
                 """, Long.class, customerId, practitionerId, serviceId, start, start.plusHours(1));
     }
 
+    // a request paid and waiting for the practitioner until 6 November 22:00 in Rome, its amount held on
+    // "account" with PaymentIntent pi_<booking id>
+    long waitingBooking(long practitionerId, String customerEmail, String account) {
+        long bookingId = pendingBooking(practitionerId, customerEmail);
+        jdbc.update("update booking set status = 'PENDING_APPROVAL', approval_deadline = '2026-11-06T22:00+01:00' where id = ?",
+                bookingId);
+        jdbc.update("""
+                insert into payment (booking_id, account, amount_cents, status, stripe_checkout_session_id, checkout_url,
+                                     stripe_payment_intent_id)
+                values (?, ?, 3000, 'AUTHORIZED', 'cs_test_' || ?, 'https://checkout.stripe.test/c/pay/x', 'pi_' || ?)
+                """, bookingId, account, bookingId, bookingId);
+        return bookingId;
+    }
+
     long payment(long bookingId, String account, String status, String checkoutSessionId) {
         return jdbc.queryForObject("""
                 insert into payment (booking_id, account, amount_cents, status, stripe_checkout_session_id, checkout_url)

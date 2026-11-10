@@ -19,6 +19,8 @@ import org.springframework.transaction.support.TransactionTemplate;
 
 import com.posturestudio.booking.FixedClockConfiguration;
 import com.posturestudio.booking.TestcontainersConfiguration;
+import com.posturestudio.booking.shared.ErrorCode;
+import com.posturestudio.booking.shared.BusinessRuleException;
 import com.posturestudio.booking.auth.AccountService;
 import com.posturestudio.booking.booking.BookingEvent.BookingConfirmed;
 import com.posturestudio.booking.booking.BookingTestDoubles.CommittedEvents;
@@ -109,11 +111,14 @@ public class BookingAfterCommitTest {
 
     @Test
     void aDeclinedCaptureLeavesTheRequestWaiting() {
-        // the state machine changed the status in memory, then the capture failed: the exception rolls
-        // the transaction back, and the event, published after the capture, is never even published
+        // guide 33, part 3: check, capture, and only then change. A refused capture changes nothing, the
+        // practitioner gets CARD_CAPTURE_FAILED, and no event is ever published
         cards.declineCaptures = true;
 
-        Assertions.assertThrows(IllegalStateException.class, () -> service.approve(anna, booking));
+        BusinessRuleException refused = Assertions.assertThrows(BusinessRuleException.class,
+                () -> service.approve(anna, booking));
+
+        assertThat(refused.getCode()).isEqualTo(ErrorCode.CARD_CAPTURE_FAILED);
 
         assertThat(statusOfTheBooking()).isEqualTo("PENDING_APPROVAL");
         assertThat(committed.received).isEmpty();

@@ -133,7 +133,7 @@ Lo stesso meccanismo vale per i professionisti: la loro email ha il ruolo `PRACT
 6. **Approvazione**:
    - automatica: il backend approva subito;
    - manuale: il backend avvisa il professionista con una notifica push su tutti i suoi dispositivi; se nessuno la accetta, con un'email (D-054). Lui approva o rifiuta dal pannello entro la scadenza.
-7. **Approvata**: il backend chiede a Stripe l'incasso. Quando Stripe risponde che è riuscito, la prenotazione è confermata e il cliente riceve l'email di conferma.
+7. **Approvata**: il backend chiede a Stripe l'incasso, e solo quando Stripe risponde che è riuscito la prenotazione è confermata e il cliente riceve l'email di conferma. Se il blocco non c'è più, la richiesta resta in attesa e il professionista riceve un errore che lo dice (D-063).
 8. **Rifiutata, scaduta o ritirata dal cliente**: il backend annulla il blocco sulla carta, l'orario si libera, e il cliente riceve un'email. Non è stato addebitato niente.
 
 ### Prenotazione con credito
@@ -170,6 +170,8 @@ Cosa si usa e cosa va documentato oltre al webhook:
   - `checkout.session.expired` → pagamento scaduto; la prenotazione la chiude il lavoro programmato entro un minuto
   - con l'incasso manuale la sessione completata dice `payment_status = unpaid`: conta `status = complete` (D-062)
   - un indirizzo per conto (`/api/webhooks/stripe/{conto}`), fuori dal CSRF, protetto dalla firma (D-062)
+  - `payment_intent.succeeded` → riconciliazione: se il nostro commit dopo l'incasso era fallito, il pagamento risulta incassato e la prenotazione confermata, senza incassare di nuovo (D-063)
+  - `payment_intent.canceled` → il blocco sciolto da Stripe dopo 7 giorni, o un nostro annullamento che Stripe non aveva confermato (D-063)
 - **Verifica della firma**: ogni webhook arriva firmato. Il backend controlla la firma con il segreto del webhook prima di fidarsi.
 - **Idempotenza**: Stripe può mandare lo stesso evento più volte, e a volte due eventi per la stessa cosa. Il backend salva l'id di ogni evento elaborato nella stessa transazione dell'elaborazione, e ogni passaggio del pagamento ha lo stato di partenza nel `where` (D-062).
 - **Pagamento arrivato tardi**: se un pagamento viene confermato per una prenotazione già scaduta, il backend **annulla il blocco** sulla carta (D-031, prima era un credito) e avvisa il cliente via email.

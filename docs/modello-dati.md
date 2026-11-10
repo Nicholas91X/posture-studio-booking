@@ -7,6 +7,7 @@ Modifiche dovute alle migrazioni:
 - **V2 (passo 5)**: `service` e `package_offer` come da progettazione, con `created_at`; foreign key composta per il servizio del pacchetto (D-025); indici su `practitioner_id`.
 - **V3 (passo 6)**: `working_schedule`, `working_hours` e `unavailability` come da progettazione (D-034), con `created_at`; fasce all'ora piena o alla mezz'ora e non sovrapposte (*exclusion constraint* su `timerange`, estensione `btree_gist`, D-036); cascata da una versione alle sue fasce; in `practitioner` scatto solo 30 o 60 con default 60, `min_booking_notice_hours` e `booking_horizon_days` (D-033, D-035).
 - **V8 (passo 8)**: `app_user.phone` in E.164, unico, scritto solo dopo la verifica, con `phone_verified_at` (D-055; i valori della V1 azzerati, mai scritti da nessun codice); in `login_code` il canale `SMS`, `purpose` (`SIGN_IN`, `VERIFY_PHONE`), `requested_by` (l'account che chiede una verifica) e `message_sent`.
+- **V13 (dopo il pezzo 4)**: in `payment` `release_attempts` e `next_release_at`, per riprovare gli annullamenti falliti (D-064).
 - **V12 (passo 9, pezzo 3)**: `stripe_event` come da progettazione, con in più `account` (il conto il cui indirizzo l'ha ricevuto); scritta nella stessa transazione dell'elaborazione (D-062).
 - **V11 (passo 9, pezzo 2)**: `payment.checkout_url`, l'indirizzo della pagina di Stripe (D-061). Il blocco dell'orario passa da 30 a 32 minuti nel codice (D-061), senza cambiare lo schema.
 - **V10 (passo 9, pezzo 1)**: `practitioner_payment_account` (il conto di incasso di ogni professionista, D-057); `payment` solo per le sedute, con `account` (il conto su cui è fatto, mai cambiato), `version` e `created_at` scritto da Java; un solo `PENDING` per prenotazione (indice unico parziale). `purpose`, `package_offer_id`, `credit_lot_id` e `customer_id` arrivano con i pacchetti al passo 10 (D-060).
@@ -277,7 +278,9 @@ Dalla V10, solo per le **sedute** (D-060). Le colonne dei pacchetti arrivano al 
 | stripe_checkout_session_id | text | unico, obbligatorio: la riga nasce dopo la risposta di Stripe |
 | checkout_url | text | l'indirizzo della pagina di Stripe, obbligatorio (V11): il cliente lo ritrova finché il blocco vale (D-061) |
 | stripe_payment_intent_id | text | unico, valorizzato dal webhook |
-| version | bigint | blocco ottimistico, seconda difesa (il lucchetto è sulla prenotazione) |
+| release_attempts | int | annullamenti falliti finora (V13, D-064) |
+| next_release_at | timestamptz | quando riprovare l'annullamento; `null` se niente è dovuto. Solo con `status = 'AUTHORIZED'` (`check`) |
+| version | bigint | blocco ottimistico, seconda difesa (i passaggi leggono il pagamento con il lucchetto, D-063) |
 | created_at | timestamptz | scritto da Java con il `Clock` |
 
 Indice su `booking_id`. **Al massimo un pagamento `PENDING` per prenotazione**: indice unico parziale `payment_one_pending_per_booking_uq` (`where status = 'PENDING'`). La valuta è sempre l'euro, scritta nel codice che crea la sessione.

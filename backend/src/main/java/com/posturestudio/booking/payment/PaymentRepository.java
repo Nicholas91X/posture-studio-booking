@@ -1,11 +1,14 @@
 package com.posturestudio.booking.payment;
 
+import java.time.Instant;
 import java.util.Collection;
 import java.util.List;
 import java.util.Optional;
 
+import jakarta.persistence.LockModeType;
+
 import org.springframework.data.jpa.repository.JpaRepository;
-import org.springframework.data.jpa.repository.Modifying;
+import org.springframework.data.jpa.repository.Lock;
 import org.springframework.data.jpa.repository.Query;
 
 interface PaymentRepository extends JpaRepository<Payment, Long> {
@@ -17,19 +20,22 @@ interface PaymentRepository extends JpaRepository<Payment, Long> {
     // at most one, by the partial unique index payment_one_pending_per_booking_uq (V10)
     Optional<Payment> findByBookingIdAndStatus(Long bookingId, PaymentStatus status);
 
-    Optional<Payment> findByStripeCheckoutSessionId(String checkoutSessionId);
+    // WITH the lock (select ... for update): whoever changes a payment, or calls Stripe about it, holds its row
+    // (guide 33, parts 8 and 9). A second transaction waits here, then reads what the first saved
+    @Lock(LockModeType.PESSIMISTIC_WRITE)
+    Optional<Payment> findLockedByStripeCheckoutSessionId(String checkoutSessionId);
 
-    // Compare-and-set (guide 32, 5.2): the state of departure in the where. The first time 1 row, a repeat 0;
-    // a concurrent repeat waits for the row lock, reads the condition again, and finds 0. Whoever gets 0
-    // does nothing else. The version moves as JPA would move it
-    @Modifying
-    @Query("""
-            update Payment p set p.status = :to, p.stripePaymentIntentId = :paymentIntentId, p.version = p.version + 1
-            where p.id = :id and p.status = :from
-            """)
-    int authorize(Long id, String paymentIntentId, PaymentStatus from, PaymentStatus to);
+    @Lock(LockModeType.PESSIMISTIC_WRITE)
+    Optional<Payment> findLockedByStripePaymentIntentId(String paymentIntentId);
 
-    @Modifying
-    @Query("update Payment p set p.status = :to, p.version = p.version + 1 where p.id = :id and p.status = :from")
-    int move(Long id, PaymentStatus from, PaymentStatus to);
+    // at most one AUTHORIZED per booking: every other payment of the booking was released (D-059, D-062)
+    @Lock(LockModeType.PESSIMISTIC_WRITE)
+    Optional<Payment> findLockedByBookingIdAndStatus(Long bookingId, PaymentStatus status);
+
+    @Lock(LockModeType.PESSIMISTIC_WRITE)
+    Optional<Payment> findLockedById(Long id);
+
+    // the held payments that owe a release whose time has come (D-064), the oldest first
+    @Query("select p.id from Payment p where p.status = :status and p.nextReleaseAt <= :now order by p.nextReleaseAt")
+    List<Long> idsOfReleasesDue(PaymentStatus status, Instant now);
 }

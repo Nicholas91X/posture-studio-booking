@@ -11,12 +11,14 @@ import com.posturestudio.booking.booking.BookingService;
 import com.posturestudio.booking.booking.PaymentOutcome;
 
 /**
- * What a verified Stripe event does (D-062, guide 32). One transaction per event, with the "seen" row inside
- * it: if anything fails, everything rolls back, the controller answers 500, and Stripe sends the event again,
- * which is then new again (guide 32, 5.1 and part 8).
+ * What a verified Stripe event does (D-062, D-063, guides 32 and 33). One transaction per event, with the "seen"
+ * row inside it: if anything fails, everything rolls back, the controller answers with an error, and Stripe sends
+ * the event again, which is then new again (guide 32, 5.1 and part 8).
  *
- * Two levels against "at least once" (guide 32, part 5): the event id (SeenStripeEvents), and every change of
- * a payment written as compare-and-set, checked BEFORE the booking is asked anything (5.2).
+ * Two levels against "at least once" (guide 32, part 5): the event id (SeenStripeEvents), and every change of a
+ * payment made on the payment read WITH ITS LOCK, by a method that says whether it changed anything, BEFORE the
+ * booking is asked anything (guide 33, part 9: the JPQL updates of piece 3 left the object stale in memory).
+ * Lock order: the payment first, then the booking (guide 33, part 8).
  */
 @Service
 class StripeWebhookService {
@@ -54,61 +56,96 @@ class StripeWebhookService {
         switch (notice) {
             case StripeNotice.SessionCompleted completed -> sessionCompleted(account, completed);
             case StripeNotice.SessionExpired expired -> sessionExpired(account, expired);
+            case StripeNotice.PaymentIntentSucceeded succeeded -> paymentIntentSucceeded(account, succeeded);
+            case StripeNotice.PaymentIntentCanceled canceled -> paymentIntentCanceled(account, canceled);
             case StripeNotice.Ignored ignored -> { }
         }
     }
 
     private void sessionCompleted(PaymentAccount account, StripeNotice.SessionCompleted completed) {
-        Payment payment = paymentOf(account, completed.sessionId(), completed.eventId());
-        if (payment == null) {
-            return;
-        }
         if (!"complete".equals(completed.status()) || completed.paymentIntentId() == null) {
             log.warn("Stripe event {}: session {} completed without a held payment (status {})",
                     completed.eventId(), completed.sessionId(), completed.status());
             return;
         }
+        Payment payment = ours(account, completed.sessionId() == null ? null
+                : payments.findLockedByStripeCheckoutSessionId(completed.sessionId()).orElse(null), completed.eventId());
+        if (payment == null) {
+            return;
+        }
         // FIRST the payment, then the booking (guide 32, 5.2): a second event for the same session stops here.
         // If it went on, the booking (already PENDING_APPROVAL) would answer NotWanted, and a valid hold would
         // be released
-        if (payments.authorize(payment.getId(), completed.paymentIntentId(), PaymentStatus.PENDING,
-                PaymentStatus.AUTHORIZED) == 0) {
+        if (!payment.authorize(completed.paymentIntentId())) {
             log.info("Stripe event {}: payment {} already past PENDING, nothing to do", completed.eventId(), payment.getId());
             return;
         }
         switch (bookings.paymentAuthorized(payment.getBookingId())) {
             case PaymentOutcome.Accepted accepted ->
                     log.info("Payment {} held, booking {} is {}", payment.getId(), payment.getBookingId(), accepted.status());
-            case PaymentOutcome.NotWanted notWanted -> release(payment, completed.paymentIntentId(), notWanted);
+            case PaymentOutcome.NotWanted notWanted -> release(payment, notWanted);
         }
     }
 
-    // THIS PaymentIntent, on the account of the payment (D-057). A failure throws: rollback, 500, Stripe retries
-    private void release(Payment payment, String paymentIntentId, PaymentOutcome.NotWanted notWanted) {
-        stripe.cancelPaymentIntent(accounts.of(payment), paymentIntentId, "cancel-" + paymentIntentId);
-        payments.move(payment.getId(), PaymentStatus.AUTHORIZED, PaymentStatus.CANCELED);
+    // THIS PaymentIntent, on the account of the payment (D-057). A failure throws: rollback, error, Stripe retries
+    private void release(Payment payment, PaymentOutcome.NotWanted notWanted) {
+        String paymentIntentId = payment.getStripePaymentIntentId();
+        // false: no longer cancelable; the payment stays AUTHORIZED until Stripe's own event says which
+        if (stripe.cancelPaymentIntent(accounts.of(payment), paymentIntentId, "cancel-" + paymentIntentId)) {
+            payment.cancel();
+        }
         log.info("Payment {} released: booking {} is {} and does not want it", payment.getId(), payment.getBookingId(),
                 notWanted.status());
     }
 
     // The booking is left to the job, which closes expired holds within a minute (D-047): one path less
     private void sessionExpired(PaymentAccount account, StripeNotice.SessionExpired expired) {
-        Payment payment = paymentOf(account, expired.sessionId(), expired.eventId());
+        Payment payment = ours(account, expired.sessionId() == null ? null
+                : payments.findLockedByStripeCheckoutSessionId(expired.sessionId()).orElse(null), expired.eventId());
         if (payment != null) {
-            payments.move(payment.getId(), PaymentStatus.PENDING, PaymentStatus.EXPIRED);
+            payment.expire();
         }
     }
 
-    // null, logged, when the session is not ours or belongs to another account (guide 32, part 4)
-    private Payment payment(String sessionId) {
-        return payments.findByStripeCheckoutSessionId(sessionId).orElse(null);
+    // The reconciliation (guide 33, part 6). Normally our commit came first and the payment is SUCCEEDED: false,
+    // nothing to do. AUTHORIZED means Stripe captured and our commit failed: confirm, without capturing again
+    private void paymentIntentSucceeded(PaymentAccount account, StripeNotice.PaymentIntentSucceeded succeeded) {
+        Payment payment = byPaymentIntent(account, succeeded.paymentIntentId(), succeeded.eventId());
+        if (payment == null || !payment.capture()) {
+            return;
+        }
+        log.warn("Stripe event {}: payment {} was captured but not recorded (a commit failed): reconciled",
+                succeeded.eventId(), payment.getId());
+        switch (bookings.paymentCaptured(payment.getBookingId())) {
+            case PaymentOutcome.Accepted accepted ->
+                    log.info("Booking {} confirmed by the reconciliation", payment.getBookingId());
+            case PaymentOutcome.NotWanted notWanted ->
+                    log.error("Payment {} was CAPTURED for booking {}, which is {}: refund it by hand from the Stripe"
+                            + " dashboard of account {} (D-015)", payment.getId(), payment.getBookingId(),
+                            notWanted.status(), payment.getAccount());
+        }
     }
 
-    private Payment paymentOf(PaymentAccount account, String sessionId, String eventId) {
-        Payment payment = sessionId == null ? null : payment(sessionId);
+    // a hold released by Stripe after 7 days, or after a release of ours that Stripe did not answer (guide 33,
+    // part 7). After our own successful releases the payment is already CANCELED: false, nothing to do
+    private void paymentIntentCanceled(PaymentAccount account, StripeNotice.PaymentIntentCanceled canceled) {
+        Payment payment = byPaymentIntent(account, canceled.paymentIntentId(), canceled.eventId());
+        if (payment != null && payment.cancel()) {
+            log.info("Stripe event {}: hold of payment {} released by Stripe", canceled.eventId(), payment.getId());
+        }
+    }
+
+    // A PaymentIntent we do not know: a payment of the dashboard, or one whose session event has not been
+    // processed yet (it will be: the session event carries the PaymentIntent too)
+    private Payment byPaymentIntent(PaymentAccount account, String paymentIntentId, String eventId) {
+        return ours(account, paymentIntentId == null ? null
+                : payments.findLockedByStripePaymentIntentId(paymentIntentId).orElse(null), eventId);
+    }
+
+    // null, logged, when the payment is not ours or belongs to another account (guide 32, part 4)
+    private Payment ours(PaymentAccount account, Payment payment, String eventId) {
         if (payment == null) {
-            // e.g. a session made by hand in the dashboard of that account: nothing of ours
-            log.warn("Stripe event {}: no payment for session {}", eventId, sessionId);
+            log.warn("Stripe event {}: no payment of ours", eventId);
             return null;
         }
         if (!payment.getAccount().equals(account.name())) {

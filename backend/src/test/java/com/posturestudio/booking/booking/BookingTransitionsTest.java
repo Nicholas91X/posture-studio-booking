@@ -112,6 +112,22 @@ public class BookingTransitionsTest {
 
     // D-059, guide 32, part 7: a second payment is not an error (for Stripe an error means "try again"),
     // it is a payment the booking does not want: the webhook releases it
+    // D-063, checked again after piece 4: AUTOMATIC with a capture refused for good. The request keeps its deadline
+    // and goes to the practitioner as in manual mode (ApprovalRequested: push or email)
+    @Test
+    void aRefusedCaptureInAutomaticModeLeavesTheRequestToThePractitionerWithItsDeadline() {
+        jdbc.update("update practitioner set booking_approval = 'AUTOMATIC' where id = ?", anna);
+        cards.declineCaptures = true;
+        long id = requested();
+
+        PaymentOutcome outcome = service.paymentAuthorized(id);
+
+        assertThat(outcome).isEqualTo(new PaymentOutcome.Accepted(BookingStatus.PENDING_APPROVAL));
+        assertThat(events.stream(BookingEvent.class)).singleElement().isInstanceOf(ApprovalRequested.class);
+        assertThat(service.findForCustomer(cliente, id).approvalDeadline())
+                .isEqualTo(OffsetDateTime.parse("2026-11-06T22:00+01:00"));
+    }
+
     @Test
     void aSecondPaymentOfTheSameBookingIsNotWanted() {
         long id = paid();

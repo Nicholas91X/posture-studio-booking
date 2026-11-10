@@ -9,9 +9,11 @@ import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Component;
 
+import com.posturestudio.booking.booking.CardHolds;
 import com.posturestudio.booking.shared.ErrorCode;
 import com.posturestudio.booking.shared.ServiceUnavailableException;
 import com.stripe.StripeClient;
+import com.stripe.exception.CardException;
 import com.stripe.exception.InvalidRequestException;
 import com.stripe.exception.StripeException;
 import com.stripe.model.checkout.Session;
@@ -105,17 +107,45 @@ class StripeClientGateway implements StripeGateway {
     }
 
     @Override
-    public void cancelPaymentIntent(PaymentAccount account, String paymentIntentId, String idempotencyKey) {
+    public CardHolds.CaptureResult capturePaymentIntent(PaymentAccount account, String paymentIntentId,
+                                                        String idempotencyKey) {
+        RequestOptions options = RequestOptions.builder().setIdempotencyKey(idempotencyKey).build();
+        try {
+            clientOf(account).v1().paymentIntents().capture(paymentIntentId, options);
+            return new CardHolds.CaptureResult.Captured();
+        } catch (CardException e) {
+            log.warn("PaymentIntent {} on account {} not captured: card refused ({}, request {})", paymentIntentId,
+                    account.name(), e.getDeclineCode(), e.getRequestId());
+            return new CardHolds.CaptureResult.Refused("card_declined:" + e.getDeclineCode());
+        } catch (InvalidRequestException e) {
+            // no longer requires_capture: the hold expired after 7 days, or was released by hand (guide 33, part 2)
+            if (UNEXPECTED_STATE.equals(e.getCode())) {
+                log.warn("PaymentIntent {} on account {} not captured: no longer capturable (request {})",
+                        paymentIntentId, account.name(), e.getRequestId());
+                return new CardHolds.CaptureResult.Refused(e.getCode());
+            }
+            throw unavailable("capture PaymentIntent " + paymentIntentId, account, e);
+        } catch (StripeException e) {
+            throw unavailable("capture PaymentIntent " + paymentIntentId, account, e);
+        }
+    }
+
+    @Override
+    public boolean cancelPaymentIntent(PaymentAccount account, String paymentIntentId, String idempotencyKey) {
         RequestOptions options = RequestOptions.builder().setIdempotencyKey(idempotencyKey).build();
         try {
             clientOf(account).v1().paymentIntents().cancel(paymentIntentId, options);
+            return true;
         } catch (InvalidRequestException e) {
             // already canceled (from the dashboard, or the hold expired): the goal is reached, nothing to retry.
             // Asking again would get the same answer, and Stripe would send the event again for three days
+            // Usually already canceled: fine. If it had been CAPTURED (guide 33, part 6, point 4), money was taken for
+            // a booking that is not confirmed: an error, with what to do. No extra call to find out which
             if (UNEXPECTED_STATE.equals(e.getCode())) {
-                log.warn("PaymentIntent {} on account {} not canceled: it is no longer cancelable (request {})",
+                log.error("PaymentIntent {} on account {} is no longer cancelable (request {}): fine if it was already"
+                                + " canceled; if it was captured, refund it by hand from the Stripe dashboard (D-015)",
                         paymentIntentId, account.name(), e.getRequestId());
-                return;
+                return false;
             }
             throw unavailable("cancel PaymentIntent " + paymentIntentId, account, e);
         } catch (StripeException e) {

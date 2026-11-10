@@ -51,5 +51,9 @@ public enum ErrorCode {
 
     // Stripe did not answer, or refused: nothing was created, the customer tries again in a moment (guide 31, 8.2).
     // A 503, not a 409: the request was right, a service it needs is not available
-    PAYMENT_PROVIDER_UNAVAILABLE
+    PAYMENT_PROVIDER_UNAVAILABLE,
+
+    // the practitioner approves, but the amount held on the card can no longer be captured (hold expired or
+    // released, card refused): the request stays waiting, to be rejected or left to expire (guide 33, part 5)
+    CARD_CAPTURE_FAILED
 }

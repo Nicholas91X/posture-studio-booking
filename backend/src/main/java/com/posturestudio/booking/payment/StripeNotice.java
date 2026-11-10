@@ -18,6 +18,15 @@ sealed interface StripeNotice {
     record SessionExpired(String eventId, String sessionId) implements StripeNotice {
     }
 
+    // payment_intent.succeeded: a held amount was captured. Normally after our own commit, so nothing to do;
+    // the reconciliation when our commit had failed (guide 33, part 6)
+    record PaymentIntentSucceeded(String eventId, String paymentIntentId) implements StripeNotice {
+    }
+
+    // payment_intent.canceled: the hold was released, by us or by Stripe after 7 days (guide 33, part 7)
+    record PaymentIntentCanceled(String eventId, String paymentIntentId) implements StripeNotice {
+    }
+
     // any other type: answered 200, not recorded
     record Ignored(String eventId, String type) implements StripeNotice {
     }

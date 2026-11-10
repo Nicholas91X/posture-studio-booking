@@ -189,6 +189,75 @@ class StripeClientGatewayTest {
                 .extracting(Received::idempotencyKey).containsOnly("key-1");
     }
 
+    // ***** capture and release (guide 33) *****
+
+    @Test
+    void aCaptureIsAPostToThePaymentIntentWithItsIdempotencyKey() {
+        answer = """
+                {"id": "pi_1", "object": "payment_intent", "status": "succeeded"}
+                """;
+
+        assertThat(gateway.capturePaymentIntent(ACCOUNTS.byName("beta").orElseThrow(), "pi_1", "capture-pi_1"))
+                .isEqualTo(new com.posturestudio.booking.booking.CardHolds.CaptureResult.Captured());
+
+        Received request = received.getFirst();
+        assertThat(request.method()).isEqualTo("POST");
+        assertThat(request.path()).isEqualTo("/v1/payment_intents/pi_1/capture");
+        assertThat(request.idempotencyKey()).isEqualTo("capture-pi_1");
+        assertThat(request.authorization()).isEqualTo("Bearer rk_test_beta_key");
+    }
+
+    // a hold already gone: asking again would get the same answer, so it is a value, not an error
+    @Test
+    void aCaptureOfAPaymentIntentNoLongerCapturableIsRefused() {
+        status = 400;
+        answer = """
+                {"error": {"type": "invalid_request_error", "code": "payment_intent_unexpected_state",
+                           "message": "This PaymentIntent could not be captured because it has a status of canceled."}}
+                """;
+
+        assertThat(gateway.capturePaymentIntent(ACCOUNTS.byName("alpha").orElseThrow(), "pi_1", "capture-pi_1"))
+                .isEqualTo(new com.posturestudio.booking.booking.CardHolds.CaptureResult.Refused("payment_intent_unexpected_state"));
+        assertThat(received).hasSize(1);
+    }
+
+    @Test
+    void aCaptureRefusedByTheCardIsRefused() {
+        status = 402;
+        answer = """
+                {"error": {"type": "card_error", "code": "card_declined", "decline_code": "insufficient_funds",
+                           "message": "Your card has insufficient funds."}}
+                """;
+
+        assertThat(gateway.capturePaymentIntent(ACCOUNTS.byName("alpha").orElseThrow(), "pi_1", "capture-pi_1"))
+                .isInstanceOf(com.posturestudio.booking.booking.CardHolds.CaptureResult.Refused.class);
+    }
+
+    @Test
+    void aCaptureWhenStripeDoesNotAnswerIsPaymentProviderUnavailable() {
+        server.stop(0);
+
+        assertThatThrownBy(() -> gateway.capturePaymentIntent(ACCOUNTS.byName("alpha").orElseThrow(), "pi_1", "capture-pi_1"))
+                .isInstanceOf(ServiceUnavailableException.class);
+    }
+
+    @Test
+    void aReleaseSaysWhetherItReleased() {
+        answer = """
+                {"id": "pi_1", "object": "payment_intent", "status": "canceled"}
+                """;
+        assertThat(gateway.cancelPaymentIntent(ACCOUNTS.byName("alpha").orElseThrow(), "pi_1", "cancel-pi_1")).isTrue();
+        assertThat(received.getFirst().path()).isEqualTo("/v1/payment_intents/pi_1/cancel");
+
+        status = 400;
+        answer = """
+                {"error": {"type": "invalid_request_error", "code": "payment_intent_unexpected_state",
+                           "message": "You cannot cancel this PaymentIntent because it has a status of succeeded."}}
+                """;
+        // already canceled, or captured: false, and the payment is left for Stripe's event to settle
+        assertThat(gateway.cancelPaymentIntent(ACCOUNTS.byName("alpha").orElseThrow(), "pi_1", "cancel-pi_1")).isFalse();
+    }
+
     // D-061, guide 31, 8.1: the call holds the customer lock and the slot, so it must give up soon. With the
     // REAL values: two reads of 5 s each, one retry with the same key, the pause in between: between 10 and
     // 15 seconds. Slow on purpose: tiny timeouts set by the test would prove nothing about the real ones.

@@ -278,12 +278,13 @@ La prova completa ha senso dopo il pezzo 4, quando l'approvazione incassa davver
    ```
 4. In un terminale a parte, l'inoltro degli eventi al backend locale:
    ```
-   stripe listen --events checkout.session.completed,checkout.session.expired --forward-to localhost:8080/api/webhooks/stripe/prova
+   stripe listen --events checkout.session.completed,checkout.session.expired,payment_intent.succeeded,payment_intent.canceled --forward-to localhost:8080/api/webhooks/stripe/prova
    ```
    Il `whsec_...` che stampa va nel `.env`, poi si avvia il backend.
 5. Da admin: `PUT /api/admin/practitioners/{id}/payment-account` con `{"account": "prova"}`.
 6. Da cliente (accesso con il codice da Mailpit, poi il token CSRF): `POST /api/customer/bookings`. Si apre `paymentUrl` nel browser e si paga con la carta di prova `4242 4242 4242 4242`, una scadenza futura qualunque, un CVC qualunque.
 7. Nel terminale di `stripe listen` compare `checkout.session.completed → 200`. `GET /api/customer/bookings/{id}`: `PENDING_APPROVAL` (manuale) o `CONFIRMED` (automatica). Nella dashboard di Stripe il pagamento è **non acquisito** (*uncaptured*).
+7b. (Pezzo 4) Da professionista, `POST /api/panel/bookings/{id}/approve`: nella dashboard il pagamento diventa **riuscito** (*succeeded*), e in `stripe listen` arriva `payment_intent.succeeded → 200` (nessun effetto: il nostro commit è venuto prima). Con un'altra prenotazione, `/reject`: il pagamento diventa **annullato**, ed è qui che si guarda se Stripe ha trattenuto una commissione (Saldo → Transazioni).
 8. Le prove in più: rimandare lo stesso evento dalla dashboard (**un solo effetto**); far scadere una sessione (`stripe checkout sessions expire cs_...`); pagare dopo aver portato a mano la prenotazione a `EXPIRED` (il blocco si annulla, arriva l'email in Mailpit).
 
 ---

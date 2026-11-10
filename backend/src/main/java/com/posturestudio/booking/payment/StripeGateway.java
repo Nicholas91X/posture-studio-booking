@@ -4,6 +4,8 @@ import java.net.URI;
 import java.time.Instant;
 import java.util.Objects;
 
+import com.posturestudio.booking.booking.CardHolds;
+
 /**
  * What the payment module asks of Stripe, in its own words (guide 31, part 10). The real one is
  * StripeClientGateway; the tests use a fake that remembers the calls and can fail on demand, registered in
@@ -18,9 +20,15 @@ interface StripeGateway {
     // throws ServiceUnavailableException (PAYMENT_PROVIDER_UNAVAILABLE) if Stripe does not answer or refuses
     CheckoutSession createCheckoutSession(PaymentAccount account, NewCheckoutSession session, String idempotencyKey);
 
-    // Releases a card hold (cancel of the PaymentIntent, guide 32, part 7). Already canceled is fine: done.
-    // Throws ServiceUnavailableException if Stripe does not answer
-    void cancelPaymentIntent(PaymentAccount account, String paymentIntentId, String idempotencyKey);
+    // Captures a held amount (guide 33). Refused when asking again would not change the answer (the hold expired
+    // or was released, the card was refused); throws ServiceUnavailableException if Stripe does not answer
+    CardHolds.CaptureResult capturePaymentIntent(PaymentAccount account, String paymentIntentId, String idempotencyKey);
+
+    // Releases a card hold (cancel of the PaymentIntent, guide 32, part 7). true: released. false: no longer
+    // cancelable, i.e. already canceled, or CAPTURED (guide 33, part 7): the caller leaves the payment as it is,
+    // and payment_intent.canceled or .succeeded will tell which. Throws ServiceUnavailableException if Stripe
+    // does not answer
+    boolean cancelPaymentIntent(PaymentAccount account, String paymentIntentId, String idempotencyKey);
 
     // Records nested in an interface are implicitly public, and so must be their compact constructors.
     // A Checkout session for one booking, amount held and not captured (D-031)

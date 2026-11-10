@@ -10,6 +10,7 @@ import org.springframework.boot.test.context.TestConfiguration;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Primary;
 
+import com.posturestudio.booking.booking.CardHolds;
 import com.posturestudio.booking.shared.ErrorCode;
 import com.posturestudio.booking.shared.ServiceUnavailableException;
 
@@ -30,9 +31,20 @@ public class FakeStripeGateway implements StripeGateway {
     public record Cancel(String account, String paymentIntentId, String idempotencyKey) {
     }
 
+    // a capture asked
+    public record Capture(String account, String paymentIntentId, String idempotencyKey) {
+    }
+
     private final List<Call> calls = new CopyOnWriteArrayList<>();
     private final List<Cancel> cancels = new CopyOnWriteArrayList<>();
+    private final List<Capture> captures = new CopyOnWriteArrayList<>();
+    // the PaymentIntents captured so far, never forgotten by reset(): on Stripe a capture stays a capture
+    private final java.util.Set<String> captured = java.util.concurrent.ConcurrentHashMap.newKeySet();
     volatile boolean down;
+    // the hold is gone: every capture is refused for good
+    volatile boolean refuseCaptures;
+    // "Stripe captured, our commit failed" (guide 33, part 6): the capture happens, then OUR side fails
+    volatile boolean failAfterCapture;
 
     @Override
     public CheckoutSession createCheckoutSession(PaymentAccount account, NewCheckoutSession session, String idempotencyKey) {
@@ -49,17 +61,54 @@ public class FakeStripeGateway implements StripeGateway {
     }
 
     @Override
-    public void cancelPaymentIntent(PaymentAccount account, String paymentIntentId, String idempotencyKey) {
+    public CardHolds.CaptureResult capturePaymentIntent(PaymentAccount account, String paymentIntentId,
+                                                        String idempotencyKey) {
         if (down) {
             throw new ServiceUnavailableException(ErrorCode.PAYMENT_PROVIDER_UNAVAILABLE, "The fake Stripe is down", null);
         }
+        if (refuseCaptures) {
+            return new CardHolds.CaptureResult.Refused("payment_intent_unexpected_state");
+        }
+        captures.add(new Capture(account.name(), paymentIntentId, idempotencyKey));
+        captured.add(paymentIntentId);
+        if (failAfterCapture) {
+            throw new IllegalStateException("simulated: the money is captured, then our transaction fails");
+        }
+        return new CardHolds.CaptureResult.Captured();
+    }
+
+    @Override
+    public boolean cancelPaymentIntent(PaymentAccount account, String paymentIntentId, String idempotencyKey) {
+        if (down) {
+            throw new ServiceUnavailableException(ErrorCode.PAYMENT_PROVIDER_UNAVAILABLE, "The fake Stripe is down", null);
+        }
+        // as Stripe: a captured PaymentIntent can no longer be canceled. Remembered across reset(), as on Stripe
+        if (captured.contains(paymentIntentId)) {
+            return false;
+        }
         cancels.add(new Cancel(account.name(), paymentIntentId, idempotencyKey));
+        return true;
     }
 
     public void reset() {
         calls.clear();
         cancels.clear();
+        captures.clear();
         down = false;
+        refuseCaptures = false;
+        failAfterCapture = false;
+    }
+
+    public void refuseCaptures() {
+        refuseCaptures = true;
+    }
+
+    public void failAfterCapture() {
+        failAfterCapture = true;
+    }
+
+    public List<Capture> captures() {
+        return List.copyOf(captures);
     }
 
     public List<Cancel> cancels() {
