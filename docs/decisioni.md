@@ -452,7 +452,7 @@ Nella guida l'interfaccia era proposta in `auth`; spostata in `practitioner` dur
 - Due chiamate in uscita verso Stripe (incasso, annullamento), con errori da gestire al passo 9. Un incasso può fallire, per esempio con un blocco scaduto: il professionista ha approvato, ma la prenotazione non si può confermare.
 - Il blocco sulla carta dura in genere circa 7 giorni per i pagamenti online: la finestra di risposta (D-030) deve restare molto più breve. Se un annullamento fallisce, il blocco si scioglie comunque da solo.
 - Il lotto `LATE_PAYMENT` probabilmente non serve più per le sedute: da confermare al passo 10.
-- Da verificare al passo 9 sulla documentazione di Stripe: eventuali commissioni sui blocchi annullati, e la durata esatta del blocco per le carte europee.
+- Da verificare al passo 9 sulla documentazione di Stripe: eventuali commissioni sui blocchi annullati, e la durata esatta del blocco per le carte europee. **Verificato il 2026-11-10**: il blocco dura in genere 7 giorni per le carte online (Visa per le transazioni avviate dall'esercente 5), e Stripe annulla da sé un PaymentIntent non incassato dopo 7 giorni (documentazione). La documentazione **non** dice se un blocco annullato costa una commissione; nella **prova manuale in modalità di prova** il blocco annullato non ha lasciato niente nel saldo (né importo né commissione), mentre il pagamento incassato da 30 € ha portato 28,80 € (1,20 € di commissione, con la carta di prova `4242`, statunitense). Da riconfermare in produzione con il primo rifiuto vero (passo 14).
 
 ---
 
