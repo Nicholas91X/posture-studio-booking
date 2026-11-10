@@ -1,6 +1,7 @@
 package com.posturestudio.booking.payment;
 
 import java.time.Clock;
+import java.util.UUID;
 
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -47,14 +48,33 @@ class StripeCardHolds implements CardHolds {
             throw new IllegalStateException("Booking " + bookingId + " asks " + amountCents + " cents, payment "
                     + payment.getId() + " holds " + payment.getAmountCents());
         }
-        // the same key if the practitioner presses "approve" again after an error: Stripe gives back the first
-        // capture instead of a second one (guide 33, part 6)
+        // FIRST read the PaymentIntent (D-064, as precised on 2026-11-10). An earlier attempt may have captured
+        // with its response lost, or our commit may have failed after a capture: then confirm WITHOUT capturing.
+        // Read before every capture, not only "after an error": remembering the error would need a write that
+        // survives the rollback of this very transaction, on a row this transaction already locks
+        PaymentAccount account = accounts.of(payment);
         String paymentIntentId = payment.getStripePaymentIntentId();
-        CaptureResult result = stripe.capturePaymentIntent(accounts.of(payment), paymentIntentId, "capture-" + paymentIntentId);
-        if (result instanceof CaptureResult.Captured) {
-            payment.capture();
-        }
-        return result;
+        return switch (stripe.paymentIntentStatus(account, paymentIntentId)) {
+            case SUCCEEDED -> {
+                payment.capture();
+                log.info("PaymentIntent {} of booking {} was already captured: confirmed without capturing again",
+                        paymentIntentId, bookingId);
+                yield new CaptureResult.Captured();
+            }
+            case REQUIRES_CAPTURE -> {
+                // a NEW key for every attempt: Stripe keeps a 500 for 24 hours under the same key, and the read
+                // above already rules out a second capture (the library's own retry, within this attempt,
+                // reuses this key)
+                CaptureResult result = stripe.capturePaymentIntent(account, paymentIntentId,
+                        "capture-" + paymentIntentId + "-" + UUID.randomUUID());
+                if (result instanceof CaptureResult.Captured) {
+                    payment.capture();
+                }
+                yield result;
+            }
+            // canceled (the hold expired after 7 days, or was released by hand) or anything else: not capturable
+            case CANCELED, OTHER -> new CaptureResult.Refused("payment_intent_not_capturable");
+        };
     }
 
     @Override

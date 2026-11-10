@@ -75,7 +75,12 @@ public class StripeCardHoldsTest {
     void anApprovalCapturesTheHeldAmountAndConfirms() {
         assertThat(approve()).hasStatusOk().bodyJson().extractingPath("$.status").isEqualTo("CONFIRMED");
 
-        assertThat(stripe.captures()).containsExactly(new Capture("alpha", paymentIntent, "capture-" + paymentIntent));
+        assertThat(stripe.captures()).singleElement().satisfies(capture -> {
+            assertThat(capture.account()).isEqualTo("alpha");
+            assertThat(capture.paymentIntentId()).isEqualTo(paymentIntent);
+            // a new key for every attempt (D-064): capture-<PaymentIntent>-<random>
+            assertThat(capture.idempotencyKey()).startsWith("capture-" + paymentIntent + "-");
+        });
         persisted();
         assertThat(payment()).containsEntry("status", "SUCCEEDED");
         assertThat(bookingStatus()).isEqualTo("CONFIRMED");
@@ -116,6 +121,45 @@ public class StripeCardHoldsTest {
         persisted();
         assertThat(bookingStatus()).isEqualTo("PENDING_APPROVAL");
         assertThat(payment()).containsEntry("status", "AUTHORIZED");
+    }
+
+    // D-064 as precised: a 500 of Stripe must not block the approval for 24 hours. The next attempt reads the
+    // PaymentIntent (still to capture) and captures with a NEW key
+    @Test
+    void afterA500TheNextApprovalReadsThePaymentIntentAndCapturesWithANewKey() {
+        stripe.failNextCapture();
+
+        assertThat(approve()).hasStatus(HttpStatus.SERVICE_UNAVAILABLE);
+        assertThat(approve()).hasStatusOk().bodyJson().extractingPath("$.status").isEqualTo("CONFIRMED");
+
+        assertThat(stripe.captureKeys()).hasSize(2).doesNotHaveDuplicates()
+                .allSatisfy(key -> assertThat(key).startsWith("capture-" + paymentIntent + "-"));
+        assertThat(stripe.captures()).hasSize(1);
+    }
+
+    // the capture happened on Stripe but its response was lost: the next approval reads "succeeded" and
+    // confirms WITHOUT capturing again
+    @Test
+    void afterALostResponseTheNextApprovalConfirmsWithoutCapturingAgain() {
+        stripe.loseNextCaptureResponse();
+
+        assertThat(approve()).hasStatus(HttpStatus.SERVICE_UNAVAILABLE);
+        assertThat(approve()).hasStatusOk().bodyJson().extractingPath("$.status").isEqualTo("CONFIRMED");
+
+        assertThat(stripe.captures()).hasSize(1);
+        assertThat(stripe.captureKeys()).hasSize(1);
+        persisted();
+        assertThat(payment()).containsEntry("status", "SUCCEEDED");
+    }
+
+    // the hold is gone: the read says so, and no capture is even asked
+    @Test
+    void aHoldAlreadyGoneIsRefusedWithoutAskingACapture() {
+        stripe.refuseCaptures();
+
+        assertThat(approve()).hasStatus(HttpStatus.CONFLICT);
+
+        assertThat(stripe.captureKeys()).isEmpty();
     }
 
     // ***** release *****

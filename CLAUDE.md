@@ -61,7 +61,7 @@ Nicholas studia con test interattivi: una domanda alla volta, da punti di vista 
 ## Convenzioni del progetto
 
 - **Lingua**: codice, nomi di classi/tabelle/variabili e messaggi di commit in inglese. Documentazione in italiano. Interfaccia utente in italiano.
-- **Commit**: formato Conventional Commits (`feat:`, `fix:`, `test:`, `docs:`, `refactor:`, `chore:`). Un commit per ogni pezzo funzionante. I commit li fa Nicholas.
+- **Commit**: formato Conventional Commits (`feat:`, `fix:`, `test:`, `docs:`, `refactor:`, `chore:`). Un commit per ogni pezzo funzionante. I commit li fa Claude (deciso da Nicholas il 2026-11-10), dopo che la suite completa è verde, e li dice nel riepilogo.
 - **Soldi**: sempre in centesimi interi (`long` in Java, `bigint` in SQL). Mai `double` o `float`.
 - **Date e ore**: nel database in UTC (`timestamptz`). Si convertono in `Europe/Rome` solo per mostrarle. Gli orari di lavoro settimanali sono un'eccezione: sono ore locali (`LocalTime`), convertite al momento del calcolo.
 - **Segreti** (chiavi Stripe, password del database, chiavi email): mai nel repository. Il file `.env` non si versiona, `.env.example` sì.
@@ -76,7 +76,7 @@ Quando Nicholas dice "chiudiamo", o quando un pezzo è completo:
 1. **Aggiorna `docs/stato.md`**: cosa è finito, cosa resta, eventuali problemi aperti.
 2. **Registra le decisioni**: se in sessione è stata presa una scelta importante, aggiungi una scheda in `docs/decisioni.md`.
 3. **Scrivi o aggiorna `docs/passi/NN-nome-passo.md`** seguendo lo schema qui sotto.
-4. **Proponi il messaggio di commit.**
+4. **Fai il commit** (o i commit) del lavoro della sessione, e dillo nel riepilogo.
 5. **Scrivi un riepilogo di 5–10 righe** che Nicholas riporterà nella chat di pianificazione.
 
 ### Schema dei documenti di passo (`docs/passi/`)

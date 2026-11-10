@@ -20,6 +20,24 @@ interface StripeGateway {
     // throws ServiceUnavailableException (PAYMENT_PROVIDER_UNAVAILABLE) if Stripe does not answer or refuses
     CheckoutSession createCheckoutSession(PaymentAccount account, NewCheckoutSession session, String idempotencyKey);
 
+    // The state of a PaymentIntent, read before every capture (D-064). Throws ServiceUnavailableException if
+    // Stripe does not answer
+    PaymentIntentStatus paymentIntentStatus(PaymentAccount account, String paymentIntentId);
+
+    // what a capture needs to know of a PaymentIntent; Stripe's other states all mean "not capturable"
+    enum PaymentIntentStatus {
+        REQUIRES_CAPTURE, SUCCEEDED, CANCELED, OTHER;
+
+        static PaymentIntentStatus of(String stripeStatus) {
+            return switch (stripeStatus == null ? "" : stripeStatus) {
+                case "requires_capture" -> REQUIRES_CAPTURE;
+                case "succeeded" -> SUCCEEDED;
+                case "canceled" -> CANCELED;
+                default -> OTHER;
+            };
+        }
+    }
+
     // Captures a held amount (guide 33). Refused when asking again would not change the answer (the hold expired
     // or was released, the card was refused); throws ServiceUnavailableException if Stripe does not answer
     CardHolds.CaptureResult capturePaymentIntent(PaymentAccount account, String paymentIntentId, String idempotencyKey);

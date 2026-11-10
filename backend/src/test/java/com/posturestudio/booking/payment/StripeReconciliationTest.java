@@ -105,16 +105,16 @@ public class StripeReconciliationTest {
         assertThat(bookingStatus()).isEqualTo("REJECTED");
     }
 
-    // the practitioner, seeing the error, presses "approve" again: the SAME idempotency key, so Stripe gives
-    // back the first capture instead of taking the money twice
+    // the practitioner, seeing the error, presses "approve" again: the PaymentIntent is read first (D-064), it is
+    // already captured, so the booking is confirmed WITHOUT taking the money twice
     @Test
-    void approvingAgainUsesTheSameIdempotencyKey() {
+    void approvingAgainReadsThePaymentIntentAndConfirmsWithoutCapturingAgain() {
         assertThat(mvc.post().uri("/api/panel/bookings/" + booking + "/approve").with(sessions.practitioner(anna)))
                 .hasStatusOk();
 
-        assertThat(stripe.captures()).extracting(FakeStripeGateway.Capture::idempotencyKey)
-                .containsExactly("capture-" + paymentIntent);
+        assertThat(stripe.captureKeys()).isEmpty();
         assertThat(bookingStatus()).isEqualTo("CONFIRMED");
+        assertThat(paymentStatus()).isEqualTo("SUCCEEDED");
         // and when payment_intent.succeeded arrives, there is nothing left to do
         assertThat(post(succeeded("evt_reconcile_1"))).isEqualTo(200);
         assertThat(paymentStatus()).isEqualTo("SUCCEEDED");

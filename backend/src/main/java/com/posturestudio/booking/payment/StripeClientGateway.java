@@ -107,6 +107,16 @@ class StripeClientGateway implements StripeGateway {
     }
 
     @Override
+    public PaymentIntentStatus paymentIntentStatus(PaymentAccount account, String paymentIntentId) {
+        try {
+            // a GET: no idempotency key, reading is idempotent by nature
+            return PaymentIntentStatus.of(clientOf(account).v1().paymentIntents().retrieve(paymentIntentId).getStatus());
+        } catch (StripeException e) {
+            throw unavailable("read PaymentIntent " + paymentIntentId, account, e);
+        }
+    }
+
+    @Override
     public CardHolds.CaptureResult capturePaymentIntent(PaymentAccount account, String paymentIntentId,
                                                         String idempotencyKey) {
         RequestOptions options = RequestOptions.builder().setIdempotencyKey(idempotencyKey).build();

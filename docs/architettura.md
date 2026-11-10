@@ -159,24 +159,24 @@ Nessun passaggio su Stripe.
 
 ## Stripe
 
-Cosa si usa e cosa va documentato oltre al webhook:
+Cosa si usa, con le decisioni da cui viene:
 
-- **Stripe Checkout**: la pagina di pagamento è di Stripe. Il backend crea una *Checkout Session* con importo, descrizione e `metadata` (id della prenotazione o del pagamento interno), e riceve un indirizzo a cui mandare il cliente.
-- **Scadenza della sessione**: Stripe accetta scadenze da 30 minuti a 24 ore **dalla creazione della sessione**, che arriva un attimo dopo la richiesta. Per questo il blocco dell'orario dura 32 minuti e la sessione scade nello stesso istante (D-061).
-- **Conti di incasso** (D-057, D-060): un conto Stripe per professionista o uno comune, dichiarati nella configurazione; ogni pagamento resta sul conto su cui è nato.
-- **Manual capture** (D-031): per le sedute, la sessione Checkout blocca l'importo senza incassarlo. Il backend chiama poi Stripe per **incassare**, all'approvazione, o per **annullare** il blocco, al rifiuto, alla scadenza o al ritiro. Il blocco dura in genere circa 7 giorni. I pacchetti si incassano subito.
-- **Webhook**, gli eventi gestiti:
-  - `checkout.session.completed` → seduta: importo bloccato, prenotazione in attesa di approvazione; pacchetto: crea il lotto
-  - `checkout.session.expired` → pagamento scaduto; la prenotazione la chiude il lavoro programmato entro un minuto
-  - con l'incasso manuale la sessione completata dice `payment_status = unpaid`: conta `status = complete` (D-062)
-  - un indirizzo per conto (`/api/webhooks/stripe/{conto}`), fuori dal CSRF, protetto dalla firma (D-062)
-  - `payment_intent.succeeded` → riconciliazione: se il nostro commit dopo l'incasso era fallito, il pagamento risulta incassato e la prenotazione confermata, senza incassare di nuovo (D-063)
-  - `payment_intent.canceled` → il blocco sciolto da Stripe dopo 7 giorni, o un nostro annullamento che Stripe non aveva confermato (D-063)
-- **Verifica della firma**: ogni webhook arriva firmato. Il backend controlla la firma con il segreto del webhook prima di fidarsi.
-- **Idempotenza**: Stripe può mandare lo stesso evento più volte, e a volte due eventi per la stessa cosa. Il backend salva l'id di ogni evento elaborato nella stessa transazione dell'elaborazione, e ogni passaggio del pagamento ha lo stato di partenza nel `where` (D-062).
-- **Pagamento arrivato tardi**: se un pagamento viene confermato per una prenotazione già scaduta, il backend **annulla il blocco** sulla carta (D-031, prima era un credito) e avvisa il cliente via email.
-- **Modalità test**: in sviluppo si usano le chiavi di test e le carte di prova di Stripe. La Stripe CLI inoltra i webhook al backend in esecuzione sul computer locale.
-- **Rimborsi**: non gestiti dal sistema. In casi eccezionali si fanno a mano dalla dashboard Stripe.
+- **Stripe Checkout**: la pagina di pagamento è di Stripe. Il backend crea una *Checkout Session* con il prezzo fotografato, il nome del servizio e l'id della prenotazione nei metadati, e riceve un indirizzo a cui mandare il cliente (D-061). Il sistema non vede mai la carta.
+- **Conti di incasso** (D-057, D-060): un conto Stripe per professionista o uno comune, dichiarati nella configurazione e assegnati dall'admin; ogni pagamento resta sul conto su cui è nato, e incasso e annullamento avvengono sempre lì.
+- **Scadenza della sessione**: Stripe accetta scadenze da 30 minuti a 24 ore **dalla creazione della sessione**, che arriva un attimo dopo la richiesta. Per questo il blocco dell'orario dura **32 minuti** e la sessione scade nello stesso istante, arrotondata per difetto al secondo (D-061, che modifica D-008).
+- **Tempi d'attesa verso Stripe** (D-061): 2 secondi per collegarsi, 5 per leggere, un nuovo tentativo; ogni errore di Stripe diventa un 503 e annulla la transazione.
+- **Manual capture** (D-031, D-063): per le sedute la sessione blocca l'importo senza incassarlo. All'**approvazione** il backend legge il PaymentIntent e, se è ancora da incassare, incassa; poi conferma (D-064). Al **rifiuto**, al **ritiro** e alla **scadenza della risposta** annulla il blocco; se Stripe non risponde, un lavoro programmato riprova con pause crescenti, poi si arrende (D-064). Il blocco dura in genere 7 giorni. I pacchetti (passo 10) si incassano subito.
+- **Webhook** (D-062, D-063): un indirizzo per conto, `/api/webhooks/stripe/{conto}`, fuori dal CSRF e protetto dalla firma. **Sugli endpoint di Stripe si abilitano quattro eventi**, formato completo, versione dell'API `2026-10-28.endive`:
+  - `checkout.session.completed` → pagamento bloccato, prenotazione in attesa di approvazione. Con l'incasso manuale la sessione dice `payment_status = unpaid`: conta `status = complete`. (Al passo 10, per un pacchetto: il lotto di crediti.)
+  - `checkout.session.expired` → pagamento scaduto; la prenotazione la chiude il lavoro programmato entro un minuto.
+  - `payment_intent.succeeded` → riconciliazione: se il nostro commit dopo l'incasso era fallito, il pagamento risulta incassato e la prenotazione confermata, senza incassare di nuovo.
+  - `payment_intent.canceled` → il blocco sciolto da Stripe dopo 7 giorni, o un nostro annullamento che Stripe non aveva confermato.
+  - ogni altro tipo: risposta 200, niente registrato.
+- **Verifica della firma**: HMAC-SHA256 di timestamp e corpo grezzo con il segreto dell'endpoint, 5 minuti di tolleranza; firma mancante o sbagliata → 400 (D-062).
+- **Idempotenza**, nei due versi: verso Stripe, ogni chiamata che crea qualcosa porta una chiave (`booking-{id}-checkout`; per incasso e annullamento una chiave nuova a ogni tentativo, perché Stripe restituisce lo stesso 500 alla stessa chiave per 24 ore, D-064). Da Stripe, ogni evento si elabora una volta: tabella `stripe_event` nella stessa transazione, e ogni passaggio del pagamento sull'entità letta con il lucchetto, prima di chiedere qualcosa alla prenotazione (D-062, D-063).
+- **Pagamento arrivato tardi**: se un pagamento arriva per una prenotazione già scaduta, il backend **annulla quel blocco** sul conto del pagamento (D-031, prima era un credito) e avvisa il cliente via email (D-062).
+- **Modalità test**: in sviluppo si usano le chiavi di test e le carte di prova di Stripe. La Stripe CLI inoltra i webhook al backend in esecuzione sul computer locale (guida 32, parte 13.1).
+- **Rimborsi**: non gestiti dal sistema (D-015). In casi eccezionali, che il registro segnala come errori (un incasso per una prenotazione che non si può più confermare), si fanno a mano dalla dashboard di Stripe.
 
 ## Docker e messa online
 
