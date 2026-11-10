@@ -61,7 +61,8 @@ public class StripeReconciliationTest {
         assertThat(stripe.captures()).hasSize(1);
         assertThat(bookingStatus()).isEqualTo("PENDING_APPROVAL");
         assertThat(paymentStatus()).isEqualTo("AUTHORIZED");
-        stripe.reset();
+        // the calls forgotten, not Stripe's state: on Stripe the money stays captured
+        stripe.forgetCalls();
     }
 
     @AfterEach

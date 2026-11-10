@@ -8,6 +8,7 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import com.posturestudio.booking.booking.BookingService;
+import com.posturestudio.booking.booking.CardHolds;
 import com.posturestudio.booking.booking.PaymentOutcome;
 
 /**
@@ -30,15 +31,17 @@ class StripeWebhookService {
     private final PaymentAccounts accounts;
     private final BookingService bookings;
     private final StripeGateway stripe;
+    private final StripeCardHolds cards;
     private final Clock clock;
 
     StripeWebhookService(SeenStripeEvents seen, PaymentRepository payments, PaymentAccounts accounts,
-                         BookingService bookings, StripeGateway stripe, Clock clock) {
+                         BookingService bookings, StripeGateway stripe, StripeCardHolds cards, Clock clock) {
         this.seen = seen;
         this.payments = payments;
         this.accounts = accounts;
         this.bookings = bookings;
         this.stripe = stripe;
+        this.cards = cards;
         this.clock = clock;
     }
 
@@ -80,9 +83,39 @@ class StripeWebhookService {
             log.info("Stripe event {}: payment {} already past PENDING, nothing to do", completed.eventId(), payment.getId());
             return;
         }
-        switch (bookings.paymentAuthorized(payment.getBookingId())) {
-            case PaymentOutcome.Accepted accepted ->
-                    log.info("Payment {} held, booking {} is {}", payment.getId(), payment.getBookingId(), accepted.status());
+        // the source decides the path (V14, D-065): a customer's request waits for its approval; a payment link
+        // is captured at once if the session still waits for it
+        switch (payment.getSource()) {
+            case REQUEST -> {
+                switch (bookings.paymentAuthorized(payment.getBookingId())) {
+                    case PaymentOutcome.Accepted accepted -> log.info("Payment {} held, booking {} is {}",
+                            payment.getId(), payment.getBookingId(), accepted.status());
+                    case PaymentOutcome.NotWanted notWanted -> release(payment, notWanted);
+                }
+            }
+            case LINK -> linkPaid(payment);
+        }
+    }
+
+    // A payment link paid (guide 34, part 6). The session is locked by linkPaymentArrived until our commit: two
+    // links paid together are decided one after the other, and the first one that finds the session still to be
+    // paid in the studio wins; every later one is released (D-059, guide 34, part 7).
+    // THIS PaymentIntent is captured, not "the" held payment of the booking: there may be two
+    private void linkPaid(Payment payment) {
+        switch (bookings.linkPaymentArrived(payment.getBookingId())) {
+            case PaymentOutcome.Accepted accepted -> {
+                // capture first, then change (D-063). Stripe not answering throws: rollback, Stripe retries
+                switch (cards.captureLocked(payment)) {
+                    case CardHolds.CaptureResult.Captured captured -> {
+                        bookings.paidByLink(payment.getBookingId());
+                        log.info("Payment link {} captured: booking {} is now paid by card", payment.getId(),
+                                payment.getBookingId());
+                    }
+                    case CardHolds.CaptureResult.Refused refused ->
+                            log.warn("Payment link {} of booking {} not captured ({}): the session stays to be paid"
+                                    + " in the studio", payment.getId(), payment.getBookingId(), refused.reason());
+                }
+            }
             case PaymentOutcome.NotWanted notWanted -> release(payment, notWanted);
         }
     }

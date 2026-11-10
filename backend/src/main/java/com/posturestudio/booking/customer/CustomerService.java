@@ -85,6 +85,14 @@ public class CustomerService {
                 customer.getLastName());
     }
 
+    // The verified phone of this customer, if any (D-055): for the WhatsApp of a payment link (guide 34, part 9)
+    @Transactional(readOnly = true)
+    public java.util.Optional<String> phoneOf(long customerId) {
+        Customer customer = repository.findById(customerId)
+                .orElseThrow(() -> new NotFoundException("Customer " + customerId + " not found"));
+        return accounts.phoneOf(customer.getUserId());
+    }
+
     // The names of a set of customers, in one query: for the panel lists of booking (piece 6)
     @Transactional(readOnly = true)
     public Map<Long, CustomerName> namesOf(Collection<Long> customerIds) {

@@ -266,6 +266,14 @@ Costruito come raccomandato nella parte 12 (D-062), su richiesta di Nicholas del
 
 ### 13.1 La prova manuale con Stripe in modalità di prova (da fare dopo il pezzo 4)
 
+**Fatta il 2026-11-10**, guidata passo per passo in chat: tutto come atteso, più due errori trovati (guida 34, parte 12.0). Dalla prova reale, in aggiunta ai passi qui sotto:
+- **le chiamate a mano** da PowerShell: `. .\tools\api.ps1`, poi `Api <persona> <metodo> <percorso> '<json>'` (sessione e token CSRF per persona);
+- **la porta 5432** può essere occupata da un altro progetto: `POSTGRES_PORT=5433` nel `.env`;
+- **le chiavi VAPID** sono una coppia: se ne manca una, si rigenerano tutte e due (`java tools/GenerateVapidKeys.java`);
+- **i dati di partenza**: admin da `ADMIN_EMAIL`, poi un professionista (`/api/admin/practitioners`), il conto (`/payment-account`), un servizio (`/api/panel/services`) e gli orari (`/api/panel/schedules`); gli orari liberi chiedono `?from=...&to=...`;
+- **il pagamento in ritardo** si prova portando la prenotazione a `EXPIRED` nel database prima di pagare;
+- **il doppione** con `stripe events resend <evt>`; **la scadenza** con `stripe checkout sessions expire <cs>`.
+
 La prova completa ha senso dopo il pezzo 4, quando l'approvazione incassa davvero. I passi, per non doverli ricostruire:
 
 1. **Un conto Stripe** in modalità di prova (*test mode*). Dalla dashboard, **Sviluppatori → Chiavi API → Crea chiave limitata**, con scrittura su *Checkout Sessions* e *PaymentIntents*: `rk_test_...`.

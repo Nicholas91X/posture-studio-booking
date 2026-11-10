@@ -55,5 +55,12 @@ public enum ErrorCode {
 
     // the practitioner approves, but the amount held on the card can no longer be captured (hold expired or
     // released, card refused): the request stays waiting, to be rejected or left to expire (guide 33, part 5)
-    CARD_CAPTURE_FAILED
+    CARD_CAPTURE_FAILED,
+
+    // a payment link for a session that is not confirmed and to be paid in the studio, or starts too soon for a
+    // Stripe page (D-059, guide 34, part 4)
+    PAYMENT_LINK_NOT_ALLOWED,
+
+    // the previous link of the session was paid a moment ago: no new link, the payment is on its way (guide 34, part 5)
+    PAYMENT_LINK_ALREADY_PAID
 }

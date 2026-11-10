@@ -107,6 +107,32 @@ class StripeClientGateway implements StripeGateway {
     }
 
     @Override
+    public CheckoutSessionStatus checkoutSessionStatus(PaymentAccount account, String checkoutSessionId) {
+        try {
+            return CheckoutSessionStatus.of(clientOf(account).v1().checkout().sessions().retrieve(checkoutSessionId).getStatus());
+        } catch (StripeException e) {
+            throw unavailable("read Checkout session " + checkoutSessionId, account, e);
+        }
+    }
+
+    @Override
+    public boolean expireCheckoutSession(PaymentAccount account, String checkoutSessionId, String idempotencyKey) {
+        RequestOptions options = RequestOptions.builder().setIdempotencyKey(idempotencyKey).build();
+        try {
+            clientOf(account).v1().checkout().sessions().expire(checkoutSessionId, options);
+            return true;
+        } catch (InvalidRequestException e) {
+            // "already expired or isn't in an expireable state" (Stripe's documentation): not an error, the caller
+            // reads the session again to know whether it was paid
+            log.info("Checkout session {} on account {} not expired: no longer open (request {})", checkoutSessionId,
+                    account.name(), e.getRequestId());
+            return false;
+        } catch (StripeException e) {
+            throw unavailable("expire Checkout session " + checkoutSessionId, account, e);
+        }
+    }
+
+    @Override
     public PaymentIntentStatus paymentIntentStatus(PaymentAccount account, String paymentIntentId) {
         try {
             // a GET: no idempotency key, reading is idempotent by nature

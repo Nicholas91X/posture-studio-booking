@@ -452,7 +452,7 @@ Nella guida l'interfaccia era proposta in `auth`; spostata in `practitioner` dur
 - Due chiamate in uscita verso Stripe (incasso, annullamento), con errori da gestire al passo 9. Un incasso può fallire, per esempio con un blocco scaduto: il professionista ha approvato, ma la prenotazione non si può confermare.
 - Il blocco sulla carta dura in genere circa 7 giorni per i pagamenti online: la finestra di risposta (D-030) deve restare molto più breve. Se un annullamento fallisce, il blocco si scioglie comunque da solo.
 - Il lotto `LATE_PAYMENT` probabilmente non serve più per le sedute: da confermare al passo 10.
-- Da verificare al passo 9 sulla documentazione di Stripe: eventuali commissioni sui blocchi annullati, e la durata esatta del blocco per le carte europee.
+- Da verificare al passo 9 sulla documentazione di Stripe: eventuali commissioni sui blocchi annullati, e la durata esatta del blocco per le carte europee. **Verificato il 2026-11-10**: il blocco dura in genere 7 giorni per le carte online (Visa per le transazioni avviate dall'esercente 5), e Stripe annulla da sé un PaymentIntent non incassato dopo 7 giorni (documentazione). La documentazione **non** dice se un blocco annullato costa una commissione; nella **prova manuale in modalità di prova** il blocco annullato non ha lasciato niente nel saldo (né importo né commissione), mentre il pagamento incassato da 30 € ha portato 28,80 € (1,20 € di commissione, con la carta di prova `4242`, statunitense). Da riconfermare in produzione con il primo rifiuto vero (passo 14).
 
 ---
 
@@ -973,7 +973,7 @@ Implementazione (pezzo 3, guida 16): `FreeSlots.compute(SlotQuery)` nel package 
 ---
 
 ## D-059 — Link di pagamento per le sedute "in studio": condivisione con WhatsApp dal telefono del professionista
-**Stato:** accettata · 2026-11-10 · chiude il punto aperto 16 dei requisiti · completa D-040 · brief del passo 9
+**Stato:** accettata · 2026-11-10 · chiude il punto aperto 16 dei requisiti · completa D-040 · brief del passo 9 · **realizzata da D-065**
 
 **Contesto.** Le prenotazioni fatte dal pannello senza crediti sono pagate in studio (D-040). Nicholas ha chiesto un pulsante per mandare al cliente un link con cui pagarle prima, con carta. Il punto aperto 16 chiedeva di decidere il canale, il problema del numero non verificato, l'effetto sulla prenotazione e i link vecchi.
 
@@ -1103,3 +1103,26 @@ Implementazione (pezzo 3, guida 16): `FreeSlots.compute(SlotQuery)` nel package 
 **Alternative scartate.** *Riprovare subito, nella stessa richiesta*: se Stripe non risponde adesso, è probabile che non risponda nemmeno tra un secondo, e il rifiuto del professionista aspetterebbe. *Tentativi senza fine*: un problema permanente (una chiave revocata) riempirebbe il registro per sette giorni; dopo due ore e mezza un intervento a mano è la strada giusta. *La stessa chiave per tutti i tentativi*: dopo un 500 inutile per 24 ore. *Lasciare tutto a `payment_intent.canceled`*: arriva solo dopo 7 giorni.
 
 **Conseguenze.** Una chiamata in più (una lettura, qualche decimo di secondo) per ogni approvazione, dentro la transazione: il caso peggiore dei tempi d'attesa di D-061 vale per la lettura e per l'incasso. La prima versione di questa scheda teneva fissa la chiave dell'incasso (`capture-{pi}`) e accettava il blocco di 24 ore dopo un 500: superata dalla lettura. **Provato**: dopo un 500 l'approvazione successiva incassa con una chiave nuova; dopo una risposta persa conferma senza incassare di nuovo; un blocco già sparito è rifiutato senza chiedere l'incasso; tolti a turno la lettura e la chiave nuova, fallisce il test che li protegge. Inoltre: tolti a turno la registrazione del fallimento, la chiave nuova, la resa dopo cinque tentativi e l'`ApprovalRequested` dell'approvazione automatica, fallisce ogni volta il test che li protegge.
+
+---
+
+## D-065 — Link di pagamento: `payment.source`, la pagina vecchia fatta scadere su Stripe dopo averla letta, incasso di quel PaymentIntent, "il primo vince" con il lucchetto sulla seduta
+**Stato:** accettata · 2026-11-10 · **realizza D-059** · confronto completo: `docs/studio/34-link-di-pagamento.md` · scelte di Claude secondo le raccomandazioni della guida, su indicazione di Nicholas
+
+**Contesto.** D-059 ha deciso il link (WhatsApp, un solo link valido per seduta, blocco e non incasso, "il primo pagamento che arriva mentre la seduta è ancora `IN_STUDIO` si incassa, gli altri si annullano"). Restava da decidere come: chi possiede il link, come si distingue il suo pagamento, come si invalida una pagina che vive su Stripe, come si incassa quando i pagamenti della seduta possono essere due. Verificato il 2026-11-10: Stripe fa scadere solo una sessione `open`, e per le altre risponde con un errore.
+
+**Decisione.**
+- **API** `POST /api/panel/bookings/{id}/payment-link` nel modulo `payment` (area del professionista, D-051): `{paymentUrl, whatsappUrl, expiresAt}`. `booking.linkTarget` decide se la seduta può riceverlo: 404 se non è del professionista; 409 `PAYMENT_LINK_NOT_ALLOWED` se non è `CONFIRMED` e `IN_STUDIO`, o inizia tra meno di **32 minuti**; 409 `CARD_PAYMENTS_UNAVAILABLE` senza conto; 503 se Stripe non risponde.
+- **Migrazione V14**: `payment.source` (`REQUEST`, `LINK`); il webhook decide da lì, non dai metadati di Stripe.
+- **Durata**: **24 ore meno 2 minuti** (corretto dopo la prova manuale: Stripe vuole *meno* di 24 ore dalla creazione, e il nostro orologio era avanti di un secondo), o fino all'inizio della seduta se viene prima. Incasso manuale come per la richiesta, sul conto **attuale** del professionista.
+- **Un solo link valido**: prima di crearne uno nuovo, il `PENDING` vecchio (con il lucchetto) si **legge su Stripe**: `open` → si fa scadere (`expire-{cs}`), `expired` → si chiude e basta, `complete` → 409 **`PAYMENT_LINK_ALREADY_PAID`**, nessun link nuovo. Se la sessione non è più aperta tra la lettura e il "fai scadere", si rilegge. Poi un `flush` esplicito, perché l'`insert` del nuovo (id dal database) parte subito e l'indice "un solo `PENDING`" lo rifiuterebbe. Chiave della sessione nuova: `booking-{id}-link-{casuale}`.
+- **Pagamento di un link** (webhook): pagamento → `AUTHORIZED`; `booking.linkPaymentArrived` blocca la seduta e risponde `Accepted` se è ancora `CONFIRMED` e `IN_STUDIO`; allora si incassa **quel** PaymentIntent (`StripeCardHolds.captureLocked`, con la lettura e la chiave nuova di D-064), e solo dopo `booking.paidByLink` (`paid_with` → `CARD`). `NotWanted` → si annulla quel blocco. Un incasso rifiutato lascia la seduta "in studio".
+- **"Il primo vince"**: il lucchetto sulla seduta, tenuto fino al commit del webhook, mette in fila due pagamenti contemporanei; il secondo legge `CARD` e viene annullato.
+- **Un link invalidato ma pagato lo stesso**: `EXPIRED` → `AUTHORIZED` permesso. Stripe completa solo sessioni aperte: i soldi sono davvero bloccati, e si giudicano come gli altri.
+- **Lucchetti**: la creazione del link blocca solo il pagamento `PENDING`, **mai** la seduta: bloccarla prima potrebbe incrociarsi con il webhook di un link vecchio (pagamento, poi seduta).
+- **WhatsApp**: testo composto dal backend (nome del cliente, servizio, giorno e ora a Roma, link, scadenza); `https://wa.me/<numero senza +>?text=...`, oppure `https://wa.me/?text=...` senza numero.
+- Nessun evento di dominio nuovo: la ricevuta la manda Stripe all'email del cliente.
+
+**Alternative scartate.** *Distinguere i pagamenti dai metadati di Stripe*: la verità sui nostri pagamenti è nel nostro database. *Far scadere la pagina vecchia senza leggerla*: un link appena pagato verrebbe "sostituito" mentre i soldi arrivano. *`CardHolds.capture(bookingId)` anche per i link*: con due link pagati quasi insieme, "il" pagamento `AUTHORIZED` della seduta potrebbero essere due. *Lucchetto sulla seduta anche alla creazione del link*: un possibile deadlock in cambio di niente (il caso che eviterebbe si risolve da solo con "il primo vince"). *Ignorare un `completed` per un pagamento già `EXPIRED`*: un blocco che nessuno annulla.
+
+**Conseguenze.** **Passo 11**: cancellare una seduta "in studio" deve far scadere il link aperto (stessa lettura di prima), e la prova con il percorso vero ("cancellata con un link attivo, poi pagato → blocco annullato") è un suo criterio di "fatto". **Passo 13**: il pannello apre `whatsappUrl`, e traduce i 409. **Provato**: tolti a turno il "solo se ancora in studio", l'`EXPIRED` → `AUTHORIZED`, il `flush`, il "fai scadere" su Stripe, il rifiuto di un link appena pagato, il cambio di `paid_with` e il lucchetto sulla seduta, fallisce ogni volta il test che li protegge; due link pagati nello stesso istante incassano una volta sola.

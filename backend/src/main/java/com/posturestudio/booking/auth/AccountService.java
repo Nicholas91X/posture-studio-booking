@@ -73,6 +73,12 @@ public class AccountService {
         find(userId).activate();
     }
 
+    // The verified phone of an account (D-055), E.164, if any: for the WhatsApp of a payment link (guide 34, part 9)
+    @Transactional(readOnly = true)
+    public java.util.Optional<String> phoneOf(long userId) {
+        return java.util.Optional.ofNullable(find(userId).getPhone());
+    }
+
     // The email of an account, normalized (D-020): for the profile of the customer (guide 25, 7.3)
     @Transactional(readOnly = true)
     public String emailOf(long userId) {

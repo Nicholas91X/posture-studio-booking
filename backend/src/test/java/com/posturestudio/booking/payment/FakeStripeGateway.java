@@ -38,8 +38,10 @@ public class FakeStripeGateway implements StripeGateway {
     private final List<Call> calls = new CopyOnWriteArrayList<>();
     private final List<Cancel> cancels = new CopyOnWriteArrayList<>();
     private final List<Capture> captures = new CopyOnWriteArrayList<>();
-    // the PaymentIntents captured so far, never forgotten by reset(): on Stripe a capture stays a capture
+    // the PaymentIntents captured so far: on Stripe a capture stays a capture (forgetCalls() keeps them)
     private final java.util.Set<String> captured = java.util.concurrent.ConcurrentHashMap.newKeySet();
+    // and the ones released: on Stripe a cancel stays a cancel
+    private final java.util.Set<String> canceled = java.util.concurrent.ConcurrentHashMap.newKeySet();
     volatile boolean down;
     // the hold is gone: every capture is refused for good
     volatile boolean refuseCaptures;
@@ -51,11 +53,29 @@ public class FakeStripeGateway implements StripeGateway {
     volatile boolean loseNextCaptureResponse;
     // every capture asked, with its key, also the failed ones
     private final List<String> captureKeys = new CopyOnWriteArrayList<>();
+    // Checkout sessions the customer paid, and the ones made to expire (all the others are open)
+    private final java.util.Set<String> paidSessions = java.util.concurrent.ConcurrentHashMap.newKeySet();
+    private final List<String> expiredSessions = new CopyOnWriteArrayList<>();
+
+    // the clock of the context, as the creation instant of a session on Stripe
+    private final java.time.Clock clock;
+
+    FakeStripeGateway(java.time.Clock clock) {
+        this.clock = clock;
+    }
 
     @Override
     public CheckoutSession createCheckoutSession(PaymentAccount account, NewCheckoutSession session, String idempotencyKey) {
         if (down) {
             throw new ServiceUnavailableException(ErrorCode.PAYMENT_PROVIDER_UNAVAILABLE, "The fake Stripe is down", null);
+        }
+        // As Stripe (its documentation, and the manual test of 2026-11-10): expires_at between 30 minutes and LESS than
+        // 24 hours from the creation, refused with a 400 otherwise. A fake that does not know the limits of the real
+        // one lets a test pass that the real one would fail
+        java.time.Duration life = java.time.Duration.between(clock.instant(), session.expiresAt());
+        if (life.compareTo(java.time.Duration.ofMinutes(30)) < 0 || life.compareTo(java.time.Duration.ofHours(24)) >= 0) {
+            throw new ServiceUnavailableException(ErrorCode.PAYMENT_PROVIDER_UNAVAILABLE,
+                    "The fake Stripe refuses expires_at " + life + " after the creation", null);
         }
         // unique even across tests that commit in the same database
         String id = "cs_test_fake_" + UUID.randomUUID().toString().replace("-", "");
@@ -64,6 +84,39 @@ public class FakeStripeGateway implements StripeGateway {
                 session.customerEmail(), session.expiresAt(), session.successUrl(), session.cancelUrl(),
                 idempotencyKey, url));
         return new CheckoutSession(id, url);
+    }
+
+    @Override
+    public CheckoutSessionStatus checkoutSessionStatus(PaymentAccount account, String checkoutSessionId) {
+        if (down) {
+            throw new ServiceUnavailableException(ErrorCode.PAYMENT_PROVIDER_UNAVAILABLE, "The fake Stripe is down", null);
+        }
+        if (paidSessions.contains(checkoutSessionId)) {
+            return CheckoutSessionStatus.COMPLETE;
+        }
+        return expiredSessions.contains(checkoutSessionId) ? CheckoutSessionStatus.EXPIRED : CheckoutSessionStatus.OPEN;
+    }
+
+    // as Stripe: only an open session can expire
+    @Override
+    public boolean expireCheckoutSession(PaymentAccount account, String checkoutSessionId, String idempotencyKey) {
+        if (down) {
+            throw new ServiceUnavailableException(ErrorCode.PAYMENT_PROVIDER_UNAVAILABLE, "The fake Stripe is down", null);
+        }
+        if (checkoutSessionStatus(account, checkoutSessionId) != CheckoutSessionStatus.OPEN) {
+            return false;
+        }
+        expiredSessions.add(checkoutSessionId);
+        return true;
+    }
+
+    // the customer paid this session on Stripe's page (the webhook is sent by the test)
+    public void customerPaid(String checkoutSessionId) {
+        paidSessions.add(checkoutSessionId);
+    }
+
+    public List<String> expiredSessions() {
+        return List.copyOf(expiredSessions);
     }
 
     // as Stripe: captured stays captured, released stays released, otherwise still held
@@ -75,7 +128,7 @@ public class FakeStripeGateway implements StripeGateway {
         if (captured.contains(paymentIntentId)) {
             return PaymentIntentStatus.SUCCEEDED;
         }
-        if (refuseCaptures || cancels.stream().anyMatch(cancel -> cancel.paymentIntentId().equals(paymentIntentId))) {
+        if (refuseCaptures || canceled.contains(paymentIntentId)) {
             return PaymentIntentStatus.CANCELED;
         }
         return PaymentIntentStatus.REQUIRES_CAPTURE;
@@ -112,15 +165,27 @@ public class FakeStripeGateway implements StripeGateway {
         if (down) {
             throw new ServiceUnavailableException(ErrorCode.PAYMENT_PROVIDER_UNAVAILABLE, "The fake Stripe is down", null);
         }
-        // as Stripe: a captured PaymentIntent can no longer be canceled. Remembered across reset(), as on Stripe
+        // as Stripe: a captured PaymentIntent can no longer be canceled
         if (captured.contains(paymentIntentId)) {
             return false;
         }
         cancels.add(new Cancel(account.name(), paymentIntentId, idempotencyKey));
+        canceled.add(paymentIntentId);
         return true;
     }
 
+    // everything forgotten, Stripe's state included: a test starts on a clean Stripe
     public void reset() {
+        forgetCalls();
+        captured.clear();
+        canceled.clear();
+        paidSessions.clear();
+        expiredSessions.clear();
+    }
+
+    // only the calls and the switches forgotten; what happened on Stripe (captures, paid and expired sessions)
+    // stays, as it would on the real one (the reconciliation, guide 33, part 6)
+    public void forgetCalls() {
         calls.clear();
         cancels.clear();
         captures.clear();
@@ -173,8 +238,9 @@ public class FakeStripeGateway implements StripeGateway {
 
         @Bean
         @Primary
-        FakeStripeGateway fakeStripeGateway() {
-            return new FakeStripeGateway();
+        // the context's Clock when there is one (fixed or movable in many tests), the system's otherwise
+        FakeStripeGateway fakeStripeGateway(org.springframework.beans.factory.ObjectProvider<java.time.Clock> clock) {
+            return new FakeStripeGateway(clock.getIfAvailable(java.time.Clock::systemUTC));
         }
     }
 }

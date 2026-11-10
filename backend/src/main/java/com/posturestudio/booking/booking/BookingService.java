@@ -208,6 +208,47 @@ public class BookingService {
     // still AUTHORIZED. A capture happens only after an approval, so confirming respects that decision, WITHOUT
     // capturing again. NotWanted: the booking can no longer be confirmed, and money was taken for it (the webhook
     // logs it as an error: refund by hand from the dashboard, D-015)
+    // ***** PAYMENT LINK (D-059, guide 34) *****
+
+    // The minimum life of a Stripe page, with the margin of D-061: a session starting sooner gets no link
+    static final Duration LINK_MINIMUM = Duration.ofMinutes(32);
+
+    // Can this session of this practitioner receive a payment link? 404 if it is not theirs, 409 if it is not
+    // CONFIRMED and to be paid in the studio, or starts too soon (guide 34, part 4). No lock: the worst a race can
+    // do is a link for a session paid a moment ago, whose payment would then be released (guide 34, part 8)
+    @Transactional(readOnly = true)
+    public LinkTarget linkTarget(long practitionerId, long bookingId) {
+        Booking booking = bookings.findByIdAndPractitionerId(bookingId, practitionerId)
+                .orElseThrow(() -> notFound(bookingId));
+        if (!booking.awaitsPaymentInStudio()) {
+            throw new BusinessRuleException(ErrorCode.PAYMENT_LINK_NOT_ALLOWED,
+                    "Booking " + bookingId + " is not a confirmed session to be paid in the studio");
+        }
+        if (booking.getStartsAt().isBefore(clock.instant().plus(LINK_MINIMUM))) {
+            throw new BusinessRuleException(ErrorCode.PAYMENT_LINK_NOT_ALLOWED,
+                    "Booking " + bookingId + " starts too soon for a payment link");
+        }
+        return new LinkTarget(booking.getId(), booking.getPractitionerId(), booking.getCustomerId(),
+                booking.getServiceId(), booking.getPriceCents(), booking.getStartsAt());
+    }
+
+    // The money of a link is held on the card: does the session still want it? (guide 34, part 6). The lock on the
+    // session stays until the end of the webhook's transaction, so two payments arriving together are decided one
+    // after the other: "the first wins" (D-059, guide 34, part 7)
+    @Transactional
+    public PaymentOutcome linkPaymentArrived(long bookingId) {
+        Booking booking = bookings.findLockedById(bookingId).orElseThrow(() -> notFound(bookingId));
+        return booking.awaitsPaymentInStudio() ? new PaymentOutcome.Accepted(booking.getStatus())
+                : new PaymentOutcome.NotWanted(booking.getStatus());
+    }
+
+    // after the capture succeeded (D-063): from now on the session counts as paid by card
+    @Transactional
+    public void paidByLink(long bookingId) {
+        Booking booking = bookings.findLockedById(bookingId).orElseThrow(() -> notFound(bookingId));
+        booking.paidByLink();
+    }
+
     @Transactional
     public PaymentOutcome paymentCaptured(long bookingId) {
         Instant now = clock.instant();
