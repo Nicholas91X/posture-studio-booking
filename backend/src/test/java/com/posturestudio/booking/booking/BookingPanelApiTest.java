@@ -26,7 +26,8 @@ import com.posturestudio.booking.TestcontainersConfiguration;
 
 // The panel answers to requests, from the outside. Today is Friday 6 November 2026, 10:00 in Rome;
 // the requests wait until tomorrow at 10:00 (BookingTestData.LATER). Same configuration as
-// BookingCustomerApiTest: same context. The card is the provisional LoggingCardHolds
+// BookingCustomerApiTest: same context. The card is the real StripeCardHolds with the fake Stripe of every test
+// context (D-063); the waiting requests come with their held payment (BookingTestData.heldPayment)
 @SpringBootTest
 @AutoConfigureMockMvc
 @Import({TestcontainersConfiguration.class, FixedClockConfiguration.class})
