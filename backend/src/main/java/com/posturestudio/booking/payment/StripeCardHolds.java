@@ -48,6 +48,13 @@ class StripeCardHolds implements CardHolds {
             throw new IllegalStateException("Booking " + bookingId + " asks " + amountCents + " cents, payment "
                     + payment.getId() + " holds " + payment.getAmountCents());
         }
+        return captureLocked(payment);
+    }
+
+    // The capture of THIS payment, already locked by the caller: the approval above, and the payment link of
+    // D-065, where two payments of the same booking may be AUTHORIZED together (guide 34, part 6)
+    CaptureResult captureLocked(Payment payment) {
+        long bookingId = payment.getBookingId();
         // FIRST read the PaymentIntent (D-064, as precised on 2026-11-10). An earlier attempt may have captured
         // with its response lost, or our commit may have failed after a capture: then confirm WITHOUT capturing.
         // Read before every capture, not only "after an error": remembering the error would need a write that

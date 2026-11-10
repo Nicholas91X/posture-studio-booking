@@ -32,8 +32,14 @@ class Payment {
     // name: only a configured account can be copied here, and from now on it never changes (D-057)
     static Payment pending(long bookingId, PaymentAccount account, long amountCents, String checkoutSessionId,
                            URI checkoutUrl, Instant now) {
+        return pending(PaymentSource.REQUEST, bookingId, account, amountCents, checkoutSessionId, checkoutUrl, now);
+    }
+
+    static Payment pending(PaymentSource source, long bookingId, PaymentAccount account, long amountCents,
+                           String checkoutSessionId, URI checkoutUrl, Instant now) {
         Objects.requireNonNull(account, "account must not be null");
         Payment payment = new Payment();
+        payment.source = Objects.requireNonNull(source, "source must not be null");
         payment.bookingId = bookingId;
         payment.account = account.name();
         payment.amountCents = Checks.requirePositive(amountCents, "amountCents");
@@ -59,6 +65,11 @@ class Payment {
     // copied from the booking (D-011)
     @Column(updatable = false)
     private long amountCents;
+
+    // a customer's request, or a payment link (V14, D-065)
+    @Column(updatable = false)
+    @Enumerated(EnumType.STRING)
+    private PaymentSource source;
 
     @Column
     @Enumerated(EnumType.STRING)
@@ -96,9 +107,12 @@ class Payment {
     // state the first saved, and gets false. The same compare-and-set of D-062, without a JPQL update that
     // would leave this object stale in memory
 
-    // the customer paid: the amount is held (checkout.session.completed)
+    // The customer paid: the amount is held (checkout.session.completed). From EXPIRED too (D-065, guide 34,
+    // part 6): Stripe completes only sessions that were open, so a "completed" for a payment we had already closed
+    // (a link invalidated while the customer was paying) means money really held on the card, to be judged like
+    // any other; ignoring it would leave a hold nobody releases
     boolean authorize(String paymentIntentId) {
-        if (status != PaymentStatus.PENDING) {
+        if (status != PaymentStatus.PENDING && status != PaymentStatus.EXPIRED) {
             return false;
         }
         this.stripePaymentIntentId = Checks.requireNotBlank(paymentIntentId, "paymentIntentId");
@@ -173,6 +187,10 @@ class Payment {
 
     Long getBookingId() {
         return bookingId;
+    }
+
+    PaymentSource getSource() {
+        return source;
     }
 
     String getAccount() {

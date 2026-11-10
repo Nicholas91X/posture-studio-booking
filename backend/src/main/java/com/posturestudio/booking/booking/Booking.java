@@ -166,6 +166,21 @@ class Booking {
         moveTo(BookingStatus.APPROVAL_EXPIRED);
     }
 
+    // To be paid in the studio, and still waiting for that: the only state a payment link is for (D-059)
+    boolean awaitsPaymentInStudio() {
+        return status == BookingStatus.CONFIRMED && paidWith == PaidWith.IN_STUDIO;
+    }
+
+    // Paid with a payment link (D-059, guide 34, part 6): from now on it counts as paid by card, and so, cancelled
+    // in time, it gives a credit (step 11). Only after the capture succeeded (D-063)
+    void paidByLink() {
+        if (!awaitsPaymentInStudio()) {
+            throw new BusinessRuleException(ErrorCode.PAYMENT_LINK_NOT_ALLOWED,
+                    "Booking " + id + " is not waiting to be paid in the studio");
+        }
+        this.paidWith = PaidWith.CARD;
+    }
+
     // A forbidden step is a 409, not a bug (D-027): it really happens, e.g. approving a request
     // the customer has just withdrawn. Nothing changes if the step is refused
     private void moveTo(BookingStatus next) {

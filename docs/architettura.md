@@ -136,6 +136,12 @@ Lo stesso meccanismo vale per i professionisti: la loro email ha il ruolo `PRACT
 7. **Approvata**: il backend chiede a Stripe l'incasso, e solo quando Stripe risponde che è riuscito la prenotazione è confermata e il cliente riceve l'email di conferma. Se il blocco non c'è più, la richiesta resta in attesa e il professionista riceve un errore che lo dice (D-063).
 8. **Rifiutata, scaduta o ritirata dal cliente**: il backend annulla il blocco sulla carta, l'orario si libera, e il cliente riceve un'email. Non è stato addebitato niente.
 
+### Link di pagamento per una seduta "in studio" (D-059, D-065)
+
+1. Il professionista, su una sua seduta confermata da pagare in studio, chiede un link. Il backend fa scadere su Stripe la pagina del link precedente (se non è appena stata pagata), crea una sessione Checkout con *manual capture* che vale 24 ore o fino all'inizio della seduta, e restituisce l'indirizzo della pagina e quello di WhatsApp con il messaggio pronto.
+2. Il professionista manda il messaggio dal suo telefono; il cliente paga: importo bloccato.
+3. Al webhook: se la seduta aspetta ancora di essere pagata in studio, il backend **incassa subito** e la seduta passa a "pagata con carta"; altrimenti (cancellata, già pagata da un altro link) **annulla il blocco**. Di due pagamenti, vince il primo che arriva.
+
 ### Prenotazione con credito
 
 1. Il cliente sceglie un orario. Il backend vede che ha crediti validi per quel professionista e servizio.

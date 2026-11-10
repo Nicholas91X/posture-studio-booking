@@ -20,6 +20,27 @@ interface StripeGateway {
     // throws ServiceUnavailableException (PAYMENT_PROVIDER_UNAVAILABLE) if Stripe does not answer or refuses
     CheckoutSession createCheckoutSession(PaymentAccount account, NewCheckoutSession session, String idempotencyKey);
 
+    // The state of a Checkout session, read before invalidating a payment link (D-065, guide 34, part 5).
+    // Throws ServiceUnavailableException if Stripe does not answer
+    CheckoutSessionStatus checkoutSessionStatus(PaymentAccount account, String checkoutSessionId);
+
+    // Makes an OPEN session expire: the customer can no longer pay it. false: it was no longer open (paid, or
+    // already expired), the caller reads it again. Throws ServiceUnavailableException if Stripe does not answer
+    boolean expireCheckoutSession(PaymentAccount account, String checkoutSessionId, String idempotencyKey);
+
+    enum CheckoutSessionStatus {
+        OPEN, COMPLETE, EXPIRED;
+
+        static CheckoutSessionStatus of(String stripeStatus) {
+            return switch (stripeStatus == null ? "" : stripeStatus) {
+                case "open" -> OPEN;
+                case "complete" -> COMPLETE;
+                case "expired" -> EXPIRED;
+                default -> throw new IllegalStateException("Unknown Checkout session status " + stripeStatus);
+            };
+        }
+    }
+
     // The state of a PaymentIntent, read before every capture (D-064). Throws ServiceUnavailableException if
     // Stripe does not answer
     PaymentIntentStatus paymentIntentStatus(PaymentAccount account, String paymentIntentId);

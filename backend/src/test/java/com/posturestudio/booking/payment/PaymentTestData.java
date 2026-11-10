@@ -76,6 +76,16 @@ final class PaymentTestData {
         return bookingId;
     }
 
+    // a payment link of a session (V14): PENDING for a valid one, EXPIRED for one already invalidated
+    long linkPayment(long bookingId, String account, String status, String checkoutSessionId) {
+        return jdbc.queryForObject("""
+                insert into payment (booking_id, account, amount_cents, status, stripe_checkout_session_id, checkout_url,
+                                     source)
+                values (?, ?, 3000, ?, ?, 'https://checkout.stripe.test/c/pay/' || ?, 'LINK')
+                returning id
+                """, Long.class, bookingId, account, status, checkoutSessionId, checkoutSessionId);
+    }
+
     long payment(long bookingId, String account, String status, String checkoutSessionId) {
         return jdbc.queryForObject("""
                 insert into payment (booking_id, account, amount_cents, status, stripe_checkout_session_id, checkout_url)
