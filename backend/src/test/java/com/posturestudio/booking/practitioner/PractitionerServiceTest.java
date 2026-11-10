@@ -17,6 +17,7 @@ import org.springframework.jdbc.core.JdbcTemplate;
 
 import com.posturestudio.booking.TestcontainersConfiguration;
 import com.posturestudio.booking.auth.AccountService;
+import com.posturestudio.booking.shared.BusinessRuleException;
 import com.posturestudio.booking.shared.NotFoundException;
 
 // @DataJpaTest starts only JPA: services are not there, so PractitionerService is imported by hand,
@@ -135,6 +136,61 @@ public class PractitionerServiceTest {
                 .isEqualTo(missing.getMessage().replace(String.valueOf(neverUsed), "ID"));
     }
 
+    // ***** ADMIN (guide 26) *****
+
+    @Test
+    void aCreatedPractitionerStartsWithTheDatabaseDefaultsInMemoryAndInTheRow() {
+        AdminPractitionerView created = service.create(new NewPractitioner("anna@example.com", "Anna", "Rossi"));
+
+        // in memory, same transaction: @Generated read the defaults back with the insert (guide 26, part 5)
+        assertThat(service.getSettings(created.id())).isEqualTo(DEFAULTS);
+        // in the row: the database wrote them, not Java
+        assertThat(readRow(created.id())).isEqualTo(DEFAULTS);
+        assertThat(created).isEqualTo(new AdminPractitionerView(created.id(), "anna@example.com", "Anna", "Rossi", true));
+    }
+
+    @Test
+    void theSettingsOfACreatedPractitionerCanStillBeChanged() {
+        // @Generated must not keep the columns out of the updates too
+        long id = service.create(new NewPractitioner("anna@example.com", "Anna", "Rossi")).id();
+
+        service.updateSettings(id, CHANGED);
+        entityManager.flush();
+
+        assertThat(readRow(id)).isEqualTo(CHANGED);
+    }
+
+    @Test
+    void aRefusedEmailCreatesNoPractitioner() {
+        insertPractitioner("anna@example.com");
+
+        Assertions.assertThrows(BusinessRuleException.class,
+                () -> service.create(new NewPractitioner("anna@example.com", "Anna", "Rossi")));
+        assertThat(jdbc.queryForObject("select count(*) from practitioner", Integer.class)).isEqualTo(1);
+    }
+
+    @Test
+    void deactivatedPractitionerLeavesThePublicListAndComesBack() {
+        long anna = insertPractitioner("anna@example.com", "Anna", "Rossi", true);
+
+        assertThat(service.deactivate(anna).active()).isFalse();
+        assertThat(service.listActive()).isEmpty();
+        Assertions.assertThrows(NotFoundException.class, () -> service.requireActive(anna));
+
+        assertThat(service.activate(anna).active()).isTrue();
+        assertThat(service.listActive()).extracting(PublicPractitioner::id).containsExactly(anna);
+    }
+
+    @Test
+    void theAdminListHasEmailAndStateInNameOrder() {
+        long rossi = insertPractitioner("anna@example.com", "Anna", "Rossi", true);
+        long bianchi = insertPractitioner("marco@example.com", "Marco", "Bianchi", false);
+
+        assertThat(service.listForAdmin()).containsExactly(
+                new AdminPractitionerView(bianchi, "marco@example.com", "Marco", "Bianchi", false),
+                new AdminPractitionerView(rossi, "anna@example.com", "Anna", "Rossi", true));
+    }
+
     private PractitionerSettings readRow(long practitionerId) {
         Map<String, Object> row = jdbc.queryForMap(
                 """
@@ -153,6 +209,21 @@ public class PractitionerServiceTest {
                 (Integer) row.get("max_future_bookings"),
                 BookingApproval.valueOf((String) row.get("booking_approval")),
                 (Integer) row.get("approval_window_hours"));
+    }
+
+    // ***** contact (guide 27, 5.4) *****
+
+    // deactivated too: an email about a booking already made is still due
+    @Test
+    void theContactOfAPractitionerHasTheEmailOfTheirAccountEvenWhenDeactivated() {
+        long anna = insertPractitioner("anna@example.com", "Anna", "Rossi", false);
+
+        assertThat(service.contactOf(anna)).isEqualTo(new PractitionerContact("anna@example.com", "Anna", "Rossi"));
+    }
+
+    @Test
+    void theContactOfAMissingPractitionerIsNotFound() {
+        Assertions.assertThrows(NotFoundException.class, () -> service.contactOf(999999));
     }
 
     private long insertPractitioner(String email) {

@@ -17,6 +17,7 @@ import org.springframework.transaction.annotation.Transactional;
 
 import com.jayway.jsonpath.JsonPath;
 import com.posturestudio.booking.FixedClockConfiguration;
+import com.posturestudio.booking.TestSessions;
 import com.posturestudio.booking.TestcontainersConfiguration;
 
 // The PROVISIONAL simulated payment, with its switch on (guide 20, part 5). A context of its own, because
@@ -30,6 +31,10 @@ public class SimulatedPaymentApiTest {
 
     @Autowired
     MockMvcTester mvc;
+
+    // signed-in requests: a real session and a CSRF token (guide 25, part 8)
+    @Autowired
+    TestSessions sessions;
 
     @Autowired
     JdbcTemplate jdbc;
@@ -49,7 +54,7 @@ public class SimulatedPaymentApiTest {
 
     @Test
     void aSimulatedPaymentTakesTheRequestToThePractitioner() throws Exception {
-        MvcTestResult requested = mvc.post().uri("/api/customer/bookings").header("X-Customer-Id", cliente)
+        MvcTestResult requested = mvc.post().uri("/api/customer/bookings").with(sessions.customer(cliente))
                 .contentType(MediaType.APPLICATION_JSON)
                 .content("""
                         {"practitionerId": %d, "serviceId": %d, "startsAt": "2026-11-09T09:00:00+01:00"}

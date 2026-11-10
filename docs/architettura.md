@@ -64,7 +64,7 @@ Un'unica applicazione, divisa in package per area. Ogni modulo espone verso gli 
 | `booking` | Prenotazioni, blocco temporaneo, approvazione (D-030), cancellazioni |
 | `credit` | Lotti e movimenti dei crediti |
 | `payment` | Integrazione Stripe, webhook |
-| `notification` | Invio email e notifiche push, dispositivi registrati (D-032) |
+| `notification` | Invio email e notifiche push, dispositivi registrati (D-032). Ascolta gli eventi di `booking` dopo il commit, in un altro thread (D-053); push cifrate e firmate con le classi del JDK, solo verso i servizi push noti, con l'email al professionista come riserva (D-054); nessun modulo dipende da lui |
 
 ### Livelli dentro ogni modulo
 
@@ -111,10 +111,15 @@ Un'unica applicazione, divisa in package per area. Ogni modulo espone verso gli 
 
 1. L'utente inserisce l'email.
 2. Il backend genera un codice di 6 cifre, ne salva solo l'impronta (HMAC con una chiave segreta, D-050), con scadenza di 10 minuti e un massimo di 5 tentativi, e lo invia via email. La risposta è identica che l'email esista o no; limiti per email e per IP (429).
-3. L'utente inserisce il codice. Se è corretto, e l'email non era mai stata vista, nasce l'account `CUSTOMER` (D-050). Il backend crea la sessione e la invia come cookie `HttpOnly`, `Secure`, `SameSite=Lax`.
+3. L'utente inserisce il codice. Se è corretto, e l'email non era mai stata vista, nasce l'account `CUSTOMER` (D-050). Il backend crea la sessione e la invia come cookie `SESSION`, `HttpOnly`, `Secure`, `SameSite=Lax`, con `Max-Age` di 90 giorni. All'accesso l'id della sessione cambia (*session fixation*).
 4. Frontend e backend sono sullo stesso dominio (grazie a Caddy), quindi il cookie funziona senza configurazioni particolari.
+5. **La sessione** (D-051) vive in PostgreSQL con Spring Session JDBC, e sopravvive ai riavvii. Scade dopo 30 giorni senza richieste, e comunque 90 giorni dopo l'accesso. Contiene solo l'id dell'utente: a ogni richiesta il backend rilegge l'account, quindi un account disattivato è fuori subito e il ruolo è sempre quello attuale.
+6. **Regole per area** (Spring Security, una regola per prefisso): `/api/public/**` aperto, `/api/panel/**` solo professionisti, `/api/customer/**` solo clienti, `/api/admin/**` solo l'admin, `/api/account/**` chiunque sia entrato (il proprio numero di telefono, D-055), tutto il resto chiuso a tutti. Nessuna sessione: 401; ruolo sbagliato: 403; la cosa di un altro: 404.
+7. **CSRF**: ogni richiesta che cambia qualcosa, accesso compreso, rimanda nell'header `X-XSRF-TOKEN` il token del cookie `XSRF-TOKEN`.
+8. Un cliente appena entrato senza nome e cognome li dà una volta (`PUT /api/customer/profile`); prima riceve 409 `PROFILE_INCOMPLETE`.
+9. **Via SMS** (D-055): chi è entrato può aggiungere un cellulare italiano, verificato con un codice mandato a quel numero (`/api/account/phone`). Da allora può accedere anche con un codice via SMS (`/api/public/auth/login-code/sms`, `/api/public/auth/session/sms`). Un numero non crea mai un account. La risposta è uguale per ogni numero, e l'SMS parte in un altro thread; limiti per numero, IP e account, e un tetto di 100 SMS al giorno. Senza un fornitore configurato le API SMS rispondono 503.
 
-Lo stesso meccanismo vale per i professionisti: la loro email ha il ruolo `PRACTITIONER`, che apre il pannello.
+Lo stesso meccanismo vale per i professionisti: la loro email ha il ruolo `PRACTITIONER`, che apre il pannello. I professionisti li crea e li disattiva l'admin (`/api/admin/practitioners`, D-052). Il primo admin nasce all'avvio dall'email in `ADMIN_EMAIL`, una variabile d'ambiente: nel repository non c'è.
 
 ## Flussi principali
 
@@ -127,7 +132,7 @@ Lo stesso meccanismo vale per i professionisti: la loro email ha il ruolo `PRACT
 5. Stripe avvisa il backend con il webhook `checkout.session.completed`. La prenotazione passa ad "in attesa di approvazione", con la scadenza fotografata.
 6. **Approvazione**:
    - automatica: il backend approva subito;
-   - manuale: il backend avvisa il professionista con una notifica push (email di riserva), e lui approva o rifiuta dal pannello entro la scadenza.
+   - manuale: il backend avvisa il professionista con una notifica push su tutti i suoi dispositivi; se nessuno la accetta, con un'email (D-054). Lui approva o rifiuta dal pannello entro la scadenza.
 7. **Approvata**: il backend chiede a Stripe l'incasso. Quando Stripe risponde che è riuscito, la prenotazione è confermata e il cliente riceve l'email di conferma.
 8. **Rifiutata, scaduta o ritirata dal cliente**: il backend annulla il blocco sulla carta, l'orario si libera, e il cliente riceve un'email. Non è stato addebitato niente.
 

@@ -2,7 +2,13 @@
  * Module "notification": emails, and from step 8 piece 5 push notifications (D-032, D-039).
  *
  * It implements what other modules declare they need (LoginCodeSender of auth), so the dependencies go
- * one way: notification -> auth, never the opposite (guide 24, part 7). From piece 4 it also listens to
- * the events of booking.
+ * one way: notification -> auth, never the opposite (guide 24, part 7).
+ * From piece 4 it listens to the events of booking (BookingNotifications, guide 27): after the commit, in
+ * a virtual thread of its own (NotificationConfiguration), with the texts decided by BookingEmails, a pure
+ * function. It asks customer, practitioner and catalog for names and addresses; nobody depends on it.
+ * From piece 5 the push notifications (guide 28): the devices of the practitioners (push_subscription, V7,
+ * PushSubscriptionController under /api/panel), the encryption of RFC 8291 and the VAPID signature of
+ * RFC 8292 with JDK classes only (PushEncryption, Vapid, P256), and PushSender, tried before the email to
+ * the practitioner, which becomes its fallback (D-032).
  */
 package com.posturestudio.booking.notification;

@@ -8,6 +8,7 @@ import static org.mockito.BDDMockito.given;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.boot.webmvc.test.autoconfigure.AutoConfigureMockMvc;
 import org.springframework.boot.webmvc.test.autoconfigure.WebMvcTest;
 import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.http.HttpStatus;
@@ -19,8 +20,11 @@ import org.springframework.test.web.servlet.assertj.MvcTestResult;
 import com.posturestudio.booking.practitioner.CurrentPractitioner;
 
 // Only the web layer (controller, ApiExceptionHandler, Jackson, validation): no database, no container.
-// The service is a fake, so this test can produce the two errors the real API cannot be pushed into
+// The service is a fake, so this test can produce the two errors the real API cannot be pushed into.
+// Without the filters (addFilters = false): the security chain reads the accounts from the database, and
+// here there is none. Who acts is CurrentPractitioner, a fake too; the rules of access are tested elsewhere
 @WebMvcTest(CatalogPanelController.class)
+@AutoConfigureMockMvc(addFilters = false)
 public class CatalogPanelErrorsTest {
 
     @Autowired

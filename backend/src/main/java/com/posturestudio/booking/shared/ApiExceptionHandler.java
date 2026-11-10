@@ -11,6 +11,9 @@ import org.springframework.http.HttpStatus;
 import org.springframework.http.HttpStatusCode;
 import org.springframework.http.ProblemDetail;
 import org.springframework.http.ResponseEntity;
+import org.springframework.security.access.AccessDeniedException;
+import org.springframework.security.core.AuthenticationException;
+import org.springframework.security.web.csrf.CsrfException;
 import org.springframework.web.bind.MethodArgumentNotValidException;
 import org.springframework.web.bind.annotation.ExceptionHandler;
 import org.springframework.web.bind.annotation.RestControllerAdvice;
@@ -47,6 +50,25 @@ class ApiExceptionHandler extends ResponseEntityExceptionHandler {
     @ExceptionHandler(NotAuthenticatedException.class)
     ProblemDetail notAuthenticated(NotAuthenticatedException e) {
         return ProblemDetail.forStatusAndDetail(HttpStatus.UNAUTHORIZED, e.getMessage());
+    }
+
+    // The refusals of Spring Security's filters, brought here by SecurityConfiguration (guide 25, 6.3).
+    // 401: nobody is signed in, on an area that needs someone
+    @ExceptionHandler(AuthenticationException.class)
+    ProblemDetail notSignedIn(AuthenticationException e) {
+        return ProblemDetail.forStatusAndDetail(HttpStatus.UNAUTHORIZED, "Sign in first");
+    }
+
+    // 403: signed in, but this area is not for this role; or a request that changes something without
+    // the CSRF token (for Spring Security a refusal like the others), which gets its own code
+    @ExceptionHandler(AccessDeniedException.class)
+    ProblemDetail denied(AccessDeniedException e) {
+        if (e instanceof CsrfException) {
+            ProblemDetail problem = ProblemDetail.forStatusAndDetail(HttpStatus.FORBIDDEN, "Missing or wrong CSRF token");
+            problem.setProperty("code", "CSRF_TOKEN_INVALID");
+            return problem;
+        }
+        return ProblemDetail.forStatusAndDetail(HttpStatus.FORBIDDEN, "Not allowed for this account");
     }
 
     // 404 for "missing" and for "someone else's": the same message, nothing to tell them apart

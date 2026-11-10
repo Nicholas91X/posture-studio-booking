@@ -242,7 +242,7 @@ In Java la conversione in minuscolo avviene **in un posto solo**, prima di salva
 ---
 
 ## D-021 — Ruolo `ADMIN` per chi gestisce la piattaforma
-**Stato:** accettata · 2026-10-16
+**Stato:** accettata · 2026-10-16 · **completata da D-052** (2026-11-09): l'API dell'admin per i professionisti, e il primo admin da `ADMIN_EMAIL`
 
 **Contesto.** I requisiti dicono che i professionisti gestiscono tutto dal pannello, ma non chi crea i professionisti stessi. Nicholas, durante la scrittura di V1, ha individuato il buco.
 
@@ -457,7 +457,7 @@ Nella guida l'interfaccia era proposta in `auth`; spostata in `practitioner` dur
 ---
 
 ## D-032 — Notifiche push con Web Push, dal pannello installabile come app
-**Stato:** accettata · 2026-11-06 · modifica l'architettura (modulo `notification`, prima solo email) · **modificata da D-039** (2026-11-06): lato backend al passo 8, non al passo 7
+**Stato:** accettata · 2026-11-06 · modifica l'architettura (modulo `notification`, prima solo email) · **modificata da D-039** (2026-11-06): lato backend al passo 8, non al passo 7 · **completata da D-054** (2026-11-09): lato backend fatto
 
 **Contesto.** Con l'approvazione manuale (D-030) il professionista deve sapere subito che c'è una richiesta, perché ha un tempo limitato per rispondere. Nicholas: le notifiche push servono in ogni caso. Il pannello è un sito (Next.js), non un'app.
 
@@ -585,7 +585,7 @@ Implementazione (pezzo 3, guida 16): `FreeSlots.compute(SlotQuery)` nel package 
 ---
 
 ## D-039 — Notifiche push lato backend al passo 8, insieme all'email
-**Stato:** accettata · 2026-11-06 · modifica D-032 (conseguenze: "lato backend al passo 7")
+**Stato:** accettata · 2026-11-06 · modifica D-032 (conseguenze: "lato backend al passo 7") · **completata da D-053** (2026-11-09): le email ascoltano gli eventi; `serviceId` aggiunto agli eventi
 
 **Contesto.** D-032 metteva le notifiche push lato backend al passo 7, insieme all'approvazione. Ma la stessa D-032 vuole un'**email di riserva** quando il professionista non ha dispositivi registrati o l'invio fallisce, e il servizio email arriva al passo 8 (requisiti, punto aperto 5). Al passo 7 le push nascerebbero senza la loro riserva, cioè con richieste da approvare che possono andare perse.
 
@@ -794,7 +794,7 @@ Implementazione (pezzo 3, guida 16): `FreeSlots.compute(SlotQuery)` nel package 
 ---
 
 ## D-050 — Codice di accesso via email: HMAC, risultato invece di eccezione, account alla verifica, limiti nel database
-**Stato:** accettata · 2026-11-09 · precisa D-014 · confronto completo: `docs/studio/24-codice-di-accesso-email.md` · scelte di Claude secondo le raccomandazioni della guida, su indicazione di Nicholas
+**Stato:** accettata · 2026-11-09 · precisa D-014 · confronto completo: `docs/studio/24-codice-di-accesso-email.md` · **completata da D-055** (2026-11-09): canale `SMS`, colonne `purpose`, `requested_by`, `message_sent` · scelte di Claude secondo le raccomandazioni della guida, su indicazione di Nicholas
 
 **Contesto.** Il pezzo 1 del passo 8 costruisce richiesta e verifica del codice di D-014 (6 cifre, 10 minuti, 5 tentativi, solo l'impronta). Da decidere: la tabella, pensando all'SMS del pezzo 6; quale impronta, visto che i codici possibili sono solo un milione; come restano scritti i tentativi sbagliati; quando nasce l'account; cosa succede agli account disattivati; dove si contano i limiti; chi spedisce il codice, visto che `auth` non dipende da nessun modulo.
 
@@ -812,3 +812,106 @@ Implementazione (pezzo 3, guida 16): `FreeSlots.compute(SlotQuery)` nel package 
 
 **Conseguenze.** `auth` resta senza dipendenze; nasce il modulo `notification` (→ `auth`). Il lavoro di pulizia si accende e si spegne con gli altri (`booking.jobs.enabled`, D-047). **Provato**: senza il lucchetto, 10 ipotesi sbagliate in parallelo sono state contate tutte come `Wrong`, cioè 10 tentativi invece di 5. L'endpoint della verifica, la sessione e `POST /api/customer/profile` sono del pezzo 2. Al passo 14: controllare che Caddy sostituisca `X-Forwarded-For` invece di accodarlo; il fornitore email vero (punto aperto 5) con il suo indirizzo mittente (`MAIL_FROM`) e le credenziali SMTP o API.
 
+---
+
+## D-051 — Sessione e Spring Security: solo l'id nella sessione, Spring Session JDBC, CSRF ovunque, `denyAll` per il resto
+**Stato:** accettata · 2026-11-09 · completa D-014, D-028, D-029, D-045 e D-050 · confronto completo: `docs/studio/25-sessione-e-spring-security.md` · scelte di Claude secondo le raccomandazioni della guida, su indicazione di Nicholas
+
+**Contesto.** Dopo la verifica del codice (D-050) il sistema deve ricordarsi dell'utente alle richieste successive, assegnare ogni area al suo ruolo con una regola sola (D-029), buttare fuori gli account disattivati anche con la sessione aperta, e togliere i due sostituti provvisori `DevHeaderCurrentPractitioner` e `DevHeaderCurrentCustomer` (D-028, D-045).
+
+**Decisione.**
+- **Accesso in un controller**: `POST /api/public/auth/session` chiama `LoginCodeService.verify` e decide con uno `switch` sui `record` di `CodeCheck`. Esiti: 200 con `{role}`; 401 `CODE_WRONG` o `CODE_EXPIRED`; 403 `ACCOUNT_DEACTIVATED` (codici in `AuthErrorCode`). All'accesso l'id della sessione cambia (`changeSessionId`), e l'utente si salva nella sessione a mano. `GET` dice chi c'è (401 se nessuno), `DELETE` invalida la sessione (204).
+- **Nella sessione solo l'id dell'utente e l'istante dell'accesso.** Un `SecurityContextRepository` nostro (`SessionAccounts`) rilegge l'account a ogni richiesta, per chiave primaria e solo quando qualcuno chiede chi c'è. Se l'account è attivo, costruisce l'`Authentication` con il ruolo **attuale**. Se è disattivato, non esiste più o la sessione ha più di 90 giorni, invalida la sessione e la richiesta diventa anonima.
+- **Spring Session JDBC**: le sessioni stanno in PostgreSQL e sopravvivono ai riavvii. Le tabelle vengono dalla migrazione V6, copiata dallo schema di Spring Session 4.1.1 (`initialize-schema=never`).
+- **Durate**: 30 giorni di inattività (`spring.session.timeout`), 90 giorni al massimo dall'accesso (`SessionAccounts.MAX_DURATION`).
+- **Cookie** `SESSION` dichiarato come bean (`SessionCookieConfiguration`): `HttpOnly`, `Secure`, `SameSite=Lax`, `Max-Age` di 90 giorni, preso dalla stessa costante.
+- **CSRF** acceso ovunque, accesso compreso (contro il *login CSRF*), con `csrf.spa()`: token nel cookie `XSRF-TOKEN`, rimandato nell'header `X-XSRF-TOKEN`. Senza token, 403 `CSRF_TOKEN_INVALID`. Unica eccezione `/api/dev/**`, fino al passo 9.
+- **Regole**: `/api/public/**` aperto; `/api/panel/**` solo `PRACTITIONER`; `/api/customer/**` solo `CUSTOMER`; `/api/admin/**` solo `ADMIN`; `/api/dev/**` aperto (esiste solo con la proprietà). Tutto il resto `denyAll()`, cioè chiuso anche a chi ha un account. Gli inoltri interni a `/error` sono permessi. *Request cache*, `formLogin`, `httpBasic` e `logout` di Spring sono spenti, e così il `UserDetailsService` automatico.
+- **Risposte d'errore dei filtri**: le due funzioni di Spring Security che scrivono 401 e 403 (`AuthenticationEntryPoint`, `AccessDeniedHandler`) passano l'eccezione al `HandlerExceptionResolver` di Spring MVC. Così le scrive `ApiExceptionHandler` come `ProblemDetail`, nell'unico posto dove nascono le risposte d'errore.
+- **`CurrentUser`** in `auth` (id e ruolo di chi agisce). `SessionCurrentPractitioner` e `SessionCurrentCustomer` sostituiscono i DevHeader senza cambiare le interfacce. Un cliente entrato senza nome e cognome riceve 409 `PROFILE_INCOMPLETE`.
+- **Profilo**: `GET` e `PUT /api/customer/profile`, che leggono `CurrentUser`. `PUT` crea la riga `customer` al primo accesso e poi corregge i nomi.
+- **Test**: una sessione vera, creata in Spring Session dall'aiutante `TestSessions`, più `csrf()`. L'accesso completo con il codice in `SessionApiTest`; ruoli e aree in `ConfidentialityTest`.
+
+**Alternative scartate.** *JWT*: non si revoca, e un account disattivato resterebbe dentro fino alla scadenza. *Filtro e `AuthenticationProvider` nostri*: più classi, e gli esiti tornerebbero eccezioni. *One-Time Token Login di Spring*: link al posto del codice, senza tentativi né limiti. *`SecurityContext` intero nella sessione*: ruolo fermo al momento dell'accesso, e oggetti di Spring serializzati per mesi. *Sessioni nella memoria di Tomcat*: tutti fuori a ogni riavvio. *Redis*: un servizio in più. *CSRF spento confidando in `SameSite`*: una difesa sola. *`authenticated()` per il resto*: un'API fuori dai prefissi sarebbe aperta a ogni cliente. *Cookie da `server.servlet.session.cookie.*`*: Boot le applica solo con Tomcat vero, e nei test il cookie usciva senza attributi. *`.with(user(...))` di `spring-security-test`*: salterebbe `SessionAccounts`.
+
+**Conseguenze.** Una query per chiave primaria in più per ogni richiesta autenticata. Il frontend (passi 12 e 13) legge `XSRF-TOKEN` e lo rimanda in ogni richiesta che cambia qualcosa. Dopo l'accesso di un cliente chiede `GET /api/customer/profile`, e con 409 mostra il modulo dei nomi. Al passo 9 il webhook di Stripe si aggiunge alle eccezioni CSRF, con la sua firma, e `/api/dev/**` sparisce. **Provato**: tolto il controllo dell'account attivo, tolto `changeSessionId`, o messo `authenticated()` al posto di `denyAll()`, fallisce ogni volta il test che lo protegge. Il token CSRF non cambia all'accesso: accettato, perché il token sta in un cookie del nostro dominio e non nella sessione.
+
+---
+
+## D-052 — Admin e professionisti: primo admin da `ADMIN_EMAIL`, API nel modulo `practitioner`, impostazioni iniziali dal database
+**Stato:** accettata · 2026-11-09 · completa D-021 · confronto completo: `docs/studio/26-admin-e-professionisti.md` · scelte di Claude secondo le raccomandazioni della guida, su indicazione di Nicholas
+
+**Contesto.** Il pezzo 3 del passo 8 deve far creare e disattivare i professionisti all'admin (D-021). Un professionista disattivato non deve entrare né essere prenotabile. E il primo admin deve nascere senza segreti nel repository, anche se solo un admin può creare account speciali.
+
+**Decisione.**
+- **Primo admin**: `AdminBootstrap`, un `ApplicationRunner` di `auth`, legge `auth.admin-email` (`ADMIN_EMAIL` nel `.env`, vuota per default) dopo Flyway. Vuota: niente. Email non valida: l'avvio si ferma. Nessun account: crea l'`ADMIN`, con `insert ... on conflict (email) do nothing`, sicuro con due istanze. Già `ADMIN`: niente, anche se disattivato (con un avviso). Un altro ruolo: l'avvio si ferma. **Crea soltanto, non promuove e non riattiva mai.** L'email non è un segreto, perché per entrare serve il codice che arriva in quella casella; è un dato personale, quindi sta solo nel `.env`, e non finisce nel log.
+- **API** sotto `/api/admin/practitioners`, nel modulo `practitioner` (`PractitionerAdminController`): elenco, lettura, creazione (201 + `Location`), rinomina (`PUT`, solo nome e cognome), `POST .../deactivate` e `.../activate`, idempotenti. L'area la protegge la regola per prefisso di D-051; il modulo è quello che possiede i dati.
+- **Creazione**: account e professionista nella stessa transazione. `AccountService.createPractitionerAccount` entra in quella di `PractitionerService.create`. Un'email che ha già un account, di **qualunque** ruolo, riceve 409 `EMAIL_ALREADY_IN_USE`: nessuna promozione, nessun riuso (D-021). Due creazioni contemporanee: il vincolo `unique` ferma la seconda (409 `DATA_CONFLICT`).
+- **Impostazioni iniziali**: i default del database, non ripetuti in Java. Le otto colonne hanno `@Generated` di Hibernate: escluse dall'`insert`, rilette con `insert ... returning`, ancora scritte negli `update` (verificato). `Practitioner` ha ora un costruttore *package-private* (account, nome, cognome) e `rename`.
+- **Disattivazione**: solo l'account (`AccountService.deactivate` e `activate`). Accesso, sessioni aperte, elenco pubblico, catalogo, orari liberi e nuove prenotazioni seguono da soli (D-029, D-050, D-051). Le prenotazioni già fatte **non si toccano**: le richieste in attesa scadono da sole (D-047), le confermate future sono una cancellazione da parte dello studio (punto aperto, prima del passo 11).
+- **Elenco**: `AccountService.summariesOf(Collection<Long>)` restituisce una `Map` di `AccountSummary(email, active)`, un `record` e mai l'entità; una query sola, come `activeAmong`.
+
+**Alternative scartate.** *Admin in una migrazione*: l'email personale nel repository per sempre, lo stesso admin in ogni ambiente, una riga in più in ogni database di test. *Script SQL a mano*: un passo che si dimentica o si sbaglia, e che nessun test prova. *Il primo che entra diventa admin*: una gara alla messa online. *Promuovere l'account esistente*: un errore di battitura nel `.env` diventerebbe un'escalation di privilegi. *Un modulo `admin`*: un inoltro senza dati propri. *Valori iniziali in Java*: due verità sullo stesso fatto. *`insert` nativo*: scavalca l'entità, non serve dopo la verifica di `@Generated`. *Rifiutare la disattivazione con prenotazioni future*: la disattivazione deve funzionare anche in urgenza, e servirebbe una dipendenza rovesciata verso `booking` per una regola non ancora decisa. *Cambiare l'email dall'admin*: cambia il modo di entrare, scelta a parte se servirà.
+
+**Conseguenze.** Nessuna migrazione nuova. `.env.example` ha `ADMIN_EMAIL=`; ognuno mette la sua nel proprio `.env`, e al passo 14 va impostata in produzione. **Provato**: tolto `@Generated` da una colonna, tolto il controllo dell'email già usata, tolto il controllo del ruolo all'avvio, tolta la disattivazione dell'account, fallisce ogni volta il test che lo protegge. Per il passo 13: la pagina dell'admin, che mostra le prenotazioni future di un professionista prima di disattivarlo. Per il passo 11: cosa succede alle prenotazioni confermate di un professionista disattivato.
+
+---
+
+## D-053 — Notifiche email: ascoltatore `@Async` dopo il commit su virtual thread, testi in una funzione pura, nessuna *outbox*
+**Stato:** accettata · 2026-11-09 · completa D-039 e D-046 · confronto completo: `docs/studio/27-notifiche-email.md` · scelte di Claude secondo le raccomandazioni della guida, su indicazione di Nicholas
+
+**Contesto.** Il pezzo 4 del passo 8 aggancia le email ai cinque eventi di `booking` (D-039, D-046). Il brief chiede un'email in Mailpit per ogni evento, e che un invio fallito non annulli la prenotazione. Gli eventi portano solo id e istanti, le email hanno bisogno di indirizzi, nomi e servizio.
+
+**Decisione.**
+- **Sei email.** `ApprovalRequested` → professionista ("nuova richiesta da approvare", con la scadenza) e cliente ("richiesta inviata": importo solo bloccato, risposta entro la scadenza, ritiro gratuito). `BookingConfirmed` (anche dal pannello), `BookingRejected`, `ApprovalExpired`, `BookingWithdrawn` → cliente. Al professionista niente per conferme, ritiri e scadenze: se servirà, una push (pezzo 5).
+- **`@Async` + `@TransactionalEventListener`** (`notification/BookingNotifications`): l'email parte dopo il commit, in un altro thread. La risposta e i lavori programmati non aspettano mai il server di posta, e un errore di posta non può raggiungerli: il criterio del brief vale per costruzione, non per un `catch` da non dimenticare.
+- **Un executor dedicato con virtual thread** (`NotificationConfiguration`, `SimpleAsyncTaskExecutor` con `setVirtualThreads(true)`, un thread per email, 10 secondi di attesa allo spegnimento). Non `spring.threads.virtual.enabled`, che sposterebbe anche Tomcat e lo scheduler dei lavori.
+- **Dati**: `serviceId` entra in `BookingEvent` (un id: resta "solo id e istanti"; è l'unica modifica a `booking`). Il resto lo chiede `notification` ai moduli, dopo il commit: `CustomerService.contactOf` (`CustomerContact`), `PractitionerService.contactOf` (`PractitionerContact`, anche se disattivato), `CatalogService.serviceNameOf` (anche se disattivato).
+- **Testi** in `BookingEmails`, una funzione pura con uno `switch` sulla `sealed interface` senza `default`. Testo semplice con *text block*. Negli oggetti la data, mai nomi né trattamenti; nell'email al professionista mai il nome del cliente (D-032). Date a Roma con `Locale.ITALIAN`. Link all'indirizzo base `notification.app-url` (`APP_URL`, default `http://localhost:3000`).
+- **Errori**: ogni email ha il suo `try`; il log dice evento, id della prenotazione e ruolo del destinatario, mai l'indirizzo. Nessun nuovo tentativo.
+- **`MailSender`** invece di `JavaMailSender` in `BookingNotifications`: basta `send(SimpleMailMessage)`.
+
+**Alternative scartate.** *Ascoltatore nello stesso thread*: la risposta aspetta la posta, e un'eccezione dopo il commit arriva al chiamante come 500 per un'operazione riuscita. *Transactional outbox*: niente si perde, ma una tabella, un lavoro, i tentativi e la pulizia per una trentina di email al giorno; resta la strada se i log mostreranno email perse. *Nuovi tentativi in memoria*: coprono un singhiozzo, non un fornitore fermo. *Nomi e indirizzi nell'evento*: `booking` raccoglierebbe dati non suoi, e il nome del cliente arriverebbe anche alla push. *Query con le `join` da `notification`*: conoscerebbe le tabelle di cinque moduli (D-002). *Email HTML con Thymeleaf*: quando lo studio avrà un'identità grafica. *Email al professionista per ogni prenotazione in automatico*: venti al giorno, che smetterebbe di leggere.
+
+**Conseguenze.** Nessuna migrazione. Un'email si perde se l'applicazione cade tra il commit e la spedizione, o se il server di posta la rifiuta: scritto nel log a livello `ERROR`. Nei test d'API con `@Transactional` gli ascoltatori non partono (rollback), quindi nessun test esistente è cambiato; i test nuovi fanno commit veri e aspettano le email con Awaitility. I test girano con lingua inglese e fuso UTC, come un server (`pom.xml`). **Provato**: tolti a turno `@TransactionalEventListener`, `@Async`, i virtual thread, il `try` per singola email, il fuso di Roma, la regola sul nome del cliente, `Locale.ITALIAN`: fallisce ogni volta il test che lo protegge. Per i passi 12 e 13: i link alle pagine giuste. Per il passo 9: l'email del pagamento arrivato tardi. Per il pezzo 5: la push con la stessa email come riserva.
+
+---
+
+## D-054 — Notifiche push: Web Push con le sole classi del JDK, solo verso i servizi push noti, email al professionista come riserva
+**Stato:** accettata · 2026-11-09 · completa D-032 e D-039 · precisa `modello-dati.md` (`push_subscription` riferita a `practitioner`, non ad `app_user`) · confronto completo: `docs/studio/28-notifiche-push.md` · scelte di Claude secondo le raccomandazioni della guida, su indicazione di Nicholas
+
+**Contesto.** Il pezzo 5 del passo 8 fa il lato backend delle notifiche push di D-032: dispositivi registrati, messaggio cifrato e firmato, email di riserva. Le librerie Java per Web Push sono o ferme da anni con dipendenze vulnerabili (`nl.martijndwars:web-push`, Bouncy Castle vecchio), o recenti e con un solo autore.
+
+**Decisione.**
+- **Nessuna libreria**: cifratura RFC 8291 (ECDH P-256, HKDF, AES-128-GCM, codifica `aes128gcm` di RFC 8188) e firma VAPID RFC 8292 (JWT ES256 con `SHA256withECDSAinP1363Format`) con le classi del JDK 21 (`PushEncryption`, `Vapid`, `P256`). La cifratura è verificata **byte per byte** contro l'esempio dell'appendice A dell'RFC 8291; un finto browser scritto nei test decifra il giro completo.
+- **Chiavi**: `VAPID_PUBLIC_KEY`, `VAPID_PRIVATE_KEY` (segreto), `VAPID_SUBJECT` nel `.env`, Base64url come le altre librerie, generate con `java tools/GenerateVapidKeys.java` (JEP 330). Senza la coppia, o con due chiavi che non sono una coppia, **l'avvio si ferma**. I test usano le chiavi pubbliche dell'RFC.
+- **Tabella `push_subscription` (V7)** in `notification`, riferita a **`practitioner`** (solo i professionisti ricevono push, D-032; la *foreign key* lo garantisce). `endpoint` unico; registrazione idempotente con `insert ... on conflict (endpoint) do update` (lo stesso browser torna, o passa a un altro professionista); al massimo 10 dispositivi per professionista, i più vecchi escono.
+- **API** sotto `/api/panel/push-subscriptions`: `GET /vapid-key`, `POST` (il JSON di `PushSubscription.toJSON()`, 204), `POST /unsubscribe` (solo i propri, 204 sempre).
+- **SSRF**: `@PushEndpoint` accetta solo `https` sulla porta standard verso `fcm.googleapis.com`, `push.services.mozilla.com`, `push.apple.com`, `notify.windows.com` e i loro sottodomini; `@BrowserPublicKey` rifiuta una chiave fuori dalla curva. Il controllo è all'ingresso; chi spedisce si fida delle righe.
+- **Quando**: solo `ApprovalRequested`. Push a tutti i dispositivi; se **almeno uno** la accetta (2xx), l'email al professionista non parte; altrimenti parte (nessun dispositivo, errori, servizio irraggiungibile, un bug). `TTL` fino alla scadenza della risposta, `Urgency: high`. Nello stesso ascoltatore del pezzo 4, dopo il commit, nel virtual thread dell'email.
+- **Risposte**: 404/410 cancellano la riga; 429 e 5xx `WARN`, 400/403/413 `ERROR`; mai l'`endpoint` intero nei log, solo l'host.
+- **Testo**: `{"title", "body", "url", "tag"}` da un `record` con Jackson; data, ora e scadenza; né nomi né trattamento; `tag` = `booking-<id>`.
+
+**Alternative scartate.** *`nl.martijndwars:web-push`*: ferma da anni, Bouncy Castle con vulnerabilità note. *Librerie recenti di un solo autore*: fiducia da costruire, per un codice che il JDK fa in un centinaio di righe verificabili. *Firebase Cloud Messaging*: già scartato da D-032. *Qualunque `https`*: l'SSRF verso host interni resta. *Riferimento ad `app_user`*: permetterebbe dispositivi di clienti e admin, che non ricevono push. *Email sempre insieme alla push*: due avvisi per ogni richiesta, contro D-032. *Push anche per ritiri e scadenze*: nessuna azione da fare.
+
+**Conseguenze.** Migrazione V7. Tre righe nuove nel `.env` (le chiavi sono **obbligatorie** per avviare il backend). Cambiare la coppia VAPID invalida tutte le iscrizioni. Non provato con un servizio push vero: lo si vede al passo 13, con il primo telefono iscritto. **Provato**: tolti a turno lo zero di `key_info`, il formato P1363, il controllo della curva, il controllo `https`, la regola della riserva, la cancellazione dei 404/410, il 410 come "scaduto", il limite di 10 dispositivi, la proprietà nella cancellazione e il `TTL` fino alla scadenza, fallisce ogni volta il test che lo protegge. Per il passo 13: iscrizione con la chiave pubblica, invio a ogni visita, cancellazione all'uscita, il *service worker* che legge `title`, `body`, `url`, `tag`. Per il passo 14: chiavi di produzione e `VAPID_SUBJECT` dello studio.
+
+---
+
+## D-055 — Codice di accesso via SMS: solo numeri verificati, solo cellulari italiani, mai un account da un numero, invio asincrono, tetto di spesa
+**Stato:** accettata · 2026-11-09 · chiude il punto aperto 7 dei requisiti · completa D-050 (canale `SMS`, scopo del codice) e D-051 (area `/api/account/**`) · confronto completo: `docs/studio/29-codice-via-sms.md` · scelte di Claude secondo le raccomandazioni della guida, su indicazione di Nicholas
+
+**Contesto.** Proposta di Nicholas (requisiti, punto 7): il codice di accesso via SMS, se l'utente ha un numero verificato. Un SMS costa e non si può spedire a numeri sconosciuti, quindi le difese del pezzo 1 contro l'enumerazione vanno ripensate, e il modulo che spedisce SMS va difeso dalla frode (*SMS pumping*).
+
+**Decisione.**
+- **Numero**: `app_user.phone` in E.164, unico, scritto **solo** dalla verifica, con `phone_verified_at` (`check` sulla coppia). Un `record` `PhoneNumber` come `Email` (D-020): normalizza e accetta **solo cellulari italiani** (`+39 3`, 8 o 9 cifre dopo il 3); il database controlla solo il formato E.164. Niente libphonenumber.
+- **Verifica**: da entrati, in `/api/account/phone` (area nuova `/api/account/**`, `authenticated()`, per ogni ruolo). Codice con scopo `VERIFY_PHONE`, legato all'account che lo chiede (`login_code.requested_by`). Codice giusto: il numero è dell'account, e lo perde l'account che lo aveva prima (i numeri si riciclano). Codice sbagliato: **409** `CODE_WRONG`/`CODE_EXPIRED` (la persona è entrata: un 401 la farebbe credere fuori), con un risultato `PhoneCheck` invece di un'eccezione.
+- **Scopo** (`login_code.purpose`): `SIGN_IN` o `VERIFY_PHONE`; l'ultimo codice si cerca per canale, destinazione e scopo. Un codice di verifica non apre una sessione, uno di accesso non verifica.
+- **Accesso**: `POST /api/public/auth/login-code/sms` (202 sempre) e `POST /api/public/auth/session/sms` (le risposte dell'email). Un numero **non crea mai un account**. La riga si scrive per ogni numero, anche di nessuno (`message_sent = false`), così i limiti si comportano uguali; l'SMS parte solo al numero verificato di un account attivo, e **in un altro thread**, così il tempo di risposta non rivela chi è cliente (si perde il 503 per un fornitore che non risponde: resta il log, e l'email).
+- **Limiti**: quelli di D-050 sul canale `SMS` (per destinazione, per IP insieme all'email), più **5 verifiche al giorno per account** e un **tetto di 100 SMS spediti al giorno** in tutto (contati con `message_sent`, controllato per ogni numero). Oltre: 429.
+- **Spedizione**: `SmsCodeSender` dichiarata da `auth`, **facoltativa** (`ObjectProvider`): senza, le API SMS rispondono subito 503 `SMS_UNAVAILABLE`, uguale per ogni numero. In sviluppo `MailpitSmsCodeSender` (`notification.sms.mailpit=true`, `SMS_TO_MAILPIT`, spento per default) spedisce il testo come email a `sms-<numero>@sms.local`, in un virtual thread. Il fornitore vero è un punto aperto nuovo (requisiti, punto 17).
+- **Testo** (`SmsTexts`, funzione pura): al massimo 160 caratteri dell'alfabeto GSM-7 di base, "Non darlo a nessuno, nemmeno allo studio", ultima riga `@host #codice` (*origin-bound one-time codes*, compilazione automatica solo sul nostro sito).
+
+**Alternative scartate.** *Account creato dal numero*: un numero inventato o riciclato aprirebbe un account. *Numero non verificato in `app_user`*: chiunque potrebbe occupare il numero di un altro. *libphonenumber*: giusta per numeri di tutto il mondo, troppo per una regola di due righe. *Rifiutare un numero già di un altro account*: lascerebbe senza SMS chi ha il telefono adesso, e rivelerebbe che quel numero è di un cliente. *Nessuna riga per i numeri sconosciuti*: i limiti direbbero chi è cliente. *Invio sincrono*: i tempi direbbero chi è cliente. *Codici SMS nel log in sviluppo*: escluso dalla guida 24. *Un campo `phone` nelle API dell'email*: una validazione "uno dei due" invece di due indirizzi semplici.
+
+**Conseguenze.** Migrazione V8 (`app_user.phone` azzerato: nessun codice l'aveva mai scritto). In produzione l'SMS resta spento finché il fornitore non è scelto e implementato come un altro `SmsCodeSender`. Il punto aperto 16 (link di pagamento) può contare su un numero verificato. **Provato**: tolti a turno la regola dei cellulari italiani, il "solo numeri verificati", la riga per i numeri di nessuno, il tetto, il conteggio dei soli SMS spediti, il legame del codice di verifica all'account, il `flush` prima di spostare il numero, il limite per account, l'alfabeto GSM-7, il 409, il 503 senza fornitore, fallisce ogni volta il test che lo protegge.

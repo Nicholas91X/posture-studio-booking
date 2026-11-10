@@ -36,8 +36,12 @@ public class AppUser {
     @Generated
     private Instant createdAt;
 
+    // E.164, written only by the verification together with phoneVerifiedAt (V8, guide 29, 2.4)
     @Column
     private String phone;
+
+    @Column
+    private Instant phoneVerifiedAt;
 
     @Column
     private boolean active;
@@ -71,8 +75,19 @@ public class AppUser {
         return phone;
     }
 
-    public void setPhone(String phone) {
-        this.phone = phone;
+    public Instant getPhoneVerifiedAt() {
+        return phoneVerifiedAt;
+    }
+
+    // only after the code sent to this number came back right (guide 29, part 3): no setter
+    void verifyPhone(PhoneNumber number, Instant at) {
+        this.phone = Objects.requireNonNull(number, "number must not be null").value();
+        this.phoneVerifiedAt = Objects.requireNonNull(at, "at must not be null");
+    }
+
+    void removePhone() {
+        this.phone = null;
+        this.phoneVerifiedAt = null;
     }
 
     public boolean isActive() {

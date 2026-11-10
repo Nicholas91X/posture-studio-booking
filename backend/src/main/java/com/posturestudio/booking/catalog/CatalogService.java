@@ -150,6 +150,15 @@ public class CatalogService {
         return services.findEvaluationIdsAmong(serviceIds);
     }
 
+    // For notification (guide 27, 5.4): the name of a service already booked. Deactivated services too:
+    // a session booked before the deactivation is still valid (D-027 is about new bookings)
+    @Transactional(readOnly = true)
+    public String serviceNameOf(long serviceId) {
+        return services.findById(serviceId)
+                .map(ServiceOffer::getName)
+                .orElseThrow(() -> new NotFoundException("Service " + serviceId + " not found"));
+    }
+
     // ***** HELPERS *****
 
     private ServiceOffer findService(long practitionerId, long serviceId) {

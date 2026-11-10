@@ -202,7 +202,7 @@ class LoginCodeServiceTest {
         });
         // the second time, the same account and not a new one
         CodeCheck second = service.verify(MARIO, requestCode(MARIO));
-        assertThat(second).isEqualTo(new Valid(((Valid) first).userId(), false));
+        assertThat(second).isEqualTo(new Valid(((Valid) first).userId(), Role.CUSTOMER, false));
     }
 
     @Test
@@ -210,7 +210,7 @@ class LoginCodeServiceTest {
         long anna = accountOf("anna@login.example", "PRACTITIONER", true);
 
         assertThat(service.verify("anna@login.example", requestCode("anna@login.example")))
-                .isEqualTo(new Valid(anna, false));
+                .isEqualTo(new Valid(anna, Role.PRACTITIONER, false));
     }
 
     @Test

@@ -19,7 +19,7 @@ import org.springframework.transaction.annotation.Transactional;
 import com.jayway.jsonpath.JsonPath;
 
 // The public API of two modules (practitioner and catalog), as the first page of the site uses it:
-// no X-Practitioner-Id header anywhere in this class
+// no session anywhere in this class: anonymous, as a visitor of the site
 @SpringBootTest
 @AutoConfigureMockMvc
 @Import(TestcontainersConfiguration.class)

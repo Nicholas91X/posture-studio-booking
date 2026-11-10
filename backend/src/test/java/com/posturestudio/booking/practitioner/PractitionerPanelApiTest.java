@@ -15,6 +15,7 @@ import org.springframework.test.web.servlet.assertj.MockMvcTester;
 import org.springframework.test.web.servlet.assertj.MvcTestResult;
 import org.springframework.transaction.annotation.Transactional;
 
+import com.posturestudio.booking.TestSessions;
 import com.posturestudio.booking.TestcontainersConfiguration;
 
 @SpringBootTest
@@ -39,6 +40,10 @@ public class PractitionerPanelApiTest {
     @Autowired
     MockMvcTester mvc;
 
+    // signed-in requests: a real session and a CSRF token (guide 25, part 8)
+    @Autowired
+    TestSessions sessions;
+
     @Autowired
     JdbcTemplate jdbc;
 
@@ -54,7 +59,7 @@ public class PractitionerPanelApiTest {
     @Test
     void settingsAreReadAndChanged() {
         // read: the defaults of the database
-        assertThat(mvc.get().uri("/api/panel/settings").header(DevHeaderCurrentPractitioner.HEADER, anna))
+        assertThat(mvc.get().uri("/api/panel/settings").with(sessions.practitioner(anna)))
                 .hasStatusOk()
                 .bodyJson().isStrictlyEqualTo(DEFAULTS);
 
@@ -64,7 +69,7 @@ public class PractitionerPanelApiTest {
                 .bodyJson().extractingPath("$.cancellationNoticeHours").isEqualTo(48);
 
         // read again
-        assertThat(mvc.get().uri("/api/panel/settings").header(DevHeaderCurrentPractitioner.HEADER, anna))
+        assertThat(mvc.get().uri("/api/panel/settings").with(sessions.practitioner(anna)))
                 .bodyJson().isStrictlyEqualTo(CHANGED);
     }
 
@@ -147,12 +152,12 @@ public class PractitionerPanelApiTest {
     }
 
     @Test
-    void withoutHeaderTheAnswerIs401() {
+    void withoutASessionTheAnswerIs401() {
         assertThat(mvc.get().uri("/api/panel/settings")).hasStatus(HttpStatus.UNAUTHORIZED);
     }
 
     private MvcTestResult updateSettings(String practitioner, String json) {
-        return mvc.put().uri("/api/panel/settings").header(DevHeaderCurrentPractitioner.HEADER, practitioner)
+        return mvc.put().uri("/api/panel/settings").with(sessions.practitioner(practitioner))
                 .contentType(MediaType.APPLICATION_JSON)
                 .content(json)
                 .exchange();

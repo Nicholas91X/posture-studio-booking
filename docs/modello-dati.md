@@ -6,6 +6,9 @@ Modifiche dovute alle migrazioni:
 - **V1 (passo 4)**: `customer.full_name` e `practitioner.display_name` sostituiti da `first_name` + `last_name`; `phone` spostato in `app_user` (facoltativo, per utenti di ogni ruolo); aggiunto `app_user.active` per la cancellazione morbida; ruolo `ADMIN` (D-021).
 - **V2 (passo 5)**: `service` e `package_offer` come da progettazione, con `created_at`; foreign key composta per il servizio del pacchetto (D-025); indici su `practitioner_id`.
 - **V3 (passo 6)**: `working_schedule`, `working_hours` e `unavailability` come da progettazione (D-034), con `created_at`; fasce all'ora piena o alla mezz'ora e non sovrapposte (*exclusion constraint* su `timerange`, estensione `btree_gist`, D-036); cascata da una versione alle sue fasce; in `practitioner` scatto solo 30 o 60 con default 60, `min_booking_notice_hours` e `booking_horizon_days` (D-033, D-035).
+- **V8 (passo 8)**: `app_user.phone` in E.164, unico, scritto solo dopo la verifica, con `phone_verified_at` (D-055; i valori della V1 azzerati, mai scritti da nessun codice); in `login_code` il canale `SMS`, `purpose` (`SIGN_IN`, `VERIFY_PHONE`), `requested_by` (l'account che chiede una verifica) e `message_sent`.
+- **V7 (passo 8)**: `push_subscription` riferita a `practitioner` invece che ad `app_user` (solo i professionisti ricevono push, D-054), con `registered_at`; `endpoint` unico; indice su `practitioner_id, registered_at`.
+- **V6 (passo 8)**: `spring_session` e `spring_session_attributes`, le tabelle di Spring Session JDBC copiate dal suo schema 4.1.1 (D-051).
 - **V5 (passo 8)**: `login_code` con `channel` + `destination` al posto di `email`, `requested_from` per il limite per IP, `created_at` scritto da Java, `code_hash` come HMAC con chiave segreta (D-050).
 - **V4 (passo 7)**: `booking` come qui sotto, con `booked_by`, `paid_with` solo `CARD` e `IN_STUDIO`, i sette stati del passo 7, `IN_STUDIO` solo con `booked_by = PRACTITIONER`, e il vincolo di non sovrapposizione parziale su `tstzrange` (D-042); `service.evaluation` (D-043); in `practitioner` `max_future_bookings`, `booking_approval` e `approval_window_hours` con il `check` su due colonne (D-041, D-042).
 
@@ -37,7 +40,8 @@ payment ── booking      (pagamento di una seduta)
 payment ── credit_lot   (pagamento di un pacchetto)
 
 login_code      (codici di accesso, legati a una destinazione: email, dal pezzo 6 anche il telefono)
-app_user ──< push_subscription   (chi può accedere e con quale ruolo; dispositivi per le notifiche push)
+app_user        (chi può accedere e con quale ruolo)
+practitioner ──< push_subscription   (dispositivi per le notifiche push, D-054)
 stripe_event    (eventi Stripe già elaborati)
 ```
 
@@ -52,9 +56,10 @@ Chiunque possa accedere. Separato da cliente e professionista perché l'accesso 
 |---|---|---|
 | id | bigint | |
 | email | text | unica, salvata in minuscolo |
-| role | text | `CUSTOMER`, `PRACTITIONER` o `ADMIN` (D-021), senza default |
+| role | text | `CUSTOMER`, `PRACTITIONER` o `ADMIN` (D-021), senza default. Il primo `ADMIN` nasce all'avvio dall'email in `ADMIN_EMAIL` (D-052); i `PRACTITIONER` li crea l'admin, insieme alla loro riga `practitioner` |
 | active | boolean | default true. Cancellazione morbida (*soft delete*) per ogni ruolo: un account disattivato non può accedere e la sua storia resta. Vuol dire "l'account esiste", non "prenotabile" (per le assenze ci sono le indisponibilità) |
-| phone | text | facoltativo, non unico (unicità, formato e verifica solo se diventerà un modo per accedere: requisiti, punto aperto 7) |
+| phone | text | facoltativo, **unico**, in E.164 (`+393331234567`), scritto solo dalla verifica con un codice via SMS (D-055); oggi solo cellulari italiani (regola di `PhoneNumber`) |
+| phone_verified_at | timestamptz | quando il numero è stato verificato; c'è se e solo se c'è `phone` (`check`) |
 
 ### `practitioner`
 | Colonna | Tipo | Note |
@@ -74,6 +79,8 @@ Chiunque possa accedere. Separato da cliente e professionista perché l'accesso 
 
 Orizzonte, limite, anticipo minimo e approvazione valgono solo quando prenota il cliente, non per le prenotazioni fatte dal pannello (D-024), che però contano nel limite. Nel conteggio entrano le prenotazioni `PENDING_PAYMENT`, `PENDING_APPROVAL` (D-030) e `CONFIRMED` con `starts_at` nel futuro.
 
+Un professionista nuovo (creato dall'admin, D-052) prende tutte le impostazioni dai default di queste colonne: Java non li ripete, e l'entità li rilegge dopo l'`insert` (`@Generated`).
+
 ### `customer`
 | Colonna | Tipo | Note |
 |---|---|---|
@@ -88,8 +95,11 @@ Migrazione V5, passo 8 (D-050). Vale solo l'ultimo codice chiesto per una destin
 | Colonna | Tipo | Note |
 |---|---|---|
 | id | bigint | |
-| channel | text | `EMAIL`; `SMS` dal pezzo 6 del passo 8 (D-042: il `check` ha solo i valori prodotti) |
+| channel | text | `EMAIL` o `SMS` (V8, D-055) |
 | destination | text | l'email normalizzata (D-020); dal pezzo 6 anche un numero in E.164 |
+| purpose | text | `SIGN_IN` o `VERIFY_PHONE` (V8): l'ultimo codice si cerca per canale, destinazione e scopo; una verifica solo via SMS |
+| requested_by | bigint | → `app_user`: solo per `VERIFY_PHONE`, l'account che chiede la verifica (`check`) |
+| message_sent | boolean | falso per un accesso via SMS a un numero di nessuno: la riga esiste perché i limiti si comportino uguali; il tetto giornaliero conta solo i messaggi partiti. Sempre vero per l'email |
 | code_hash | text | HMAC-SHA256 di destinazione e codice con una chiave segreta fuori dal database, in esadecimale: mai il codice in chiaro |
 | requested_from | inet | per il limite per IP: l'indirizzo IPv4, o la rete `/64` di un indirizzo IPv6 (il resto azzerato) |
 | created_at | timestamptz | scritto da Java con il `Clock`, come `booking` |
@@ -261,17 +271,23 @@ Il registro. Non si modifica e non si cancella mai una riga: si aggiungono solo 
 
 Se un evento con lo stesso `event_id` è già presente, si ignora.
 
+## Sessioni
+
+### `spring_session`, `spring_session_attributes`
+Le sessioni degli utenti collegati, gestite da **Spring Session JDBC** (D-051). Migrazione V6, copiata dallo schema di Spring Session 4.1.1: le tabelle sono **sue**, nomi e colonne non si cambiano, e non ci sono entità JPA. I tempi sono millisecondi dal 1970 (`bigint`). Gli attributi sono serializzati in Java (`bytea`). Da noi ce ne sono solo due: l'id dell'utente (`auth.userId`) e l'istante dell'accesso (`auth.signedInAt`). Spring Session cancella da solo, ogni minuto, le sessioni scadute (30 giorni di inattività).
+
 ## Notifiche
 
 ### `push_subscription`
-Un dispositivo registrato per le notifiche push (D-032). Un utente può averne più di uno.
+Un dispositivo registrato per le notifiche push (D-032, D-054). Un professionista può averne più di uno, fino a 10. Migrazione V7.
 
 | Colonna | Tipo | Note |
 |---|---|---|
 | id | bigint | |
-| user_id | bigint | → `app_user` |
-| endpoint | text | unico: l'indirizzo del servizio push del browser |
-| p256dh | text | chiave pubblica del dispositivo, per cifrare il messaggio |
-| auth | text | segreto del dispositivo, per cifrare il messaggio |
+| practitioner_id | bigint | → `practitioner`: solo i professionisti ricevono push |
+| endpoint | text | unico: l'indirizzo del servizio push del browser, solo `https` verso un servizio push noto (`@PushEndpoint`). Mai intero nei log |
+| p256dh | text | chiave pubblica P-256 del browser (Base64url), per cifrare il messaggio |
+| auth | text | segreto di 16 byte del browser (Base64url), per cifrare il messaggio |
+| registered_at | timestamptz | l'ultima registrazione: il frontend la ripete a ogni visita; oltre il limite escono le più vecchie |
 
-Quando il servizio push risponde che il dispositivo non esiste più, la riga si cancella. Migrazione del passo 8 (D-039; prima era prevista al passo 7).
+La registrazione è un `insert ... on conflict (endpoint) do update`: lo stesso browser aggiorna la sua riga, anche se ora la usa un altro professionista. Quando il servizio push risponde 404 o 410, la riga si cancella.

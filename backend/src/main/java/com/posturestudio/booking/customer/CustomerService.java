@@ -9,6 +9,8 @@ import org.springframework.transaction.annotation.Propagation;
 import org.springframework.transaction.annotation.Transactional;
 
 import com.posturestudio.booking.auth.AccountService;
+import com.posturestudio.booking.shared.BusinessRuleException;
+import com.posturestudio.booking.shared.ErrorCode;
 import com.posturestudio.booking.shared.NotFoundException;
 
 /**
@@ -50,6 +52,37 @@ public class CustomerService {
         return repository.findByUserId(userId)
                 .orElseGet(() -> repository.save(new Customer(userId, details.firstName(), details.lastName())))
                 .getId();
+    }
+
+    // The profile of the customer of this account (guide 25, 7.3); 409 PROFILE_INCOMPLETE before the names
+    @Transactional(readOnly = true)
+    public CustomerProfile profileOf(long userId) {
+        Customer customer = repository.findByUserId(userId)
+                .orElseThrow(() -> new BusinessRuleException(ErrorCode.PROFILE_INCOMPLETE,
+                        "First and last name are missing"));
+        return new CustomerProfile(accounts.emailOf(userId), customer.getFirstName(), customer.getLastName());
+    }
+
+    // Creates the customer row of this account at the first sign-in (D-050), or corrects the names:
+    // here the customer writes their own names, unlike the panel, which never overwrites them (D-048)
+    @Transactional
+    public CustomerProfile saveProfile(long userId, ProfileNames names) {
+        Customer customer = repository.findByUserId(userId)
+                .map(existing -> {
+                    existing.rename(names.firstName(), names.lastName());
+                    return existing;
+                })
+                .orElseGet(() -> repository.save(new Customer(userId, names.firstName(), names.lastName())));
+        return new CustomerProfile(accounts.emailOf(userId), customer.getFirstName(), customer.getLastName());
+    }
+
+    // How to write to this customer (guide 27, 5.4): the email is the account's, asked to auth
+    @Transactional(readOnly = true)
+    public CustomerContact contactOf(long customerId) {
+        Customer customer = repository.findById(customerId)
+                .orElseThrow(() -> new NotFoundException("Customer " + customerId + " not found"));
+        return new CustomerContact(accounts.emailOf(customer.getUserId()), customer.getFirstName(),
+                customer.getLastName());
     }
 
     // The names of a set of customers, in one query: for the panel lists of booking (piece 6)
