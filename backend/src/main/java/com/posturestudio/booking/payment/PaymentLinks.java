@@ -34,8 +34,10 @@ class PaymentLinks {
 
     private static final Logger log = LoggerFactory.getLogger(PaymentLinks.class);
 
-    // a Stripe page lives at most 24 hours (D-061); a link never outlives the start of the session
-    static final Duration MAXIMUM = Duration.ofHours(24);
+    // A Stripe page lives LESS than 24 hours from ITS creation (D-061), and our clock may be a second ahead of
+    // Stripe's (seen in the manual test of 2026-11-10: exactly 24 hours was refused). The same margin of 2 minutes
+    // as the 32 minutes of the hold, on the other end. A link never outlives the start of the session either
+    static final Duration MAXIMUM = Duration.ofHours(24).minusMinutes(2);
 
     private final BookingService bookings;
     private final PaymentAccountService accountService;

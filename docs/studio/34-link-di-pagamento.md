@@ -202,6 +202,11 @@ Costruito come raccomandato nella parte 11 (D-065), su richiesta di Nicholas del
 | `paid_with` → `CARD` | `PaymentLinkWebhookTest`, `PaymentLinkConcurrencyTest` |
 | Il lucchetto sulla seduta | `PaymentLinkConcurrencyTest` (due pagamenti nello stesso istante: senza il lucchetto ne incassa due) |
 
+### 12.0 Due errori trovati nella prova manuale con Stripe vero
+
+- **Le 24 ore piene.** Il primo link è stato rifiutato da Stripe: *"The `expires_at` timestamp must be less than 24 hours from Checkout Session creation"*. Il limite è **meno di** 24 ore dalla creazione **su Stripe**, e il nostro orologio era avanti di circa un secondo (lo si vedeva già al passo 8 della prova: sessione creata alle :53, richiesta scritta alle :54,2). Sul minimo dei 30 minuti il margine c'era (D-061), sul massimo no. Ora il link dura 24 ore meno 2 minuti. **E il finto Stripe ora conosce i limiti di quello vero** (tra 30 minuti e meno di 24 ore): con 24 ore piene il test fallisce, mentre prima nessun test poteva accorgersene. Un finto che non sa quello che il vero rifiuta lascia passare test che il vero farebbe fallire.
+- **I test leggevano il `.env` di chi li lancia.** Aggiunto `ADMIN_EMAIL` al proprio `.env` per la prova, un test che conta gli utenti ne ha trovato uno in più: `AdminBootstrap` creava quell'admin anche nel database del test, perché la configurazione importa `../.env` (D-018). Ora la configurazione dei test fissa tutti i valori che un `.env` può cambiare (admin, `payment.live`, gli indirizzi del sito, l'SMS in Mailpit, i lavori programmati).
+
 ### 12.1 La prova manuale (dopo quella della guida 32, parte 13.1)
 
 Con lo stesso conto di prova e lo stesso `stripe listen` acceso:

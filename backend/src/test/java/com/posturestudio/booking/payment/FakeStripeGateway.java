@@ -57,10 +57,25 @@ public class FakeStripeGateway implements StripeGateway {
     private final java.util.Set<String> paidSessions = java.util.concurrent.ConcurrentHashMap.newKeySet();
     private final List<String> expiredSessions = new CopyOnWriteArrayList<>();
 
+    // the clock of the context, as the creation instant of a session on Stripe
+    private final java.time.Clock clock;
+
+    FakeStripeGateway(java.time.Clock clock) {
+        this.clock = clock;
+    }
+
     @Override
     public CheckoutSession createCheckoutSession(PaymentAccount account, NewCheckoutSession session, String idempotencyKey) {
         if (down) {
             throw new ServiceUnavailableException(ErrorCode.PAYMENT_PROVIDER_UNAVAILABLE, "The fake Stripe is down", null);
+        }
+        // As Stripe (its documentation, and the manual test of 2026-11-10): expires_at between 30 minutes and LESS than
+        // 24 hours from the creation, refused with a 400 otherwise. A fake that does not know the limits of the real
+        // one lets a test pass that the real one would fail
+        java.time.Duration life = java.time.Duration.between(clock.instant(), session.expiresAt());
+        if (life.compareTo(java.time.Duration.ofMinutes(30)) < 0 || life.compareTo(java.time.Duration.ofHours(24)) >= 0) {
+            throw new ServiceUnavailableException(ErrorCode.PAYMENT_PROVIDER_UNAVAILABLE,
+                    "The fake Stripe refuses expires_at " + life + " after the creation", null);
         }
         // unique even across tests that commit in the same database
         String id = "cs_test_fake_" + UUID.randomUUID().toString().replace("-", "");
@@ -223,8 +238,9 @@ public class FakeStripeGateway implements StripeGateway {
 
         @Bean
         @Primary
-        FakeStripeGateway fakeStripeGateway() {
-            return new FakeStripeGateway();
+        // the context's Clock when there is one (fixed or movable in many tests), the system's otherwise
+        FakeStripeGateway fakeStripeGateway(org.springframework.beans.factory.ObjectProvider<java.time.Clock> clock) {
+            return new FakeStripeGateway(clock.getIfAvailable(java.time.Clock::systemUTC));
         }
     }
 }

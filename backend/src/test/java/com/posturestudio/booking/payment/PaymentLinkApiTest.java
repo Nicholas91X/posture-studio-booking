@@ -78,10 +78,10 @@ public class PaymentLinkApiTest {
                 .isEqualTo(call.returnedUrl().toString());
         assertThat(call.account()).isEqualTo("alpha");
         assertThat(call.amountCents()).isEqualTo(3000);
-        // 24 hours, the start of the session being later
-        assertThat(call.expiresAt()).isEqualTo(NOW.plusSeconds(24 * 3600));
+        // 24 hours less the margin of 2 minutes (Stripe wants LESS than 24 hours), the start being later
+        assertThat(call.expiresAt()).isEqualTo(NOW.plusSeconds(24 * 3600 - 120));
         assertThat(call.idempotencyKey()).startsWith("booking-" + booking + "-link-");
-        assertThat(result).bodyJson().extractingPath("$.expiresAt").isEqualTo("2026-11-07T10:00:00+01:00");
+        assertThat(result).bodyJson().extractingPath("$.expiresAt").isEqualTo("2026-11-07T09:58:00+01:00");
 
         persisted();
         assertThat(jdbc.queryForMap("select status, source, account from payment where booking_id = ?", booking))
@@ -97,7 +97,7 @@ public class PaymentLinkApiTest {
         String paymentUrl = JsonPath.read(result.getResponse().getContentAsString(), "$.paymentUrl");
         assertThat(whatsapp).startsWith("https://wa.me/?text=");
         assertThat(textOf(whatsapp)).isEqualTo("Ciao Test, ecco il link per pagare la seduta \"Seduta\" di venerdì"
-                + " 20 novembre, ore 9:00: " + paymentUrl + " Il link vale fino a sabato 7 novembre, ore 10:00.");
+                + " 20 novembre, ore 9:00: " + paymentUrl + " Il link vale fino a sabato 7 novembre, ore 9:58.");
     }
 
     @Test
