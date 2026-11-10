@@ -124,6 +124,21 @@ class LoginCodeSchemaTest {
                 .isInstanceOf(DataIntegrityViolationException.class);
     }
 
+    // ***** V9: the admin signs in by email only (D-056) *****
+
+    @Test
+    void anAdminWithAPhoneIsRefused() {
+        assertThatThrownBy(() -> jdbc.update("insert into app_user (role, email, phone, phone_verified_at) "
+                + "values ('ADMIN', 'v9-a@example.com', '+393331234567', now())"))
+                .isInstanceOf(DataIntegrityViolationException.class)
+                .hasMessageContaining("app_user_admin_no_phone_ck");
+    }
+
+    @Test
+    void anAdminWithoutAPhoneIsAccepted() {
+        jdbc.update("insert into app_user (role, email) values ('ADMIN', 'v9-b@example.com')");
+    }
+
     private long aUser() {
         return jdbc.queryForObject(
                 "insert into app_user (role, email) values ('CUSTOMER', 'schema-v8@example.com') returning id", Long.class);

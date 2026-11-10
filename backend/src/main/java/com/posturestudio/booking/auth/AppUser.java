@@ -79,8 +79,13 @@ public class AppUser {
         return phoneVerifiedAt;
     }
 
-    // only after the code sent to this number came back right (guide 29, part 3): no setter
+    // only after the code sent to this number came back right (guide 29, part 3): no setter.
+    // Never for the admin (D-056): a SIM swap must not open the most valuable account. The same rule as
+    // app_user_admin_no_phone_ck (V9), here so that the mistake shows in Java before the database refuses it
     void verifyPhone(PhoneNumber number, Instant at) {
+        if (role == Role.ADMIN) {
+            throw new IllegalStateException("The admin signs in by email only (D-056)");
+        }
         this.phone = Objects.requireNonNull(number, "number must not be null").value();
         this.phoneVerifiedAt = Objects.requireNonNull(at, "at must not be null");
     }

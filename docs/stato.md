@@ -1,6 +1,6 @@
 # Stato del progetto
 
-Ultimo aggiornamento: 2026-11-09 (passo 8 chiuso: pezzo 6 fatto)
+Ultimo aggiornamento: 2026-11-10 (passo 8 unito in `main`; correzione D-056)
 
 ## Dove siamo
 
@@ -35,7 +35,9 @@ Fatto nel passo 4: struttura del repository, progetto Spring Boot 4.1.1 su Java 
 
 **Pezzo 6 fatto** (guida 29, D-055): codice di accesso via SMS da un numero verificato. Costruiti: migrazione **V8** (`app_user.phone` in E.164, unico, solo verificato, con `phone_verified_at`; in `login_code` il canale `SMS`, `purpose`, `requested_by`, `message_sent`); `PhoneNumber` (solo cellulari italiani) e `@ValidPhone`; verifica del numero in `/api/account/phone` (area nuova `/api/account/**` per chiunque sia entrato; 409 su un codice sbagliato; il numero passa a chi lo verifica); accesso via SMS in `/api/public/auth/login-code/sms` e `/session/sms` (nessun account da un numero, riga anche per i numeri di nessuno, invio in un altro thread); limiti per account (5 verifiche al giorno) e tetto di 100 SMS spediti al giorno; `SmsCodeSender` facoltativo (senza: 503 `SMS_UNAVAILABLE`), in sviluppo `MailpitSmsCodeSender`; `SmsTexts` (160 caratteri GSM-7, riga `@host #codice`). Punto aperto 7 chiuso, aperto il 17 (fornitore SMS). 660 test verdi.
 
-**Passo 8 chiuso** (pezzi 1–6, guide 24–29, D-050–D-055), sul branch `feat/step-8-access`: **da aprire la PR verso `main`**. Prossimo: **passo 9, pagamenti** (Stripe).
+**Passo 8 chiuso** (pezzi 1–6, guide 24–29, D-050–D-055), unito in `main` con la PR #3 (2026-11-10).
+
+**Correzione del passo 8** (2026-11-10, D-056, branch `fix/step-8-admin-sms`, PR verso `main`): tetto degli SMS spediti da 100 a 50 al giorno; l'admin accede solo con l'email (contro lo scambio di SIM): `/api/account/phone/**` solo a clienti e professionisti (403 all'admin), `AppUser.verifyPhone` rifiuta l'admin, migrazione **V9** con `app_user_admin_no_phone_ck`. 664 test verdi. Prossimo: **passo 9, pagamenti** (Stripe).
 
 **Da fare nel proprio `.env` per avviare il backend** (dal pezzo 1 del passo 8): aggiungere `AUTH_CODE_HMAC_KEY` (Base64 di 32 byte casuali: `openssl rand -base64 32`) e le righe `MAIL_*` di `.env.example`. Senza la chiave l'applicazione non parte, apposta. Dal pezzo 3: `ADMIN_EMAIL` con la propria email, per avere l'account admin in locale. Dal pezzo 4, facoltativo: `APP_URL` (default `http://localhost:3000`), l'indirizzo dei link nelle email. Dal pezzo 6, per provare l'SMS in locale: `SMS_TO_MAILPIT=true` (gli SMS arrivano come email in Mailpit, a `sms-<numero>@sms.local`; senza, le API SMS rispondono 503). **Dal pezzo 5, obbligatorio**: `VAPID_PUBLIC_KEY` e `VAPID_PRIVATE_KEY`, generate insieme da `backend/` con `java tools/GenerateVapidKeys.java` (senza, l'avvio si ferma); facoltativo `VAPID_SUBJECT`. **Senza virgolette** intorno al valore (D-018): con le virgolette la chiave non è Base64 valido e l'avvio si ferma (successo il 2026-11-09). Le email arrivate si leggono su `http://localhost:8025`.
 
@@ -63,7 +65,7 @@ Avvio di database e Mailpit in locale, dalla radice: `docker compose -f infra/do
 | 5 | Catalogo e professionisti: servizi, prezzi, impostazioni | Claude, su richiesta di Nicholas | ✅ fatto → `passi/05-catalogo.md` |
 | 6 | Calendario: orari di lavoro, indisponibilità, calcolo degli orari liberi | Claude, su richiesta di Nicholas | ✅ fatto → `passi/06-calendario.md` |
 | 7 | Prenotazione: blocco dell'orario, approvazione (D-030), vincolo di non sovrapposizione, lavori programmati, eventi di dominio | Claude, su richiesta di Nicholas | ✅ fatto → `passi/07-prenotazione.md` |
-| 8 | Accesso: codice via email, sessioni, ruoli (Spring Security); notifiche email e push lato backend (D-032, D-039) | Claude, su richiesta di Nicholas | ✅ chiuso (pezzi 1–6, guide 24–29); PR da aprire |
+| 8 | Accesso: codice via email, sessioni, ruoli (Spring Security); notifiche email e push lato backend (D-032, D-039) | Claude, su richiesta di Nicholas | ✅ fatto → `passi/08-accesso.md` (correzione D-056) |
 | 9 | Pagamenti: Stripe Checkout con *manual capture* (D-031) e webhook | Nicholas, o Claude su sua richiesta | |
 | 10 | Crediti e pacchetti: lotti, movimenti, acquisto, prenotazione con credito | Nicholas, o Claude su sua richiesta | |
 | 11 | Cancellazioni | Nicholas, o Claude su sua richiesta | |

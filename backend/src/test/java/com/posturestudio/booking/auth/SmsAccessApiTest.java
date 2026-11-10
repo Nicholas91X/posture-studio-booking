@@ -128,6 +128,29 @@ class SmsAccessApiTest {
                 .bodyJson().isStrictlyEqualTo("{\"phone\": null, \"verifiedAt\": null}");
     }
 
+    // D-056: a SIM swap must not open the account of the admin. No number to verify, so no SMS sign-in:
+    // a sign-in request to the number the admin tried is the request for a number of nobody
+    @Test
+    void theAdminCannotVerifyANumberNorSignInBySms() {
+        Long admin = jdbc.queryForObject(
+                "insert into app_user (role, email) values ('ADMIN', 'admin@sms-api.example') returning id", Long.class);
+
+        assertThat(mvc.post().uri("/api/account/phone/code").with(sessions.user(admin))
+                .contentType(MediaType.APPLICATION_JSON).content("{\"phone\": \"" + PHONE + "\"}"))
+                .hasStatus(HttpStatus.FORBIDDEN);
+        assertThat(mvc.post().uri("/api/account/phone").with(sessions.user(admin))
+                .contentType(MediaType.APPLICATION_JSON).content("{\"phone\": \"" + PHONE + "\", \"code\": \"123456\"}"))
+                .hasStatus(HttpStatus.FORBIDDEN);
+        assertThat(mvc.get().uri("/api/account/phone").with(sessions.user(admin))).hasStatus(HttpStatus.FORBIDDEN);
+        assertThat(sms.sent()).isEmpty();
+
+        assertThat(post("/api/public/auth/login-code/sms", "{\"phone\": \"" + PHONE + "\"}", false))
+                .hasStatus(HttpStatus.ACCEPTED);
+        assertThat(sms.sent()).isEmpty();
+        assertThat(post("/api/public/auth/session/sms", "{\"phone\": \"" + PHONE + "\", \"code\": \"123456\"}", false))
+                .hasStatus(HttpStatus.UNAUTHORIZED);
+    }
+
     @Test
     void theNumberIsRemoved() {
         jdbc.update("update app_user set phone = ?, phone_verified_at = now() where id = ?", PHONE, mario);

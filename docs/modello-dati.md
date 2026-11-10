@@ -7,6 +7,7 @@ Modifiche dovute alle migrazioni:
 - **V2 (passo 5)**: `service` e `package_offer` come da progettazione, con `created_at`; foreign key composta per il servizio del pacchetto (D-025); indici su `practitioner_id`.
 - **V3 (passo 6)**: `working_schedule`, `working_hours` e `unavailability` come da progettazione (D-034), con `created_at`; fasce all'ora piena o alla mezz'ora e non sovrapposte (*exclusion constraint* su `timerange`, estensione `btree_gist`, D-036); cascata da una versione alle sue fasce; in `practitioner` scatto solo 30 o 60 con default 60, `min_booking_notice_hours` e `booking_horizon_days` (D-033, D-035).
 - **V8 (passo 8)**: `app_user.phone` in E.164, unico, scritto solo dopo la verifica, con `phone_verified_at` (D-055; i valori della V1 azzerati, mai scritti da nessun codice); in `login_code` il canale `SMS`, `purpose` (`SIGN_IN`, `VERIFY_PHONE`), `requested_by` (l'account che chiede una verifica) e `message_sent`.
+- **V9 (correzione del passo 8)**: `app_user_admin_no_phone_ck`, l'admin non ha un numero e accede solo con l'email (D-056).
 - **V7 (passo 8)**: `push_subscription` riferita a `practitioner` invece che ad `app_user` (solo i professionisti ricevono push, D-054), con `registered_at`; `endpoint` unico; indice su `practitioner_id, registered_at`.
 - **V6 (passo 8)**: `spring_session` e `spring_session_attributes`, le tabelle di Spring Session JDBC copiate dal suo schema 4.1.1 (D-051).
 - **V5 (passo 8)**: `login_code` con `channel` + `destination` al posto di `email`, `requested_from` per il limite per IP, `created_at` scritto da Java, `code_hash` come HMAC con chiave segreta (D-050).
@@ -58,7 +59,7 @@ Chiunque possa accedere. Separato da cliente e professionista perché l'accesso 
 | email | text | unica, salvata in minuscolo |
 | role | text | `CUSTOMER`, `PRACTITIONER` o `ADMIN` (D-021), senza default. Il primo `ADMIN` nasce all'avvio dall'email in `ADMIN_EMAIL` (D-052); i `PRACTITIONER` li crea l'admin, insieme alla loro riga `practitioner` |
 | active | boolean | default true. Cancellazione morbida (*soft delete*) per ogni ruolo: un account disattivato non può accedere e la sua storia resta. Vuol dire "l'account esiste", non "prenotabile" (per le assenze ci sono le indisponibilità) |
-| phone | text | facoltativo, **unico**, in E.164 (`+393331234567`), scritto solo dalla verifica con un codice via SMS (D-055); oggi solo cellulari italiani (regola di `PhoneNumber`) |
+| phone | text | facoltativo, **unico**, in E.164 (`+393331234567`), scritto solo dalla verifica con un codice via SMS (D-055); oggi solo cellulari italiani (regola di `PhoneNumber`); mai per l'admin (`check`, V9, D-056) |
 | phone_verified_at | timestamptz | quando il numero è stato verificato; c'è se e solo se c'è `phone` (`check`) |
 
 ### `practitioner`
