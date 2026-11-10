@@ -73,8 +73,8 @@ public class PaymentSchemaTest {
     @Test
     void theAmountMustBePositive() {
         assertViolates("payment_amount_cents_ck", () -> jdbc.update("""
-                insert into payment (booking_id, account, amount_cents, status, stripe_checkout_session_id)
-                values (?, 'alpha', 0, 'PENDING', 'cs_test_1')
+                insert into payment (booking_id, account, amount_cents, status, stripe_checkout_session_id, checkout_url)
+                values (?, 'alpha', 0, 'PENDING', 'cs_test_1', 'https://checkout.stripe.test/c/pay/cs_test_1')
                 """, booking));
     }
 

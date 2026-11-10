@@ -82,7 +82,7 @@ public class BookingJobsTest {
     @Test
     void aHoldIsNotTouchedOneMinuteBeforeItEnds() {
         long id = request(cliente);
-        clock.advance(Duration.ofMinutes(29));
+        clock.advance(Duration.ofMinutes(31));
 
         jobs.expireHolds();
 
@@ -91,9 +91,9 @@ public class BookingJobsTest {
 
     @Test
     void aHoldEndingNowIsExpired() {
-        // hold_expires_at <= now: at 10:30 a hold until 10:30 is over
+        // hold_expires_at <= now: at 10:32 a hold until 10:32 is over (32 minutes, D-061)
         long id = request(cliente);
-        clock.advance(Duration.ofMinutes(30));
+        clock.advance(Duration.ofMinutes(32));
 
         jobs.expireHolds();
 

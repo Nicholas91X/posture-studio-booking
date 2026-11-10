@@ -44,5 +44,12 @@ public enum ErrorCode {
 
     // the admin assigns a payment account whose name is well formed but not declared in PAYMENT_ACCOUNTS
     // (D-057, guide 30, 9.2)
-    PAYMENT_ACCOUNT_UNKNOWN
+    PAYMENT_ACCOUNT_UNKNOWN,
+
+    // a customer asks for a slot of a practitioner who has no payment account: nobody could pay it (guide 30, part 6)
+    CARD_PAYMENTS_UNAVAILABLE,
+
+    // Stripe did not answer, or refused: nothing was created, the customer tries again in a moment (guide 31, 8.2).
+    // A 503, not a 409: the request was right, a service it needs is not available
+    PAYMENT_PROVIDER_UNAVAILABLE
 }

@@ -74,12 +74,15 @@ public class BookingCustomerApiTest {
         assertThat(result).hasStatus(HttpStatus.CREATED);
         int id = JsonPath.read(result.getResponse().getContentAsString(), "$.id");
         assertThat(result).hasHeader("Location", "/api/customer/bookings/" + id);
+        // the page of the fake Stripe (guide 31): its id is random, so read first and compared whole after
+        String paymentUrl = JsonPath.read(result.getResponse().getContentAsString(), "$.paymentUrl");
+        assertThat(paymentUrl).startsWith("https://checkout.stripe.test/c/pay/cs_test_fake_");
         assertThat(result).bodyJson().isStrictlyEqualTo("""
                 {"id": %d, "practitionerId": %d, "serviceId": %d,
                  "startsAt": "2026-11-09T09:00:00+01:00", "endsAt": "2026-11-09T10:00:00+01:00",
-                 "status": "PENDING_PAYMENT", "priceCents": 3000, "holdExpiresAt": "2026-11-06T10:30:00+01:00",
-                 "approvalDeadline": null}
-                """.formatted(id, anna, seduta));
+                 "status": "PENDING_PAYMENT", "priceCents": 3000, "holdExpiresAt": "2026-11-06T10:32:00+01:00",
+                 "approvalDeadline": null, "paymentUrl": "%s"}
+                """.formatted(id, anna, seduta, paymentUrl));
     }
 
     @Test

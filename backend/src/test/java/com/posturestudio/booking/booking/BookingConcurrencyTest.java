@@ -85,7 +85,10 @@ public class BookingConcurrencyTest {
 
     @AfterEach
     void deleteWhatWasCommitted() {
+        // the payments of step 9 point to the bookings, the payment account to the practitioner
+        jdbc.update("delete from payment where booking_id in (select id from booking where practitioner_id = ?)", anna);
         jdbc.update("delete from booking where practitioner_id = ?", anna);
+        jdbc.update("delete from practitioner_payment_account where practitioner_id = ?", anna);
         // the bands go with their version (on delete cascade, V3)
         jdbc.update("delete from working_schedule where practitioner_id = ?", anna);
         jdbc.update("delete from service where practitioner_id = ?", anna);

@@ -44,10 +44,10 @@ final class PaymentTestData {
 
     long payment(long bookingId, String account, String status, String checkoutSessionId) {
         return jdbc.queryForObject("""
-                insert into payment (booking_id, account, amount_cents, status, stripe_checkout_session_id)
-                values (?, ?, 3000, ?, ?)
+                insert into payment (booking_id, account, amount_cents, status, stripe_checkout_session_id, checkout_url)
+                values (?, ?, 3000, ?, ?, 'https://checkout.stripe.test/c/pay/' || ?)
                 returning id
-                """, Long.class, bookingId, account, status, checkoutSessionId);
+                """, Long.class, bookingId, account, status, checkoutSessionId, checkoutSessionId);
     }
 
     void assign(long practitionerId, String account) {

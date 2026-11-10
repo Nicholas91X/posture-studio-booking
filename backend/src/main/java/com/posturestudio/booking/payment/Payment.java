@@ -1,5 +1,6 @@
 package com.posturestudio.booking.payment;
 
+import java.net.URI;
 import java.time.Instant;
 import java.util.Objects;
 
@@ -28,7 +29,7 @@ class Payment {
     // Born when Stripe has answered with the Checkout session (guide 30, 7.3). It takes the ACCOUNT, not a
     // name: only a configured account can be copied here, and from now on it never changes (D-057)
     static Payment pending(long bookingId, PaymentAccount account, long amountCents, String checkoutSessionId,
-                           Instant now) {
+                           URI checkoutUrl, Instant now) {
         Objects.requireNonNull(account, "account must not be null");
         Payment payment = new Payment();
         payment.bookingId = bookingId;
@@ -36,6 +37,7 @@ class Payment {
         payment.amountCents = Checks.requirePositive(amountCents, "amountCents");
         payment.status = PaymentStatus.PENDING;
         payment.stripeCheckoutSessionId = Checks.requireNotBlank(checkoutSessionId, "checkoutSessionId");
+        payment.checkoutUrl = Objects.requireNonNull(checkoutUrl, "checkoutUrl must not be null").toString();
         payment.createdAt = Objects.requireNonNull(now, "now must not be null");
         return payment;
     }
@@ -62,6 +64,10 @@ class Payment {
 
     @Column(updatable = false)
     private String stripeCheckoutSessionId;
+
+    // the Stripe page, kept so that the customer finds it again (V11, guide 31, part 9)
+    @Column(updatable = false)
+    private String checkoutUrl;
 
     @Column
     private String stripePaymentIntentId;
@@ -96,6 +102,10 @@ class Payment {
 
     String getStripeCheckoutSessionId() {
         return stripeCheckoutSessionId;
+    }
+
+    URI getCheckoutUrl() {
+        return URI.create(checkoutUrl);
     }
 
     String getStripePaymentIntentId() {

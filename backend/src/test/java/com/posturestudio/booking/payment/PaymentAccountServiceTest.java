@@ -130,7 +130,8 @@ public class PaymentAccountServiceTest {
         service.assign(anna, "alpha");
         PaymentAccount atCreation = service.forNewPayment(anna).orElseThrow();
         Payment payment = payments.saveAndFlush(
-                Payment.pending(data.booking(anna), atCreation, 3000, "cs_test_1", clock.instant()));
+                Payment.pending(data.booking(anna), atCreation, 3000, "cs_test_1",
+                        java.net.URI.create("https://checkout.stripe.test/c/pay/cs_test_1"), clock.instant()));
 
         service.assign(anna, "beta");
 

@@ -17,12 +17,16 @@ final class BookingTestData {
         this.jdbc = jdbc;
     }
 
+    // with the payment account "alpha" of the test configuration (guide 31): its customers can pay by card
     long practitioner(String email) {
         Long userId = jdbc.queryForObject(
                 "insert into app_user (role, email) values ('PRACTITIONER', ?) returning id", Long.class, email);
-        return jdbc.queryForObject(
+        long practitionerId = jdbc.queryForObject(
                 "insert into practitioner (user_id, first_name, last_name) values (?, 'Test', 'Practitioner') returning id",
                 Long.class, userId);
+        jdbc.update("insert into practitioner_payment_account (practitioner_id, account, assigned_at) values (?, 'alpha', now())",
+                practitionerId);
+        return practitionerId;
     }
 
     long customer(String email) {

@@ -20,8 +20,11 @@ import com.posturestudio.booking.shared.TimeRange;
 @Table(name = "booking")
 class Booking {
 
-    // while the customer pays, the slot is held for them: the same length as the Stripe session (D-008)
-    static final Duration HOLD = Duration.ofMinutes(30);
+    // While the customer pays, the slot is held for them, and the Stripe session expires at the same instant
+    // (D-008). 32 and not 30 minutes (D-061): Stripe wants a session to last at least 30 minutes from ITS
+    // creation, which comes a moment after the request; the 2 minutes cover that moment, a retry and clocks
+    // that do not agree (guide 31, part 5)
+    static final Duration HOLD = Duration.ofMinutes(32);
 
     protected Booking() {
         // JPA needs a no-arg constructor

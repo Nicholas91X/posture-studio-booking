@@ -91,6 +91,9 @@ class BookingNotificationsTest {
         anna = jdbc.queryForObject(
                 "insert into practitioner (user_id, first_name, last_name) values (?, 'Anna', 'Rossi') returning id",
                 Long.class, annaUser);
+        // the test payment account "alpha": Maria can pay Anna by card (guide 31)
+        jdbc.update("insert into practitioner_payment_account (practitioner_id, account, assigned_at) values (?, 'alpha', now())",
+                anna);
         Long mariaUser = jdbc.queryForObject(
                 "insert into app_user (role, email) values ('CUSTOMER', ?) returning id", Long.class, MARIA);
         maria = jdbc.queryForObject(
@@ -113,7 +116,10 @@ class BookingNotificationsTest {
         mail.clear();
         clock.reset();
         jdbc.update("delete from push_subscription where practitioner_id = ?", anna);
+        // the payments of step 9 point to the bookings, the payment account to the practitioner
+        jdbc.update("delete from payment where booking_id in (select id from booking where practitioner_id = ?)", anna);
         jdbc.update("delete from booking where practitioner_id = ?", anna);
+        jdbc.update("delete from practitioner_payment_account where practitioner_id = ?", anna);
         jdbc.update("delete from working_schedule where practitioner_id = ?", anna);
         jdbc.update("delete from service where practitioner_id = ?", anna);
         jdbc.update("delete from practitioner where id = ?", anna);

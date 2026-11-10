@@ -1,5 +1,6 @@
 package com.posturestudio.booking.booking;
 
+import java.net.URI;
 import java.sql.SQLException;
 import java.time.Clock;
 import java.time.Duration;
@@ -41,7 +42,7 @@ import com.posturestudio.booking.shared.TimeRange;
  * The only door of the booking module (D-002): returns records, never the entity.
  * Every customer method receives the id of the customer who acts and finds only what is theirs.
  * Dependencies: booking -> customer, catalog, practitioner, schedule. Nobody depends on booking:
- * schedule reaches it only through OccupiedTime (D-044).
+ * schedule reaches it only through OccupiedTime (D-044), payment through CardHolds and CardCheckout.
  *
  * Transactions run with the default isolation of PostgreSQL, READ COMMITTED: every statement sees the
  * data committed when it starts. The customer lock relies on it (guide 19, 4.7): with REPEATABLE READ
@@ -64,18 +65,20 @@ public class BookingService {
     private final PractitionerService practitioners;
     private final ScheduleService schedule;
     private final CardHolds cards;
+    private final CardCheckout checkout;
     private final ApplicationEventPublisher events;
     private final Clock clock;
 
     BookingService(BookingRepository bookings, CatalogService catalog, CustomerService customers,
                    PractitionerService practitioners, ScheduleService schedule, CardHolds cards,
-                   ApplicationEventPublisher events, Clock clock) {
+                   CardCheckout checkout, ApplicationEventPublisher events, Clock clock) {
         this.bookings = bookings;
         this.catalog = catalog;
         this.customers = customers;
         this.practitioners = practitioners;
         this.schedule = schedule;
         this.cards = cards;
+        this.checkout = checkout;
         this.events = events;
         this.clock = clock;
     }
@@ -83,7 +86,8 @@ public class BookingService {
     // ***** CUSTOMER *****
 
     // A customer asks for a slot (guide 19, part 2 for the order). One transaction, one reading of the clock.
-    // Outcome: PENDING_PAYMENT, held for 30 minutes (D-008), until paymentAuthorized
+    // Outcome: PENDING_PAYMENT, held for 32 minutes (D-008, D-061), with the page where the customer pays
+    // (guide 31), until paymentAuthorized
     @Transactional
     public CustomerBookingView request(long customerId, NewBooking request) {
         Instant now = clock.instant();
@@ -92,6 +96,13 @@ public class BookingService {
 
         // 1. the request names something on sale (404): no lock needed for that
         ServiceOnSale service = catalog.serviceOnSale(practitionerId, request.serviceId());
+
+        // 1b. nobody can pay this practitioner by card (no payment account): refused before any lock or
+        // write, so no slot is ever held for a booking nobody can pay (guide 30, part 6)
+        if (!checkout.available(practitionerId)) {
+            throw new BusinessRuleException(ErrorCode.CARD_PAYMENTS_UNAVAILABLE,
+                    "Practitioner " + practitionerId + " cannot take card payments yet");
+        }
 
         // 2. from here on, the requests of this customer go one at a time (guide 19, part 4):
         // a second one waits here until this transaction ends, then counts again and sees this booking
@@ -124,14 +135,19 @@ public class BookingService {
         } catch (DataIntegrityViolationException | PessimisticLockingFailureException e) {
             throw translateOverlap(e, practitionerId, slot);
         }
-        return CustomerBookingView.from(booking);
+
+        // 7. the Stripe page, inside this transaction (guide 31, parts 3 and 4): if Stripe fails, the booking
+        // is rolled back with everything else; if our commit fails after Stripe answered, a session nobody
+        // knows expires by itself. The page expires with the hold, never after it
+        URI page = checkout.start(new CardCheckout.CheckoutRequest(booking.getId(), practitionerId, customerId,
+                service.id(), booking.getPriceCents(), booking.getHoldExpiresAt()));
+        return CustomerBookingView.from(booking, page);
     }
 
     @Transactional(readOnly = true)
     public CustomerBookingView findForCustomer(long customerId, long bookingId) {
-        return bookings.findByIdAndCustomerId(bookingId, customerId)
-                .map(CustomerBookingView::from)
-                .orElseThrow(() -> notFound(bookingId));
+        Booking booking = bookings.findByIdAndCustomerId(bookingId, customerId).orElseThrow(() -> notFound(bookingId));
+        return customerView(booking, clock.instant());
     }
 
     // While waiting for the answer the customer can give up, nothing charged (D-030). Allowed even after
@@ -260,8 +276,9 @@ public class BookingService {
 
     @Transactional(readOnly = true)
     public List<CustomerBookingView> listForCustomer(long customerId) {
+        Instant now = clock.instant();
         return bookings.findByCustomerIdOrderByStartsAtDesc(customerId).stream()
-                .map(CustomerBookingView::from)
+                .map(booking -> customerView(booking, now))
                 .toList();
     }
 
@@ -297,6 +314,15 @@ public class BookingService {
     }
 
     // ***** HELPERS *****
+
+    // The payment page only while the slot is still held for the customer (guide 31, part 9). At most a few
+    // such bookings per customer (the limit of future bookings), so one question each is fine
+    private CustomerBookingView customerView(Booking booking, Instant now) {
+        if (booking.getStatus() == BookingStatus.PENDING_PAYMENT && booking.holdsTimeAt(now)) {
+            return CustomerBookingView.from(booking, checkout.pageOf(booking.getId()).orElse(null));
+        }
+        return CustomerBookingView.from(booking);
+    }
 
     // The rows of a panel list with names and flags (guide 23, part 2). A fixed number of queries whatever
     // the number of rows: one question per module on a set of ids (D-029), the rest combined in Java.

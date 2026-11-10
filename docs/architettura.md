@@ -126,8 +126,8 @@ Lo stesso meccanismo vale per i professionisti: la loro email ha il ruolo `PRACT
 ### Prenotazione con carta
 
 1. Il cliente sceglie un orario libero (che inizia più di 24 ore dopo, D-030). Se il professionista approva a mano, il cliente vede il tempo di risposta prima di confermare.
-2. Il backend crea la prenotazione in stato "in attesa di pagamento", con un blocco di 30 minuti. Se l'orario nel frattempo è stato preso, il database rifiuta e il cliente vede "orario non più disponibile".
-3. Il backend crea una sessione Stripe Checkout con *manual capture* (D-031) e scadenza uguale al blocco, e restituisce l'indirizzo della pagina di pagamento.
+2. Il backend crea la prenotazione in stato "in attesa di pagamento", con un blocco di 32 minuti (D-061). Se il professionista non ha un conto di incasso (D-057), la richiesta è rifiutata prima. Se l'orario nel frattempo è stato preso, il database rifiuta e il cliente vede "orario non più disponibile".
+3. Nella stessa transazione, il backend crea una sessione Stripe Checkout con *manual capture* (D-031), sul conto del professionista e con scadenza uguale al blocco, registra il pagamento "in attesa" e restituisce l'indirizzo della pagina. Se Stripe non risponde, non resta niente: il cliente riprova (D-061).
 4. Il cliente paga sulla pagina di Stripe e torna sul sito, che mostra "pagamento in verifica". Stripe ha solo **bloccato** l'importo sulla carta.
 5. Stripe avvisa il backend con il webhook `checkout.session.completed`. La prenotazione passa ad "in attesa di approvazione", con la scadenza fotografata.
 6. **Approvazione**:
@@ -162,7 +162,8 @@ Nessun passaggio su Stripe.
 Cosa si usa e cosa va documentato oltre al webhook:
 
 - **Stripe Checkout**: la pagina di pagamento è di Stripe. Il backend crea una *Checkout Session* con importo, descrizione e `metadata` (id della prenotazione o del pagamento interno), e riceve un indirizzo a cui mandare il cliente.
-- **Scadenza della sessione**: Stripe accetta scadenze da un minimo di 30 minuti. Per questo il blocco dell'orario dura 30 minuti, allineato alla sessione.
+- **Scadenza della sessione**: Stripe accetta scadenze da 30 minuti a 24 ore **dalla creazione della sessione**, che arriva un attimo dopo la richiesta. Per questo il blocco dell'orario dura 32 minuti e la sessione scade nello stesso istante (D-061).
+- **Conti di incasso** (D-057, D-060): un conto Stripe per professionista o uno comune, dichiarati nella configurazione; ogni pagamento resta sul conto su cui è nato.
 - **Manual capture** (D-031): per le sedute, la sessione Checkout blocca l'importo senza incassarlo. Il backend chiama poi Stripe per **incassare**, all'approvazione, o per **annullare** il blocco, al rifiuto, alla scadenza o al ritiro. Il blocco dura in genere circa 7 giorni. I pacchetti si incassano subito.
 - **Webhook**, gli eventi gestiti:
   - `checkout.session.completed` → seduta: importo bloccato, prenotazione in attesa di approvazione; pacchetto: crea il lotto

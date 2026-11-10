@@ -7,6 +7,7 @@ Modifiche dovute alle migrazioni:
 - **V2 (passo 5)**: `service` e `package_offer` come da progettazione, con `created_at`; foreign key composta per il servizio del pacchetto (D-025); indici su `practitioner_id`.
 - **V3 (passo 6)**: `working_schedule`, `working_hours` e `unavailability` come da progettazione (D-034), con `created_at`; fasce all'ora piena o alla mezz'ora e non sovrapposte (*exclusion constraint* su `timerange`, estensione `btree_gist`, D-036); cascata da una versione alle sue fasce; in `practitioner` scatto solo 30 o 60 con default 60, `min_booking_notice_hours` e `booking_horizon_days` (D-033, D-035).
 - **V8 (passo 8)**: `app_user.phone` in E.164, unico, scritto solo dopo la verifica, con `phone_verified_at` (D-055; i valori della V1 azzerati, mai scritti da nessun codice); in `login_code` il canale `SMS`, `purpose` (`SIGN_IN`, `VERIFY_PHONE`), `requested_by` (l'account che chiede una verifica) e `message_sent`.
+- **V11 (passo 9, pezzo 2)**: `payment.checkout_url`, l'indirizzo della pagina di Stripe (D-061). Il blocco dell'orario passa da 30 a 32 minuti nel codice (D-061), senza cambiare lo schema.
 - **V10 (passo 9, pezzo 1)**: `practitioner_payment_account` (il conto di incasso di ogni professionista, D-057); `payment` solo per le sedute, con `account` (il conto su cui è fatto, mai cambiato), `version` e `created_at` scritto da Java; un solo `PENDING` per prenotazione (indice unico parziale). `purpose`, `package_offer_id`, `credit_lot_id` e `customer_id` arrivano con i pacchetti al passo 10 (D-060).
 - **V9 (correzione del passo 8)**: `app_user_admin_no_phone_ck`, l'admin non ha un numero e accede solo con l'email (D-056).
 - **V7 (passo 8)**: `push_subscription` riferita a `practitioner` invece che ad `app_user` (solo i professionisti ricevono push, D-054), con `registered_at`; `endpoint` unico; indice su `practitioner_id, registered_at`.
@@ -273,6 +274,7 @@ Dalla V10, solo per le **sedute** (D-060). Le colonne dei pacchetti arrivano al 
 | amount_cents | bigint | importo, dal prezzo fotografato della prenotazione (D-011); maggiore di zero |
 | status | text | `PENDING` (sessione creata), `AUTHORIZED` (importo bloccato, D-031), `SUCCEEDED` (incassato), `CANCELED` (blocco annullato), `EXPIRED` (sessione scaduta senza pagamento) |
 | stripe_checkout_session_id | text | unico, obbligatorio: la riga nasce dopo la risposta di Stripe |
+| checkout_url | text | l'indirizzo della pagina di Stripe, obbligatorio (V11): il cliente lo ritrova finché il blocco vale (D-061) |
 | stripe_payment_intent_id | text | unico, valorizzato dal webhook |
 | version | bigint | blocco ottimistico, seconda difesa (il lucchetto è sulla prenotazione) |
 | created_at | timestamptz | scritto da Java con il `Clock` |

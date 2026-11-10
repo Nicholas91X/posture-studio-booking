@@ -1,6 +1,8 @@
 package com.posturestudio.booking.booking;
 
+import java.net.URI;
 import java.util.List;
+import java.util.Optional;
 import java.util.concurrent.CopyOnWriteArrayList;
 
 import org.springframework.boot.test.context.TestConfiguration;
@@ -15,6 +17,11 @@ public class BookingTestDoubles {
     @Bean
     RecordingCardHolds recordingCardHolds() {
         return new RecordingCardHolds();
+    }
+
+    @Bean
+    RecordingCardCheckout recordingCardCheckout() {
+        return new RecordingCardCheckout();
     }
 
     @Bean
@@ -44,6 +51,39 @@ public class BookingTestDoubles {
         void reset() {
             calls.clear();
             declineCaptures = false;
+        }
+    }
+
+    // CardCheckout that hands out a fake page and remembers it; a practitioner can be made "without account"
+    static class RecordingCardCheckout implements CardCheckout {
+
+        final List<CheckoutRequest> started = new CopyOnWriteArrayList<>();
+        final java.util.Set<Long> withoutAccount = java.util.concurrent.ConcurrentHashMap.newKeySet();
+
+        @Override
+        public boolean available(long practitionerId) {
+            return !withoutAccount.contains(practitionerId);
+        }
+
+        @Override
+        public URI start(CheckoutRequest request) {
+            started.add(request);
+            return page(request.bookingId());
+        }
+
+        @Override
+        public Optional<URI> pageOf(long bookingId) {
+            return started.stream().anyMatch(request -> request.bookingId() == bookingId)
+                    ? Optional.of(page(bookingId)) : Optional.empty();
+        }
+
+        static URI page(long bookingId) {
+            return URI.create("https://checkout.test/booking/" + bookingId);
+        }
+
+        void reset() {
+            started.clear();
+            withoutAccount.clear();
         }
     }
 
