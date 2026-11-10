@@ -45,6 +45,12 @@ public class FakeStripeGateway implements StripeGateway {
     volatile boolean refuseCaptures;
     // "Stripe captured, our commit failed" (guide 33, part 6): the capture happens, then OUR side fails
     volatile boolean failAfterCapture;
+    // a 500 of Stripe on the next capture: nothing captured, and the caller gets ServiceUnavailableException
+    volatile boolean failNextCapture;
+    // the capture happens on Stripe, but its response is lost: the caller gets ServiceUnavailableException
+    volatile boolean loseNextCaptureResponse;
+    // every capture asked, with its key, also the failed ones
+    private final List<String> captureKeys = new CopyOnWriteArrayList<>();
 
     @Override
     public CheckoutSession createCheckoutSession(PaymentAccount account, NewCheckoutSession session, String idempotencyKey) {
@@ -60,17 +66,41 @@ public class FakeStripeGateway implements StripeGateway {
         return new CheckoutSession(id, url);
     }
 
+    // as Stripe: captured stays captured, released stays released, otherwise still held
+    @Override
+    public PaymentIntentStatus paymentIntentStatus(PaymentAccount account, String paymentIntentId) {
+        if (down) {
+            throw new ServiceUnavailableException(ErrorCode.PAYMENT_PROVIDER_UNAVAILABLE, "The fake Stripe is down", null);
+        }
+        if (captured.contains(paymentIntentId)) {
+            return PaymentIntentStatus.SUCCEEDED;
+        }
+        if (refuseCaptures || cancels.stream().anyMatch(cancel -> cancel.paymentIntentId().equals(paymentIntentId))) {
+            return PaymentIntentStatus.CANCELED;
+        }
+        return PaymentIntentStatus.REQUIRES_CAPTURE;
+    }
+
     @Override
     public CardHolds.CaptureResult capturePaymentIntent(PaymentAccount account, String paymentIntentId,
                                                         String idempotencyKey) {
         if (down) {
             throw new ServiceUnavailableException(ErrorCode.PAYMENT_PROVIDER_UNAVAILABLE, "The fake Stripe is down", null);
         }
+        captureKeys.add(idempotencyKey);
+        if (failNextCapture) {
+            failNextCapture = false;
+            throw new ServiceUnavailableException(ErrorCode.PAYMENT_PROVIDER_UNAVAILABLE, "simulated: a 500 of Stripe", null);
+        }
         if (refuseCaptures) {
             return new CardHolds.CaptureResult.Refused("payment_intent_unexpected_state");
         }
         captures.add(new Capture(account.name(), paymentIntentId, idempotencyKey));
         captured.add(paymentIntentId);
+        if (loseNextCaptureResponse) {
+            loseNextCaptureResponse = false;
+            throw new ServiceUnavailableException(ErrorCode.PAYMENT_PROVIDER_UNAVAILABLE, "simulated: response lost", null);
+        }
         if (failAfterCapture) {
             throw new IllegalStateException("simulated: the money is captured, then our transaction fails");
         }
@@ -97,6 +127,21 @@ public class FakeStripeGateway implements StripeGateway {
         down = false;
         refuseCaptures = false;
         failAfterCapture = false;
+        failNextCapture = false;
+        loseNextCaptureResponse = false;
+        captureKeys.clear();
+    }
+
+    public void failNextCapture() {
+        failNextCapture = true;
+    }
+
+    public void loseNextCaptureResponse() {
+        loseNextCaptureResponse = true;
+    }
+
+    public List<String> captureKeys() {
+        return List.copyOf(captureKeys);
     }
 
     public void refuseCaptures() {

@@ -191,6 +191,21 @@ class StripeClientGatewayTest {
 
     // ***** capture and release (guide 33) *****
 
+    // D-064: before every capture, a GET of the PaymentIntent, without idempotency key
+    @Test
+    void theStatusOfAPaymentIntentIsAGet() {
+        answer = """
+                {"id": "pi_1", "object": "payment_intent", "status": "requires_capture"}
+                """;
+
+        assertThat(gateway.paymentIntentStatus(ACCOUNTS.byName("alpha").orElseThrow(), "pi_1"))
+                .isEqualTo(StripeGateway.PaymentIntentStatus.REQUIRES_CAPTURE);
+        Received request = received.getFirst();
+        assertThat(request.method()).isEqualTo("GET");
+        assertThat(request.path()).isEqualTo("/v1/payment_intents/pi_1");
+        assertThat(request.idempotencyKey()).isNull();
+    }
+
     @Test
     void aCaptureIsAPostToThePaymentIntentWithItsIdempotencyKey() {
         answer = """

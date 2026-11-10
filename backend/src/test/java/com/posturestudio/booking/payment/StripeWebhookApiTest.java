@@ -90,7 +90,10 @@ public class StripeWebhookApiTest {
         persisted();
         assertThat(bookingStatus()).isEqualTo("CONFIRMED");
         // captured for real now (guide 33), on the account of the payment
-        assertThat(stripe.captures()).containsExactly(new FakeStripeGateway.Capture("alpha", "pi_A", "capture-pi_A"));
+        assertThat(stripe.captures()).singleElement().satisfies(capture -> {
+            assertThat(capture.account()).isEqualTo("alpha");
+            assertThat(capture.idempotencyKey()).startsWith("capture-pi_A-");
+        });
         assertThat(paymentRow()).containsEntry("status", "SUCCEEDED");
     }
 
