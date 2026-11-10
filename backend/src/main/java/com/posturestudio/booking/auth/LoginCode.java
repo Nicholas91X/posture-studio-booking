@@ -33,6 +33,18 @@ class LoginCode {
     @Enumerated(EnumType.STRING)
     private LoginChannel channel;
 
+    // sign in, or verify a phone (V8, guide 29, 3.2): the latest code is looked for per purpose
+    @Enumerated(EnumType.STRING)
+    private CodePurpose purpose;
+
+    // VERIFY_PHONE only: the account that asked, the only one the code confirms the number for (guide 29, 3.3).
+    // An id: AppUser is in this module, but the code does not need the account loaded
+    private Long requestedBy;
+
+    // false for an SMS sign-in to a number that is nobody's: a row so that the limits behave the same,
+    // with no message behind it (guide 29, 4.3)
+    private boolean messageSent;
+
     private String destination;
 
     private String codeHash;
@@ -54,8 +66,27 @@ class LoginCode {
         // JPA needs a no-arg constructor
     }
 
+    // an email sign-in code: the only kind of the pieces 1 to 5
     LoginCode(LoginChannel channel, String destination, String codeHash, InetAddress requestedFrom, Instant now) {
+        this(channel, CodePurpose.SIGN_IN, null, true, destination, codeHash, requestedFrom, now);
+    }
+
+    LoginCode(LoginChannel channel, CodePurpose purpose, Long requestedBy, boolean messageSent, String destination,
+              String codeHash, InetAddress requestedFrom, Instant now) {
         this.channel = Objects.requireNonNull(channel, "channel must not be null");
+        this.purpose = Objects.requireNonNull(purpose, "purpose must not be null");
+        // the same rules as the checks of V8 on login_code, said earlier and with a clearer message
+        if (purpose == CodePurpose.VERIFY_PHONE && channel != LoginChannel.SMS) {
+            throw new IllegalArgumentException("A phone is verified by SMS only");
+        }
+        if ((purpose == CodePurpose.VERIFY_PHONE) != (requestedBy != null)) {
+            throw new IllegalArgumentException("A verification code, and only it, has the account that asked");
+        }
+        if (channel == LoginChannel.EMAIL && !messageSent) {
+            throw new IllegalArgumentException("An email always leaves");
+        }
+        this.requestedBy = requestedBy;
+        this.messageSent = messageSent;
         this.destination = Objects.requireNonNull(destination, "destination must not be null");
         this.codeHash = Objects.requireNonNull(codeHash, "codeHash must not be null");
         this.requestedFrom = Objects.requireNonNull(requestedFrom, "requestedFrom must not be null");
@@ -100,6 +131,18 @@ class LoginCode {
 
     LoginChannel getChannel() {
         return channel;
+    }
+
+    CodePurpose getPurpose() {
+        return purpose;
+    }
+
+    Long getRequestedBy() {
+        return requestedBy;
+    }
+
+    boolean isMessageSent() {
+        return messageSent;
     }
 
     String getDestination() {

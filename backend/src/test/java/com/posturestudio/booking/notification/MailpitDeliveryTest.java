@@ -26,6 +26,9 @@ import org.testcontainers.junit.jupiter.Testcontainers;
 
 import com.jayway.jsonpath.JsonPath;
 import com.posturestudio.booking.FixedClockConfiguration;
+import com.posturestudio.booking.auth.CodePurpose;
+import com.posturestudio.booking.auth.PhoneNumber;
+import com.posturestudio.booking.auth.SmsCodeSender;
 import com.posturestudio.booking.TestcontainersConfiguration;
 import com.posturestudio.booking.booking.BookingService;
 import com.posturestudio.booking.booking.NewPanelBooking;
@@ -35,7 +38,8 @@ import com.posturestudio.booking.customer.CustomerDetails;
 // Mailpit in a container (the image of infra/docker-compose.dev.yml), read back with Mailpit's HTTP API.
 // What the recording sender cannot see: the configuration of Spring Mail, the headers, the encoding of
 // the accented letters (UTF-8). Its own context, because of the mail properties
-@SpringBootTest(properties = "booking.jobs.enabled=false")
+// notification.sms.mailpit=true: the SMS of development as emails (guide 29, 6.3)
+@SpringBootTest(properties = {"booking.jobs.enabled=false", "notification.sms.mailpit=true"})
 @Import({TestcontainersConfiguration.class, FixedClockConfiguration.class})
 @Testcontainers
 class MailpitDeliveryTest {
@@ -55,10 +59,16 @@ class MailpitDeliveryTest {
         registry.add("spring.mail.port", () -> MAILPIT.getMappedPort(SMTP));
     }
 
+    // the messages to Maria only: the SMS test of this class writes to Mailpit too
+    private static final String MARIAS = "/api/v1/search?query=to:mailpit-maria@example.com";
+
     private final HttpClient http = HttpClient.newHttpClient();
 
     @Autowired
     BookingService bookings;
+
+    @Autowired
+    SmsCodeSender sms;
 
     @Autowired
     JdbcTemplate jdbc;
@@ -96,8 +106,8 @@ class MailpitDeliveryTest {
                 new CustomerDetails("mailpit-maria@example.com", "Maria", "Bianchi")));
 
         await().atMost(Duration.ofSeconds(10))
-                .until(() -> JsonPath.<Integer>read(get("/api/v1/messages"), "$.total") == 1);
-        String id = JsonPath.read(get("/api/v1/messages"), "$.messages[0].ID");
+                .until(() -> JsonPath.<Integer>read(get(MARIAS), "$.messages_count") == 1);
+        String id = JsonPath.read(get(MARIAS), "$.messages[0].ID");
         String message = get("/api/v1/message/" + id);
 
         assertThat(JsonPath.<String>read(message, "$.From.Address")).isEqualTo("no-reply@posture-studio.local");
@@ -107,6 +117,25 @@ class MailpitDeliveryTest {
                 .contains("Gentile Maria,", "la tua prenotazione è confermata:",
                         "Seduta con Anna Rossi", "lunedì 9 novembre 2026, ore 9:00",
                         "Questa è un'email automatica");
+    }
+
+    // an SMS of development: an email to sms-<number>@sms.local with the exact text of the SMS, in another
+    // thread (the answer of the request does not wait). The booking email of the other test may be there too
+    @Test
+    void anSmsOfDevelopmentReachesMailpitAsItsText() throws Exception {
+        sms.sendCode(new PhoneNumber("+393331234567"), "042517", java.time.Duration.ofMinutes(10), CodePurpose.SIGN_IN);
+
+        String search = "/api/v1/search?query=" + java.net.URLEncoder.encode("to:sms-393331234567@sms.local", StandardCharsets.UTF_8);
+        await().atMost(Duration.ofSeconds(10)).until(() -> JsonPath.<Integer>read(get(search), "$.messages_count") == 1);
+        String message = get("/api/v1/message/" + JsonPath.<String>read(get(search), "$.messages[0].ID"));
+
+        assertThat(JsonPath.<String>read(message, "$.Subject")).isEqualTo("SMS a +393331234567");
+        // email lines travel as CRLF over SMTP: the text of the SMS is the same
+        assertThat(JsonPath.<String>read(message, "$.Text").replace("\r\n", "\n").stripTrailing()).isEqualTo("""
+                Codice di accesso: 042517
+                Vale 10 minuti. Non darlo a nessuno, nemmeno allo studio.
+
+                @localhost #042517""");
     }
 
     private String get(String path) throws IOException, InterruptedException {

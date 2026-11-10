@@ -1,6 +1,6 @@
 # Passo 08 — Accesso e notifiche
 
-> **Stato: in corso** (dal 2026-11-09). Pezzi 1–5 di 6 fatti, 601 test verdi (`mvnw clean test`). Branch `feat/step-8-access` dal pezzo 2 (il pezzo 1 è su `main`).
+> **Stato: chiuso** (2026-11-09). Pezzi 1–6 fatti, 660 test verdi (`mvnw clean test`). Branch `feat/step-8-access` dal pezzo 2 (il pezzo 1 è su `main`): **PR verso `main` da aprire**.
 
 ## Obiettivo
 Il sistema sa chi lo sta usando: accesso con un codice via email o via SMS (solo da un numero verificato), sessione con cookie, ruoli, account disattivati fuori. I sostituti provvisori (`DevHeaderCurrentPractitioner`, `DevHeaderCurrentCustomer`) spariscono. Le notifiche email e push si agganciano agli eventi del passo 7.
@@ -11,21 +11,21 @@ I pezzi (guida 24, parte 0):
 3. Admin e professionisti (D-021) — ✅ fatto (guida 26, D-052)
 4. Notifiche email sugli eventi del passo 7 — ✅ fatto (guida 27, D-053)
 5. Notifiche push (D-032, D-039), con riserva email — ✅ fatto lato backend (guida 28, D-054)
-6. Codice di accesso via SMS da numero verificato
+6. Codice di accesso via SMS da numero verificato — ✅ fatto (guida 29, D-055)
 
 ## Criteri di "fatto" (dal brief)
 
 | Criterio | Stato | Dove si vede |
 |---|---|---|
-| Accesso via email e via SMS funzionanti, con limiti e tentativi provati | email ✅ (richiesta, verifica, sessione); SMS al pezzo 6 | `LoginCodeServiceTest`, `LoginCodeApiTest`, `SessionApiTest` |
+| Accesso via email e via SMS funzionanti, con limiti e tentativi provati | ✅ email (pezzi 1–2) e SMS (pezzo 6: verifica del numero, accesso, limiti per numero, IP e account, tetto giornaliero, tentativi) | `LoginCodeServiceTest`, `LoginCodeApiTest`, `SessionApiTest`, `SmsCodeServiceTest`, `SmsAccessApiTest`, `PhoneNumberTest` |
 | I due DevHeader rimossi; nessun test li usa più | ✅ | `SessionCurrentPractitioner`, `SessionCurrentCustomer`, `TestSessions`; nessun `X-Practitioner-Id` o `X-Customer-Id` nel codice |
 | Test della riservatezza esistono e sono verdi | ✅ | `ConfidentialityTest` |
 | Ogni area solo al suo ruolo; account disattivati fuori | ✅ | `ConfidentialityTest`, `SessionApiTest` |
 | L'admin crea e disattiva professionisti; primo admin senza segreti | ✅ (`ADMIN_EMAIL` all'avvio, solo nel `.env`) | `PractitionerAdminApiTest`, `AdminBootstrapTest`, `AdminBootstrapStartupTest` |
 | Email in Mailpit per ogni evento; un invio fallito non annulla la prenotazione | ✅ (email dopo il commit in un altro thread; un invio rifiutato non tocca la prenotazione né l'altra email) | `BookingNotificationsTest`, `MailpitDeliveryTest`, `BookingEmailsTest` |
 | Push con riserva email provata | ✅ con un finto servizio push e un finto browser che decifra: push accettata → niente email al professionista; nessun dispositivo, 410 o 500 → email. Servizio push vero al passo 13 | `BookingNotificationsTest`, `PushEncryptionTest` (vettore RFC 8291), `VapidTest`, `PushSubscriptionApiTest` |
-| Punto aperto 7 chiuso; punto 5 spostato al passo 14; nuovo punto sul fornitore SMS | punto 5 spostato; 7 e fornitore SMS al pezzo 6 | `stato.md`, `requisiti.md` |
-| `modello-dati.md` aggiornato; test verdi; branch e PR | V5 e V6 descritte, note del pezzo 3, nessuna migrazione nel pezzo 4, V7 nel pezzo 5 (descritta); 601 verdi; branch aperto, PR a fine passo | `modello-dati.md` |
+| Punto aperto 7 chiuso; punto 5 spostato al passo 14; nuovo punto sul fornitore SMS | ✅ punto 7 chiuso (D-055), punto 5 spostato, nuovo punto 17 (fornitore SMS, prima del passo 14) | `stato.md`, `requisiti.md` |
+| `modello-dati.md` aggiornato; test verdi; branch e PR | V5 e V6 descritte, note del pezzo 3, nessuna migrazione nel pezzo 4, V7 nel pezzo 5 e V8 nel pezzo 6 (descritte); 601 verdi; branch aperto, PR a fine passo | `modello-dati.md` |
 
 ## Cosa è stato costruito
 
@@ -89,6 +89,18 @@ I pezzi (guida 24, parte 0):
 - `tools/GenerateVapidKeys.java`; `notification.push.vapid.*` in `application.properties`; `VAPID_*` in `.env.example`; le chiavi dell'RFC nelle proprietà dei test.
 - Test: `PushEncryptionTest` (vettore RFC), `VapidTest`, `PushMessagesTest`, `PushEndpointTest`, `PushSubscriptionApiTest`, casi nuovi in `BookingNotificationsTest`; `FakePushService` (server HTTP del JDK) e `FakeBrowser` (la decifratura, scritta a parte).
 
+### Pezzo 6 — Codice di accesso via SMS
+- `V8__phone_and_sms_codes.sql`: `app_user.phone` in E.164, unico, solo verificato, con `phone_verified_at`; in `login_code` il canale `SMS`, `purpose`, `requested_by`, `message_sent`, con i loro `check`.
+- `auth/PhoneNumber` (solo cellulari italiani, normalizzato) e `@ValidPhone`; `CodePurpose`; `LoginChannel.SMS`.
+- `auth/LoginCodeService`: `requestSms`, `verifySms`, `requestPhoneVerification`, `confirmPhone`, `phoneOf`, `removePhone`, `smsAvailable`; il cuore comune `attempt`; i limiti per account e il tetto degli SMS spediti.
+- `auth/LoginCode` con scopo, account che chiede e `messageSent`; `LoginCodeRepository` con le ricerche per scopo e i due conteggi nuovi; `LoginCodeProperties.Sms`.
+- `auth/AppUser.verifyPhone` e `removePhone` (al posto di `setPhone`); `AppUserRepository.findByPhone`.
+- `auth/SmsCodeSender` (facoltativa), `PhoneCheck`, `AccountPhoneView`, `SmsRequests`, `ClientAddress`, `AuthErrorCode.SMS_UNAVAILABLE` e `problem(...)`.
+- `auth/AccountPhoneController` (`/api/account/phone`), `/login-code/sms` in `LoginCodeController`, `/session/sms` in `SessionController`; `/api/account/**` in `SecurityConfiguration`.
+- `notification/SmsTexts` (funzione pura) e `MailpitSmsCodeSender` (solo sviluppo, `@Async`).
+- `auth.login-code.sms.*` e `notification.sms.mailpit` in `application.properties`; `SMS_TO_MAILPIT` in `.env.example`.
+- Test: `PhoneNumberTest`, `SmsTextsTest`, `SmsCodeServiceTest`, `SmsAccessApiTest`, `RecordingSmsCodeSender`; casi nuovi in `LoginCodeSchemaTest`, `LoginCodeApiTest` (503), `MailpitDeliveryTest` (un SMS in Mailpit).
+
 ## Concetti chiave
 
 - **Perché l'hash da solo non basta.** I codici a 6 cifre sono un milione. Chi ruba la tabella calcola tutte le impronte SHA-256 in meno di un secondo; anche BCrypt cede in pochi minuti su una scheda grafica. Un **HMAC** con una chiave fuori dal database rende le impronte inutili senza la chiave. La difesa vera resta il limite di tentativi con la scadenza breve.
@@ -124,6 +136,11 @@ I pezzi (guida 24, parte 0):
 - **SSRF.** Se il server chiama URL dati dal client, un elenco degli host ammessi, controllato all'ingresso.
 - **`on conflict do update`.** L'*upsert* in un'istruzione sola; `excluded` è la riga che si voleva inserire.
 - **Una riserva decisa dall'esito.** L'email parte se nessun dispositivo ha accettato la push, non "per sicurezza".
+- **Enumerazione quando non si può fare lo stesso lavoro.** Con l'SMS non si spedisce ai numeri sconosciuti; allora si pareggiano i segnali uno per uno: la risposta, i limiti (la riga si scrive comunque) e il tempo (si spedisce in un altro thread).
+- **SMS pumping.** Il modulo che spedisce SMS è un bersaglio di frode: solo i numeri che servono, solo da entrati, limiti a strati e un tetto di spesa.
+- **Possesso dimostrato.** Un numero si verifica con un codice mandato a quel numero, legato all'account che lo chiede e allo scopo; i numeri si riciclano, quindi lo prende chi lo verifica adesso.
+- **Un vincolo `unique` si controlla a ogni istruzione.** Spostare un valore unico da una riga all'altra nella stessa transazione richiede l'ordine giusto: prima liberare, `flush`, poi scrivere.
+- **Una dipendenza facoltativa.** `ObjectProvider` di Spring: un servizio che esiste solo se configurato, con una risposta chiara (503) quando manca.
 - **Java moderno usato qui:** `sealed interface` e *record pattern* (21), `record` con costruttore compatto come configurazione, *text block* (15), `RandomGenerator` (17), `HexFormat` (17), `List.reversed()` e `getFirst()` delle *sequenced collection* (21), virtual thread (21, pezzo 4), `switch` con *pattern matching* su una `sealed interface` senza `default` (21, pezzo 4), `Thread.isVirtual()` nei test; `HttpClient` del JDK (11) chiuso come `AutoCloseable` (21); un programma di un solo file lanciato senza compilarlo (JEP 330, `tools/GenerateVapidKeys.java`).
 
 ## Decisioni
@@ -148,7 +165,12 @@ I pezzi (guida 24, parte 0):
 11. **(Pezzo 4) Un test che sul PC di sviluppo non poteva fallire.** La JVM di questo PC è in italiano: togliere `Locale.ITALIAN` dai testi lasciava i test verdi, ma su un server in inglese le date sarebbero uscite in inglese ("Thursday"). Ora i test girano con lingua inglese e fuso UTC (`argLine` di Surefire), come il server: la stessa mutazione fa fallire i test.
 12. **(Pezzo 5, errore di Claude) Le mutazioni che si contaminavano a vicenda.** Lo script che ripristinava il codice dopo ogni mutazione *spostava* la copia di backup al posto del file. Una copia spostata conserva la sua data di modifica, più vecchia della classe compilata dalla mutazione, e Maven poteva tenere in `target` la classe mutata. Sintomo: togliendo il controllo della curva falliva anche il test del vettore RFC, che non c'entrava (l'intestazione era giusta, il testo cifrato no: era ancora la mutazione precedente su `key_info`). Con `mvnw clean` falliva solo il test giusto. Corretto riscrivendo il file invece di spostarlo, e rifatte tutte e dieci le mutazioni con `clean`. La lezione: un risultato strano di un test va spiegato, non contato.
 13. **(Pezzo 5) Un *text block* Java dentro uno script Python.** Lo script che aggiungeva i test usava le stringhe `"""` di Python, e il `"""` di un *text block* Java le chiudeva a metà: lo script si è fermato con un errore di sintassi prima di scrivere, quindi senza danni. Riscritto con `'''`.
-14. **Porta 5432 occupata** durante la prova a mano: in locale gira già il database di un altro progetto. Il PostgreSQL di questo progetto è stato avviato sulla 5433 solo per la prova (`POSTGRES_PORT=5433` davanti al comando). Da ricordare se l'avvio di Compose fallisce con "port is already allocated".
+14. **(Pezzo 6) Più violazioni di vincolo nello stesso test.** I primi test dello schema V8 provavano quattro `insert` sbagliati di fila nello stesso test. Dopo il primo rifiuto PostgreSQL abbandona l'intera transazione (`25P02`, "current transaction is aborted"), e gli altri fallivano per quello, con un'eccezione di un altro tipo. Divisi in un test per violazione, come quelli della V5.
+15. **(Pezzo 6) Un SMS identico, ma con `\r\n`.** Nel test con Mailpit il testo dell'SMS sembrava diverso: le righe tornano con `\r\n`, perché l'SMTP vuole il ritorno a capo in quella forma. Il confronto ora normalizza i ritorni a capo.
+16. **(Pezzo 6) Ancora la cache di Hibernate nei test `@Transactional`.** Dopo `DELETE /api/account/phone` la riga, riletta con SQL, aveva ancora il numero: la richiesta era entrata nella transazione del test, che non arriva mai al commit, e Hibernate non aveva scritto niente. Un `flush()` prima di rileggere. È l'errore 4 del pezzo 2 nella direzione opposta.
+17. **(Pezzo 6) Una mutazione sopravvissuta: il `flush` prima di spostare il numero.** Togliendolo il test restava verde. Hibernate scrive le `update` nell'ordine in cui ha caricato le entità, e il codice caricava prima il vecchio proprietario: la `update` che libera il numero partiva per prima, per caso. Riordinato il codice (prima l'account che conferma), il `flush` è diventato necessario, e la mutazione fallisce con `duplicate key ... app_user_phone_uq`. Una mutazione che sopravvive dice che il test non prova quella riga, o che la riga non serve: va capita.
+18. **(Pezzo 6, errore di Claude) Comandi partiti dalla cartella sbagliata.** Due volte la shell era nella radice del repository invece che in `backend/`: Maven non c'era (uscita 127), lo script delle mutazioni non ha trovato i file e non ha toccato niente. Visto grazie al codice di uscita stampato (punto 10). Ogni comando ora comincia con `cd` sulla cartella completa e si ferma se fallisce.
+19. **Porta 5432 occupata** durante la prova a mano: in locale gira già il database di un altro progetto. Il PostgreSQL di questo progetto è stato avviato sulla 5433 solo per la prova (`POSTGRES_PORT=5433` davanti al comando). Da ricordare se l'avvio di Compose fallisce con "port is already allocated".
 
 ## Domande da colloquio
 
@@ -180,3 +202,6 @@ Le domande del pezzo 1 sono nella guida 24 (sei domande, con le risposte modello
 
 ### Domanda 9: Un utente può registrare un URL a cui il tuo server farà richieste. Come lo proteggi?
 **Risposta modello.** È il caso tipico di SSRF. Accetto solo `https` sulla porta standard e solo host di un elenco chiuso (qui i servizi push dei browser e i loro sottodomini), con un confronto sull'host intero e sul suffisso preceduto da un punto, così `fcm.googleapis.com.example.com` non passa. Il controllo è all'ingresso, come vincolo di validazione: un 400 sul campo. Non scrivo l'URL intero nei log.
+
+### Domanda 10: Il tuo login via SMS non spedisce niente ai numeri sconosciuti. Come eviti che questo riveli chi è registrato?
+**Risposta modello.** Pareggio i segnali che lo rivelerebbero. La risposta è la stessa (202). I limiti scattano allo stesso modo, perché scrivo comunque una riga per ogni richiesta, con un codice che nessuno riceverà. Il tempo è lo stesso, perché l'SMS parte in un altro thread e la risposta non aspetta il fornitore. Anche il tetto giornaliero lo controllo per ogni numero, altrimenti fermerebbe solo quelli registrati. E un numero non crea mai un account.

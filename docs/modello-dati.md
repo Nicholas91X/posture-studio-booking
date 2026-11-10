@@ -6,6 +6,7 @@ Modifiche dovute alle migrazioni:
 - **V1 (passo 4)**: `customer.full_name` e `practitioner.display_name` sostituiti da `first_name` + `last_name`; `phone` spostato in `app_user` (facoltativo, per utenti di ogni ruolo); aggiunto `app_user.active` per la cancellazione morbida; ruolo `ADMIN` (D-021).
 - **V2 (passo 5)**: `service` e `package_offer` come da progettazione, con `created_at`; foreign key composta per il servizio del pacchetto (D-025); indici su `practitioner_id`.
 - **V3 (passo 6)**: `working_schedule`, `working_hours` e `unavailability` come da progettazione (D-034), con `created_at`; fasce all'ora piena o alla mezz'ora e non sovrapposte (*exclusion constraint* su `timerange`, estensione `btree_gist`, D-036); cascata da una versione alle sue fasce; in `practitioner` scatto solo 30 o 60 con default 60, `min_booking_notice_hours` e `booking_horizon_days` (D-033, D-035).
+- **V8 (passo 8)**: `app_user.phone` in E.164, unico, scritto solo dopo la verifica, con `phone_verified_at` (D-055; i valori della V1 azzerati, mai scritti da nessun codice); in `login_code` il canale `SMS`, `purpose` (`SIGN_IN`, `VERIFY_PHONE`), `requested_by` (l'account che chiede una verifica) e `message_sent`.
 - **V7 (passo 8)**: `push_subscription` riferita a `practitioner` invece che ad `app_user` (solo i professionisti ricevono push, D-054), con `registered_at`; `endpoint` unico; indice su `practitioner_id, registered_at`.
 - **V6 (passo 8)**: `spring_session` e `spring_session_attributes`, le tabelle di Spring Session JDBC copiate dal suo schema 4.1.1 (D-051).
 - **V5 (passo 8)**: `login_code` con `channel` + `destination` al posto di `email`, `requested_from` per il limite per IP, `created_at` scritto da Java, `code_hash` come HMAC con chiave segreta (D-050).
@@ -57,7 +58,8 @@ Chiunque possa accedere. Separato da cliente e professionista perché l'accesso 
 | email | text | unica, salvata in minuscolo |
 | role | text | `CUSTOMER`, `PRACTITIONER` o `ADMIN` (D-021), senza default. Il primo `ADMIN` nasce all'avvio dall'email in `ADMIN_EMAIL` (D-052); i `PRACTITIONER` li crea l'admin, insieme alla loro riga `practitioner` |
 | active | boolean | default true. Cancellazione morbida (*soft delete*) per ogni ruolo: un account disattivato non può accedere e la sua storia resta. Vuol dire "l'account esiste", non "prenotabile" (per le assenze ci sono le indisponibilità) |
-| phone | text | facoltativo, non unico (unicità, formato e verifica solo se diventerà un modo per accedere: requisiti, punto aperto 7) |
+| phone | text | facoltativo, **unico**, in E.164 (`+393331234567`), scritto solo dalla verifica con un codice via SMS (D-055); oggi solo cellulari italiani (regola di `PhoneNumber`) |
+| phone_verified_at | timestamptz | quando il numero è stato verificato; c'è se e solo se c'è `phone` (`check`) |
 
 ### `practitioner`
 | Colonna | Tipo | Note |
@@ -93,8 +95,11 @@ Migrazione V5, passo 8 (D-050). Vale solo l'ultimo codice chiesto per una destin
 | Colonna | Tipo | Note |
 |---|---|---|
 | id | bigint | |
-| channel | text | `EMAIL`; `SMS` dal pezzo 6 del passo 8 (D-042: il `check` ha solo i valori prodotti) |
+| channel | text | `EMAIL` o `SMS` (V8, D-055) |
 | destination | text | l'email normalizzata (D-020); dal pezzo 6 anche un numero in E.164 |
+| purpose | text | `SIGN_IN` o `VERIFY_PHONE` (V8): l'ultimo codice si cerca per canale, destinazione e scopo; una verifica solo via SMS |
+| requested_by | bigint | → `app_user`: solo per `VERIFY_PHONE`, l'account che chiede la verifica (`check`) |
+| message_sent | boolean | falso per un accesso via SMS a un numero di nessuno: la riga esiste perché i limiti si comportino uguali; il tetto giornaliero conta solo i messaggi partiti. Sempre vero per l'email |
 | code_hash | text | HMAC-SHA256 di destinazione e codice con una chiave segreta fuori dal database, in esadecimale: mai il codice in chiaro |
 | requested_from | inet | per il limite per IP: l'indirizzo IPv4, o la rete `/64` di un indirizzo IPv6 (il resto azzerato) |
 | created_at | timestamptz | scritto da Java con il `Clock`, come `booking` |

@@ -54,6 +54,8 @@ class SecurityConfiguration {
                         .requestMatchers("/api/panel/**").hasRole(Role.PRACTITIONER.name())
                         .requestMatchers("/api/customer/**").hasRole(Role.CUSTOMER.name())
                         .requestMatchers("/api/admin/**").hasRole(Role.ADMIN.name())
+                        // the account itself (its phone, guide 29, 8.2): whoever is signed in, of any role
+                        .requestMatchers("/api/account/**").authenticated()
                         // the simulated payment (D-046), which exists only with booking.simulated-payments=true
                         .requestMatchers("/api/dev/**").permitAll()
                         .anyRequest().denyAll());

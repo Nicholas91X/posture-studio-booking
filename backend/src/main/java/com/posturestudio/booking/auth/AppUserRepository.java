@@ -13,6 +13,9 @@ interface AppUserRepository extends JpaRepository<AppUser, Long> {
 
     Optional<AppUser> findByEmail(Email email);
 
+    // the account of a verified number: only verified numbers are written (V8, guide 29, 2.4)
+    Optional<AppUser> findByPhone(String phone);
+
     boolean existsByEmail(Email email);
 
     // only the ids: no entity is loaded, only one column comes from the database

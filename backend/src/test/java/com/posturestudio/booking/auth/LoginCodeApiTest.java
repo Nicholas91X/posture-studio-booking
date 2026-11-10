@@ -125,4 +125,14 @@ class LoginCodeApiTest {
 
         assertThat(request("mario@example.com")).hasStatus(HttpStatus.SERVICE_UNAVAILABLE);
     }
+
+    // no SMS provider in this context (guide 29, 6.2): 503 at once, the same for every number, no row
+    @Test
+    void withoutAnSmsProviderTheSmsCodeIsUnavailable() {
+        assertThat(mvc.post().uri("/api/public/auth/login-code/sms").with(csrf())
+                .contentType(MediaType.APPLICATION_JSON).content("{\"phone\": \"+393331234567\"}"))
+                .hasStatus(HttpStatus.SERVICE_UNAVAILABLE)
+                .bodyJson().extractingPath("$.code").isEqualTo("SMS_UNAVAILABLE");
+        assertThat(jdbc.queryForObject("select count(*) from login_code where channel = 'SMS'", Long.class)).isZero();
+    }
 }
