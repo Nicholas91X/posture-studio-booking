@@ -1,6 +1,6 @@
 # Stato del progetto
 
-Ultimo aggiornamento: 2026-11-10 (passo 8 unito in `main`; correzione D-056)
+Ultimo aggiornamento: 2026-11-10 (passo 9 iniziato: tre decisioni D-057–D-059)
 
 ## Dove siamo
 
@@ -37,9 +37,15 @@ Fatto nel passo 4: struttura del repository, progetto Spring Boot 4.1.1 su Java 
 
 **Passo 8 chiuso** (pezzi 1–6, guide 24–29, D-050–D-055), unito in `main` con la PR #3 (2026-11-10).
 
-**Correzione del passo 8** (2026-11-10, D-056, branch `fix/step-8-admin-sms`, PR verso `main`): tetto degli SMS spediti da 100 a 50 al giorno; l'admin accede solo con l'email (contro lo scambio di SIM): `/api/account/phone/**` solo a clienti e professionisti (403 all'admin), `AppUser.verifyPhone` rifiuta l'admin, migrazione **V9** con `app_user_admin_no_phone_ck`. 664 test verdi. Prossimo: **passo 9, pagamenti** (Stripe).
+**Correzione del passo 8** (2026-11-10, D-056, branch `fix/step-8-admin-sms`, PR verso `main`): tetto degli SMS spediti da 100 a 50 al giorno; l'admin accede solo con l'email (contro lo scambio di SIM): `/api/account/phone/**` solo a clienti e professionisti (403 all'admin), `AppUser.verifyPhone` rifiuta l'admin, migrazione **V9** con `app_user_admin_no_phone_ck`. 664 test verdi.
+
+**Passo 9 in corso** (pagamenti con Stripe, dal brief del 2026-11-10, branch `feat/step-9-payments`). Registrate le tre decisioni preliminari: **D-057** conti di incasso configurabili (uno per professionista o comune, senza Connect), **D-058** nessuna gestione della marca da bollo, **D-059** link di pagamento con la condivisione di WhatsApp. Punti aperti 1, 9 e 16 chiusi. Verificato il 2026-11-10: sessione Checkout tra 30 minuti e 24 ore dalla creazione (`expires_at`); `stripe-java` 34.1.0 (29 ottobre 2026), che dipende solo da Gson. **Da chiedere al commercialista**: un conto comune fa finire i soldi di una partita IVA sul conto dell'altra (D-057). **Guida 30 scritta** (`docs/studio/30-conti-di-incasso.md`, pezzo 1: conti di incasso e tabella dei pagamenti), in attesa delle scelte di Nicholas. Le due questioni sul pezzo 5 chiuse da Nicholas (D-059 precisata: il link blocca, non incassa; nessun rimborso). Nicholas ha chiesto di implementare il pezzo 1 secondo le raccomandazioni della guida.
+
+**Pezzo 1 fatto** (guida 30, D-060): conti di incasso e tabella dei pagamenti. Costruiti: nuovo modulo `payment`; migrazione **V10** (`practitioner_payment_account`, una riga per professionista; `payment` solo per le sedute, con `account`, cinque stati e al massimo un `PENDING` per prenotazione con un indice unico parziale); conti da `PAYMENT_ACCOUNTS` più `STRIPE_<NOME>_SECRET_KEY` e `STRIPE_<NOME>_WEBHOOK_SECRET` letti dall'`Environment`; controlli all'avvio (formato, prefissi, `PAYMENT_LIVE` uguale al modo di ogni chiave, conti assegnati e conti dei pagamenti aperti configurati; zero conti ammesso); `PaymentAccount.toString()` senza segreti; API dell'admin `GET /api/admin/payment-accounts`, `GET`/`PUT /api/admin/practitioners/{id}/payment-account` (404, 400, 409 `PAYMENT_ACCOUNT_UNKNOWN`, idempotente); `forNewPayment` pronto per il pezzo 2; `stripe-java` 34.1.0 nel `pom.xml` (Gson 2.13.2 da Boot, verificato). 731 test verdi (`mvnw clean test`); cinque difese tolte a turno, ognuna presa da un test. **Prossimo: guida 31, pezzo 2** (pagamento della seduta con Checkout; 409 `CARD_PAYMENTS_UNAVAILABLE` per il professionista senza conto).
 
 **Da fare nel proprio `.env` per avviare il backend** (dal pezzo 1 del passo 8): aggiungere `AUTH_CODE_HMAC_KEY` (Base64 di 32 byte casuali: `openssl rand -base64 32`) e le righe `MAIL_*` di `.env.example`. Senza la chiave l'applicazione non parte, apposta. Dal pezzo 3: `ADMIN_EMAIL` con la propria email, per avere l'account admin in locale. Dal pezzo 4, facoltativo: `APP_URL` (default `http://localhost:3000`), l'indirizzo dei link nelle email. Dal pezzo 6, per provare l'SMS in locale: `SMS_TO_MAILPIT=true` (gli SMS arrivano come email in Mailpit, a `sms-<numero>@sms.local`; senza, le API SMS rispondono 503). **Dal pezzo 5, obbligatorio**: `VAPID_PUBLIC_KEY` e `VAPID_PRIVATE_KEY`, generate insieme da `backend/` con `java tools/GenerateVapidKeys.java` (senza, l'avvio si ferma); facoltativo `VAPID_SUBJECT`. **Senza virgolette** intorno al valore (D-018): con le virgolette la chiave non è Base64 valido e l'avvio si ferma (successo il 2026-11-09). Le email arrivate si leggono su `http://localhost:8025`.
+
+**Dal passo 9, pezzo 1, nel proprio `.env`**: le righe `PAYMENT_ACCOUNTS` e `PAYMENT_LIVE=false` di `.env.example` (vuoto va bene finché non si prova Stripe). Per ogni conto, `STRIPE_<NOME>_SECRET_KEY` e `STRIPE_<NOME>_WEBHOOK_SECRET` dalla dashboard di Stripe in modalità di prova; una chiave `_live_` con `PAYMENT_LIVE=false` ferma l'avvio, apposta.
 
 **Per provare in locale il pagamento simulato**: aggiungere `BOOKING_SIMULATED_PAYMENTS=true` al proprio `.env` (è in `.env.example`).
 
@@ -80,7 +86,7 @@ Il frontend può partire prima, appena esistono le prime API (dopo il passo 7), 
 ## Punti aperti
 
 Elencati in `requisiti.md`, sezione "Punti aperti". Da chiudere prima del passo indicato:
-- Uno o due conti Stripe (quasi certamente due: due partite IVA distinte) → prima del passo 9
+- ~~Uno o due conti Stripe~~ → chiuso il 2026-11-10: conti configurabili, uno per professionista o comune (D-057); conto comune da verificare con il commercialista
 - ~~Scatto di inizio delle sedute~~ → chiuso il 2026-11-06 (D-033)
 - ~~Approvazione: valore iniziale e conferma dentro il preavviso~~ → chiuso il 2026-11-06: manuale; la conferma tardiva va bene (D-030)
 - ~~Orari di lavoro modificabili da una data futura~~ → chiuso il 2026-11-06 (D-034)
@@ -90,7 +96,9 @@ Elencati in `requisiti.md`, sezione "Punti aperti". Da chiudere prima del passo 
 - ~~Aliquota IVA~~ → chiuso il 2026-10-29: niente IVA (D-022)
 - ~~Modo di pagamento delle prenotazioni dal pannello~~ → chiuso il 2026-11-06: in studio (D-040)
 - ~~Valori iniziali di orizzonte e limite~~ → chiuso il 2026-11-06: 21 giorni, 4 prenotazioni future (D-041)
-- Link di pagamento per le prenotazioni dal pannello (requisiti, punto aperto 16) → prima del passo 9
+- ~~Link di pagamento per le prenotazioni dal pannello~~ → chiuso il 2026-11-10: condivisione con WhatsApp (D-059)
+- ~~Marca da bollo~~ → chiuso il 2026-11-10: nessuna gestione nel sistema (D-058)
+- ~~Pezzo 5 del passo 9, pagamento arrivato dopo una cancellazione~~ → chiuso il 2026-11-10 (D-059 precisata): il link blocca l'importo; si incassa solo se la seduta è ancora `CONFIRMED` e `IN_STUDIO`, altrimenti si annulla il blocco. D-015 resta valida, nessun rimborso
 - Servizio email (orientamento: Brevo) → **prima del passo 14** (spostato il 2026-11-09: in sviluppo basta Mailpit, D-050; servono anche il dominio e l'indirizzo mittente dello studio)
 - ~~Codice di accesso anche via SMS~~ → chiuso il 2026-11-09: sì, da un numero verificato (D-055)
 - Fornitore degli SMS (requisiti, punto 17) → **prima del passo 14**
@@ -116,6 +124,8 @@ Elencati in `requisiti.md`, sezione "Punti aperti". Da chiudere prima del passo 
 - **Passi 10–11 (crediti, cancellazioni)**: concessioni discrezionali del professionista (requisiti, punto aperto 6). Il modello a lotti e movimenti (D-009, D-010) le regge senza stravolgimenti: un omaggio o un credito concesso su una cancellazione tardiva è un **lotto** con una nuova origine (es. `GRANT`), una correzione è un **movimento** con un nuovo motivo (es. `ADJUSTMENT`). Serve la traccia: chi l'ha concesso, quando, con una nota. Una concessione non cambia lo stato della prenotazione (resta `CANCELLED_LATE`): cambia solo il credito. Perimetro deciso: credito su cancellazione tardiva, sedute omaggio, proroga di una scadenza, ognuno per i propri clienti. Attenzione alla **proroga**: è l'unica che *modifica* qualcosa (la scadenza di un lotto) invece di aggiungere; per non perdere la storia va registrato anche l'evento (vecchia e nuova scadenza, chi, quando, perché).
 - **Passo 8 (accesso), riattivazione**: con `unique` sull'email, un cliente disattivato che torna con la stessa email non si registra di nuovo. **Precisato da D-050** (2026-11-09): il login **non** riattiva; un account disattivato è rifiutato all'accesso, e la riattivazione è solo esplicita (prenotazione dal pannello, D-048, o l'admin).
 - **Passo 8, pezzo 2 (sessione)**: ✅ fatto (D-051). Per i passi 12 e 13: il frontend legge il cookie `XSRF-TOKEN` e lo rimanda nell'header `X-XSRF-TOKEN` in ogni richiesta che cambia qualcosa; dopo l'accesso di un cliente chiede `GET /api/customer/profile`, e con 409 `PROFILE_INCOMPLETE` mostra il modulo nome e cognome (`PUT`). Al passo 9: il webhook di Stripe si aggiunge alle eccezioni CSRF (protetto dalla firma), e `/api/dev/**` sparisce dalle regole insieme al pagamento simulato.
+- **Passo 9, pezzo 5, test da scrivere** (D-059, richiesta di Nicholas del 2026-11-10): due link per la stessa seduta, uno invalidato dal nuovo ma pagato lo stesso, oppure entrambi pagati. Si incassa il primo pagamento che arriva mentre la seduta è ancora `IN_STUDIO`; ogni pagamento successivo si annulla. E "seduta non più valida → annulla il blocco" con lo stato scritto nel database.
+- **Passo 11, link di pagamento e cancellazione** (D-059): **criterio di "fatto" del passo 11**: la prova con il percorso vero. Una seduta "in studio" con un link attivo si cancella, poi il cliente paga il link: il blocco si annulla, niente si incassa, la seduta resta cancellata. Al passo 9 la stessa regola è provata scrivendo lo stato nel database.
 - **Passo 11, professionista disattivato** (D-052): la disattivazione non tocca le prenotazioni. Le richieste in attesa scadono da sole; le confermate future restano, e disdirle è una "cancellazione da parte dello studio" (punto aperto): decidere credito o rimborso, e l'avviso al cliente.
 - **Passo 14, accesso**: impostare `ADMIN_EMAIL` in produzione (D-052); verificare che Caddy **sostituisca** `X-Forwarded-For` invece di accodarlo (il limite per IP si fida di Tomcat, `server.forward-headers-strategy=native`, D-050); configurare il fornitore email (credenziali SMTP o API, `MAIL_FROM` dello studio); generare un `AUTH_CODE_HMAC_KEY` di produzione diverso da quello di sviluppo.
 - **Passi 12 e 13, link nelle email** (D-053): oggi ogni email porta all'indirizzo base (`notification.app-url`). Quando esisteranno le pagine, i link vanno alla pagina giusta: le prenotazioni del cliente, la richiesta da approvare nel pannello.

@@ -40,5 +40,9 @@ public enum ErrorCode {
     EMAIL_ALREADY_IN_USE,
 
     // a customer signed in for the first time and has not given first and last name yet (D-050, guide 25, 7.3)
-    PROFILE_INCOMPLETE
+    PROFILE_INCOMPLETE,
+
+    // the admin assigns a payment account whose name is well formed but not declared in PAYMENT_ACCOUNTS
+    // (D-057, guide 30, 9.2)
+    PAYMENT_ACCOUNT_UNKNOWN
 }

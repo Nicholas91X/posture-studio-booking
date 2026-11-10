@@ -934,3 +934,83 @@ Implementazione (pezzo 3, guida 16): `FreeSlots.compute(SlotQuery)` nel package 
 **Alternative scartate.** *Solo la regola di Spring Security*: basterebbe una porta dimenticata aperta in futuro (un'altra API che chiama il servizio). *Solo il vincolo nel database*: l'errore arriverebbe al commit come una violazione generica, e l'API risponderebbe 500 invece di 403. *Un controllo sul ruolo anche in `requestSms` e `verifySms`*: codice che nessun test può raggiungere, perché il database impedisce lo stato che controlla. *Lasciare 100*: il tetto è il massimo della spesa, e il volume atteso sta comodo sotto 50.
 
 **Conseguenze.** La sicurezza dell'account admin dipende ora solo dalla sua casella email, che va protetta con la verifica in due passaggi del suo fornitore (da ricordare al passo 14). Il frontend del pannello admin (passo 13) non mostra la sezione del telefono. Per i professionisti vale lo stesso ragionamento in misura minore (il loro account vede clienti e prenotazioni): oggi restano con l'SMS, da rivalutare se lo studio lo chiede. **Provato**: tolti a turno la regola di sicurezza, il controllo in `AppUser`, il vincolo della V9 e il valore 50, fallisce ogni volta il test che li protegge (`SmsAccessApiTest`, `SmsCodeServiceTest`, `LoginCodeSchemaTest`).
+
+---
+
+## D-057 — Conti di incasso configurabili: uno per professionista o uno comune, senza Stripe Connect
+**Stato:** accettata · 2026-11-10 · chiude il punto aperto 1 dei requisiti · brief del passo 9
+
+**Contesto.** I due professionisti sono forfettari, quindi due partite IVA distinte (D-022): di regola ognuno incassa sul proprio conto. Lo studio però può preferire, oggi o in futuro, un conto solo; e la scelta può cambiare dopo la messa online. Stripe offre per i casi "più venditori su una piattaforma" il prodotto **Connect**.
+
+**Decisione.**
+- Il sistema conosce uno o più **conti di incasso**, ognuno un conto Stripe a sé, con un **nome** (es. `rossi`, `studio`). Sono dichiarati nella configurazione; la chiave segreta e il segreto del webhook di ogni conto vengono da variabili d'ambiente, mai dal repository (`.env.example` li elenca senza valori).
+- Ogni professionista ha **un conto assegnato**, scelto dall'admin. Più professionisti possono avere lo stesso conto (conto comune). **Aggiungere un conto** richiede un riavvio (nuove variabili d'ambiente); **cambiare l'assegnazione** no, si fa in produzione dall'API dell'admin.
+- Ogni pagamento registra **il conto su cui è stato fatto**. Incasso, annullamento e qualunque altra operazione successiva avvengono sempre su quel conto, mai su quello assegnato in quel momento al professionista: cambiare conto non tocca i pagamenti in corso.
+- **Niente Stripe Connect.**
+
+**Alternative scartate.** *Stripe Connect*: il motivo **non** sono i costi. Con l'opzione "Stripe gestisce le tariffe per i tuoi utenti" la piattaforma non paga commissioni Connect (verificato su stripe.com/connect/pricing il 2026-11-10: nessuna commissione per account attivo né per bonifico; solo con "Gestisci le tariffe in autonomia" si pagano 2 € per account attivo al mese e lo 0,25% + 0,10 € per bonifico). Il motivo è che con Connect **qualcuno diventa la piattaforma** tra lo studio e Stripe: un conto "piattaforma" (di Nicholas, o di uno dei due professionisti) che accetta il contratto di piattaforma con Stripe, ne porta le responsabilità verso i conti collegati, e per cui va costruito un **percorso di registrazione dei conti** (*onboarding*) nel sistema. Tutto questo per due conti che i professionisti possono aprire da soli dalla dashboard di Stripe. *Un solo conto fisso nel codice*: obbligherebbe a una modifica del codice il giorno in cui lo studio passa a due conti, o viceversa. *Due conti fissi, uno per professionista*: non regge il conto comune, né un terzo professionista.
+
+**Conseguenze.**
+- Ogni professionista apre il proprio conto Stripe e ne consegna le chiavi a chi gestisce il server (passo 14); nessun dato della carta passa mai da noi (requisiti).
+- Un webhook per conto, ognuno con il proprio segreto: Stripe firma gli avvisi di un conto con il segreto dell'endpoint configurato su quel conto.
+- **Con un conto comune, i soldi di una partita IVA finiscono sul conto dell'altra**: un professionista incassa prestazioni fatturate dall'altro. **Va verificato con il commercialista** prima di usarlo in produzione.
+- Un professionista senza conto assegnato non può incassare: cosa succede alle richieste dei suoi clienti si decide nella guida del pezzo 1 del passo 9 (risposta chiara, mai un 500).
+- I pacchetti del passo 10 useranno lo stesso meccanismo.
+
+---
+
+## D-058 — Marca da bollo: nessuna gestione nel sistema
+**Stato:** accettata · 2026-11-10 · chiude il punto aperto 9 dei requisiti · brief del passo 9
+
+**Contesto.** Sulle ricevute e fatture non soggette a IVA di importo superiore a 77,47 € va applicata una marca da bollo da 2 €. Riguarda soprattutto i pacchetti: una seduta singola da 30 € resta sotto la soglia. Il bollo può essere addebitato al cliente oppure restare a carico del professionista.
+
+**Decisione.** Il sistema **non gestisce** la marca da bollo: nessuna colonna, nessun calcolo, nessuna riga aggiuntiva nella pagina di pagamento. **L'importo incassato è il prezzo** del servizio o del pacchetto, come vuole D-022.
+
+**Alternative scartate.** *Aggiungere 2 € in automatico sopra la soglia*: una regola fiscale nel codice, da tenere aggiornata, e un prezzo pagato diverso da quello mostrato. *Una colonna per il bollo nei pagamenti*: dati che nessuno leggerebbe, perché la fattura elettronica resta fuori dal sistema (requisiti, "Fuori dalla prima versione").
+
+**Conseguenze.** Il bollo, se dovuto, si applica sulla fattura elettronica che lo studio emette come oggi, fuori dal sistema. Se un professionista vuole farlo pagare al cliente, lo comprende nel **prezzo** del pacchetto, che decide lui dal pannello. Se un giorno il bollo dovrà comparire nel pagamento, servirà una nuova decisione.
+
+---
+
+## D-059 — Link di pagamento per le sedute "in studio": condivisione con WhatsApp dal telefono del professionista
+**Stato:** accettata · 2026-11-10 · chiude il punto aperto 16 dei requisiti · completa D-040 · brief del passo 9
+
+**Contesto.** Le prenotazioni fatte dal pannello senza crediti sono pagate in studio (D-040). Nicholas ha chiesto un pulsante per mandare al cliente un link con cui pagarle prima, con carta. Il punto aperto 16 chiedeva di decidere il canale, il problema del numero non verificato, l'effetto sulla prenotazione e i link vecchi.
+
+**Decisione.**
+- **Canale**: il pannello apre la **condivisione di WhatsApp** con il messaggio pronto (link e testo), dal telefono del professionista. Nessun costo, nessun fornitore, e il professionista vede a chi lo manda prima di premere "invia". Se il cliente ha un numero (verificato, D-055) il messaggio è già indirizzato a lui; altrimenti il professionista sceglie il contatto.
+- **Numero non verificato**: il problema non c'è più. Da D-055 `app_user.phone` è sempre verificato; e comunque è il professionista a scegliere il destinatario.
+- **Quando**: solo su una seduta **sua**, `CONFIRMED` e `IN_STUDIO`.
+- **Un solo link valido per seduta**: chiederne uno nuovo invalida il vecchio.
+- **Blocco, non incasso** (precisato da Nicholas il 2026-11-10): anche il link **blocca** l'importo sulla carta (`capture_method = manual`), come le richieste dei clienti (D-031). All'arrivo del pagamento (webhook): se la seduta è ancora `CONFIRMED` e `IN_STUDIO`, si **incassa subito**; altrimenti si **annulla il blocco**. Stesso meccanismo del pagamento tardivo (D-031). **D-015 resta valida**: il sistema non fa mai rimborsi.
+- **Più link, più pagamenti**: si incassa il **primo** pagamento che arriva mentre la seduta è ancora `IN_STUDIO`; ogni pagamento successivo per la stessa seduta (un link invalidato ma pagato lo stesso, o due link pagati entrambi) si annulla.
+- **Effetto del pagamento incassato**: la seduta resta `CONFIRMED`, `paid_with` passa da `IN_STUDIO` a `CARD`, si registra il pagamento. Niente da approvare. Da quel momento valgono le regole di cancellazione di una seduta pagata con carta (passo 11).
+- La regola "seduta non più valida → annulla il blocco" si scrive al passo 9, nel codice del webhook, provata con un test che scrive lo stato direttamente nel database (al passo 9 una seduta confermata non si può ancora cancellare). La prova con il percorso vero è un criterio di "fatto" del passo 11.
+- Gli altri dettagli (scadenza del link, invalidazione del vecchio) si decidono nella guida del pezzo 5 del passo 9.
+
+**Alternative scartate.** *SMS dal sistema*: a pagamento, con un fornitore ancora da scegliere (punto aperto 17). *Email dal sistema*: possibile, ma meno immediata dal telefono, dove il professionista lavora; si può aggiungere accanto in futuro. *Payment Links di Stripe*: sono pensati per vendere lo stesso prodotto più volte con un link che dura; per una seduta precisa basta una sessione Checkout creata al momento, che scade da sola e porta con sé l'id della prenotazione.
+
+*Incasso immediato con rimborso automatico se la seduta non c'è più* (prima proposta del brief): contro D-015, con le commissioni di Stripe perse sul rimborso; con il blocco non c'è niente da rimborsare.
+
+**Conseguenze.** Il backend restituisce l'indirizzo del pagamento e l'indirizzo di condivisione WhatsApp; il pannello (passo 13) li apre. L'incasso dentro il webhook è una chiamata a Stripe in più, con la stessa doppia scrittura dell'approvazione (riconciliazione con `payment_intent.succeeded`, pezzo 4).
+
+---
+
+## D-060 — Conti di incasso: elenco di nomi più chiavi per convenzione, controlli all'avvio, assegnazione e pagamenti nel modulo `payment`
+**Stato:** accettata · 2026-11-10 · realizza D-057 · confronto completo: `docs/studio/30-conti-di-incasso.md` · scelte di Claude secondo le raccomandazioni della guida, su indicazione di Nicholas
+
+**Contesto.** D-057 vuole conti di incasso dichiarati nella configurazione, aggiungibili con un riavvio, assegnati dall'admin in produzione, e pagamenti che restano sul loro conto. Il brief chiede anche cosa succede a un professionista senza conto, e la tabella `payment` con il conto.
+
+**Decisione.**
+- **Libreria**: `com.stripe:stripe-java` **34.1.0** (29 ottobre 2026, API `2026-10-28.endive`). Dipende solo da Gson, la cui versione la decide Spring Boot (2.13.2 invece di 2.10.1, verificato con `mvnw dependency:tree`). Dal pezzo 2 un `StripeClient` per conto, mai `Stripe.apiKey` statico.
+- **Dichiarazione**: `PAYMENT_ACCOUNTS=nome,nome` (proprietà `payment.accounts`) e, per ogni nome, `STRIPE_<NOME>_SECRET_KEY` e `STRIPE_<NOME>_WEBHOOK_SECRET`, chiesti all'`Environment` di Spring: si trovano uguali nel `.env` letto come file di proprietà (sviluppo) e nelle variabili d'ambiente (produzione). Nomi `^[a-z][a-z0-9]{0,29}$`, mai rinominati. Chiave segreta (`sk_`) o limitata (`rk_`, consigliata).
+- **Controlli all'avvio** (l'applicazione non parte): nome valido e non ripetuto; variabili presenti; prefissi `sk_`/`rk_` e `whsec_`; `payment.live` (`PAYMENT_LIVE`, default `false`) uguale al modo di **ogni** chiave (`_test_` o `_live_`); ogni conto **assegnato** e ogni conto di un pagamento **aperto** (`PENDING`, `AUTHORIZED`) configurato (`PaymentStartupCheck`). Zero conti ammesso. I messaggi nominano la variabile, mai il valore; `PaymentAccount.toString()` mostra solo il nome.
+- **Assegnazione**: tabella `practitioner_payment_account` del modulo `payment` (V10), una riga per professionista; riassegnare lo stesso conto non cambia niente; anche a un professionista disattivato.
+- **Senza conto**: nessun pagamento con carta. Al pezzo 2 la richiesta del cliente riceverà un 409 `CARD_PAYMENTS_UNAVAILABLE` **prima** di creare la prenotazione, tramite un'interfaccia dichiarata da `booking` e implementata da `payment`; le prenotazioni dal pannello pagate in studio non cambiano.
+- **`payment`** (V10): solo le colonne delle sedute più `account`; cinque stati (`PENDING`, `AUTHORIZED`, `SUCCEEDED`, `CANCELED`, `EXPIRED`); `stripe_checkout_session_id` obbligatorio e unico; `stripe_payment_intent_id` unico; al massimo un `PENDING` per prenotazione (indice unico parziale); `version`; `created_at` da Java. Le colonne dei pacchetti al passo 10.
+- **Regola del conto**: il conto si legge una volta, alla creazione (`PaymentAccountService.forNewPayment`), e si copia nella riga (`Payment.pending` riceve un `PaymentAccount`, non un nome); dopo, sempre `PaymentAccounts.of(payment)`. La colonna non è aggiornabile da JPA.
+- **API dell'admin** nel modulo `payment`: `GET /api/admin/payment-accounts` (nomi e professionisti, mai le chiavi), `GET` e `PUT /api/admin/practitioners/{id}/payment-account`; 404 (professionista inesistente o senza conto), 400 (nome malformato), 409 `PAYMENT_ACCOUNT_UNKNOWN` (nome non configurato). Niente `DELETE`. `PractitionerService.requireExists` per il 404.
+
+**Alternative scartate.** *Righe per conto in `application.properties`*: i nomi nel repository, e un conto nuovo diventa una modifica del codice. *Una `Map` legata alle variabili d'ambiente*: la traduzione dei nomi la fa Spring solo per le vere variabili d'ambiente, non per il `.env` letto come file, quindi funzionerebbe in un ambiente e non nell'altro. *Colonna in `practitioner`*: un ciclo tra moduli. *Nascondere il professionista senza conto*: dipendenze in più da `practitioner` e `schedule`, e un cliente confuso. *Creare la prenotazione e fallire dopo*: un orario bloccato 30 minuti per niente. *La tabella `payment` completa del modello dei dati*: colonne e valori che nessun codice scrive fino al passo 10 (D-042).
+
+**Conseguenze.** Togliere un conto dal `.env` mentre ha pagamenti aperti ferma l'avvio: si rimette, o si aspetta che i pagamenti si chiudano. Il controllo all'avvio gira dopo che Tomcat è partito (come `AdminBootstrap`): per un istante l'applicazione può ricevere richieste prima di fermarsi; accettabile. Il test completo "cambiare conto non sposta incasso e annullamento" arriva al pezzo 4; il pezzo 1 prova la metà che c'è (la riga resta sul suo conto). **Provato**: tolti a turno `toString()` senza segreti, il controllo prova/produzione, il controllo dei pagamenti aperti, l'idempotenza dell'assegnazione e il controllo "conto configurato", fallisce ogni volta il test che li protegge. Pagare con il link **cambia le regole di cancellazione** della seduta: da "nessun credito" a "credito se cancellata in tempo" (requisiti, "Cancellazioni").

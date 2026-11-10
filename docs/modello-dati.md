@@ -7,6 +7,7 @@ Modifiche dovute alle migrazioni:
 - **V2 (passo 5)**: `service` e `package_offer` come da progettazione, con `created_at`; foreign key composta per il servizio del pacchetto (D-025); indici su `practitioner_id`.
 - **V3 (passo 6)**: `working_schedule`, `working_hours` e `unavailability` come da progettazione (D-034), con `created_at`; fasce all'ora piena o alla mezz'ora e non sovrapposte (*exclusion constraint* su `timerange`, estensione `btree_gist`, D-036); cascata da una versione alle sue fasce; in `practitioner` scatto solo 30 o 60 con default 60, `min_booking_notice_hours` e `booking_horizon_days` (D-033, D-035).
 - **V8 (passo 8)**: `app_user.phone` in E.164, unico, scritto solo dopo la verifica, con `phone_verified_at` (D-055; i valori della V1 azzerati, mai scritti da nessun codice); in `login_code` il canale `SMS`, `purpose` (`SIGN_IN`, `VERIFY_PHONE`), `requested_by` (l'account che chiede una verifica) e `message_sent`.
+- **V10 (passo 9, pezzo 1)**: `practitioner_payment_account` (il conto di incasso di ogni professionista, D-057); `payment` solo per le sedute, con `account` (il conto su cui è fatto, mai cambiato), `version` e `created_at` scritto da Java; un solo `PENDING` per prenotazione (indice unico parziale). `purpose`, `package_offer_id`, `credit_lot_id` e `customer_id` arrivano con i pacchetti al passo 10 (D-060).
 - **V9 (correzione del passo 8)**: `app_user_admin_no_phone_ck`, l'admin non ha un numero e accede solo con l'email (D-056).
 - **V7 (passo 8)**: `push_subscription` riferita a `practitioner` invece che ad `app_user` (solo i professionisti ricevono push, D-054), con `registered_at`; `endpoint` unico; indice su `practitioner_id, registered_at`.
 - **V6 (passo 8)**: `spring_session` e `spring_session_attributes`, le tabelle di Spring Session JDBC copiate dal suo schema 4.1.1 (D-051).
@@ -38,7 +39,8 @@ practitioner ─┬─< working_schedule ──< working_hours
                      └─< credit_movement >── booking (opzionale)
 
 payment ── booking      (pagamento di una seduta)
-payment ── credit_lot   (pagamento di un pacchetto)
+payment ── credit_lot   (pagamento di un pacchetto, dal passo 10)
+practitioner ── practitioner_payment_account   (il conto di incasso, D-057)
 
 login_code      (codici di accesso, legati a una destinazione: email, dal pezzo 6 anche il telefono)
 app_user        (chi può accedere e con quale ruolo)
@@ -249,19 +251,35 @@ Il registro. Non si modifica e non si cancella mai una riga: si aggiungono solo 
 
 **Saldo** di un lotto = somma dei movimenti. Un lotto è utilizzabile se saldo > 0 e `expires_at` nel futuro. Quando si prenota con credito, si usa il lotto utilizzabile che scade prima.
 
+### `practitioner_payment_account`
+Il conto di incasso di un professionista, scelto dall'admin (D-057, V10). Decide solo il conto dei pagamenti **nuovi**.
+
+| Colonna | Tipo | Note |
+|---|---|---|
+| practitioner_id | bigint | chiave primaria: al massimo un conto per professionista |
+| account | text | il nome di un conto dichiarato in `PAYMENT_ACCOUNTS`: minuscole e cifre, iniziando con una lettera, al massimo 30 (`check`). Che sia configurato lo controlla Java, all'assegnazione e all'avvio |
+| assigned_at | timestamptz | quando è stato assegnato; non cambia se si riassegna lo stesso conto |
+
+Riassegnare è un `update`: la storia delle assegnazioni non si conserva, perché ogni pagamento ricorda il suo conto.
+
 ### `payment`
+Dalla V10, solo per le **sedute** (D-060). Le colonne dei pacchetti arrivano al passo 10.
+
 | Colonna | Tipo | Note |
 |---|---|---|
 | id | bigint | |
-| purpose | text | `BOOKING` o `PACKAGE` |
-| booking_id | bigint | se `BOOKING` |
-| package_offer_id | bigint | se `PACKAGE` |
-| credit_lot_id | bigint | se `PACKAGE`, valorizzato dopo la conferma |
-| customer_id | bigint | |
-| amount_cents | bigint | importo pagato |
-| status | text | `PENDING`, `AUTHORIZED` (importo bloccato, solo sedute, D-031), `SUCCEEDED`, `CANCELED` (blocco annullato, D-031), `EXPIRED` |
-| stripe_checkout_session_id | text | unico |
-| stripe_payment_intent_id | text | valorizzato dopo il pagamento |
+| booking_id | bigint | la seduta pagata; obbligatoria finché ci sono solo sedute (passo 10: facoltativa, con `purpose`) |
+| account | text | **il conto su cui è stato fatto**, copiato dall'assegnazione del professionista alla creazione e mai cambiato. Incasso, annullamento e ogni altra operazione avvengono su questo conto, mai su quello attuale del professionista (D-057) |
+| amount_cents | bigint | importo, dal prezzo fotografato della prenotazione (D-011); maggiore di zero |
+| status | text | `PENDING` (sessione creata), `AUTHORIZED` (importo bloccato, D-031), `SUCCEEDED` (incassato), `CANCELED` (blocco annullato), `EXPIRED` (sessione scaduta senza pagamento) |
+| stripe_checkout_session_id | text | unico, obbligatorio: la riga nasce dopo la risposta di Stripe |
+| stripe_payment_intent_id | text | unico, valorizzato dal webhook |
+| version | bigint | blocco ottimistico, seconda difesa (il lucchetto è sulla prenotazione) |
+| created_at | timestamptz | scritto da Java con il `Clock` |
+
+Indice su `booking_id`. **Al massimo un pagamento `PENDING` per prenotazione**: indice unico parziale `payment_one_pending_per_booking_uq` (`where status = 'PENDING'`). La valuta è sempre l'euro, scritta nel codice che crea la sessione.
+
+Previsto per il passo 10: `purpose` (`BOOKING` o `PACKAGE`), `package_offer_id`, `credit_lot_id` (valorizzato dopo la conferma), `customer_id`.
 
 ### `stripe_event`
 | Colonna | Tipo | Note |
