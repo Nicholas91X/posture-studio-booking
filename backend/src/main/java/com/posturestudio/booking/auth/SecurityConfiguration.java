@@ -34,8 +34,9 @@ class SecurityConfiguration {
                 // who is in the request: the user id in the session, the account read again every time (guide 25, 4.2)
                 .securityContext(context -> context.securityContextRepository(sessions))
                 // CSRF token in the XSRF-TOKEN cookie, sent back in the X-XSRF-TOKEN header (guide 25, 5.2).
-                // /api/dev plays Stripe, which has no session; it disappears at step 9 with the webhook
-                .csrf(csrf -> csrf.spa().ignoringRequestMatchers("/api/dev/**"))
+                // The only exception: Stripe's webhooks, which have no cookie and no token. Their signature
+                // protects them (guide 32, part 10). A narrow prefix, so the exception covers nothing else
+                .csrf(csrf -> csrf.spa().ignoringRequestMatchers("/api/webhooks/**"))
                 // On a 401 Spring would save the request in a session, to repeat it after a form login: there is
                 // no such form here, and it would create a session in the database for every anonymous refusal
                 .requestCache(cache -> cache.disable())
@@ -60,8 +61,8 @@ class SecurityConfiguration {
                                 .hasAnyRole(Role.CUSTOMER.name(), Role.PRACTITIONER.name())
                         // the account itself (guide 29, 8.2): whoever is signed in, of any role
                         .requestMatchers("/api/account/**").authenticated()
-                        // the simulated payment (D-046), which exists only with booking.simulated-payments=true
-                        .requestMatchers("/api/dev/**").permitAll()
+                        // Stripe calling us (D-062): no account, the signature of each payment account decides
+                        .requestMatchers("/api/webhooks/**").permitAll()
                         .anyRequest().denyAll());
         return http.build();
     }

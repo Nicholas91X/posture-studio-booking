@@ -126,14 +126,14 @@ Lo stesso meccanismo vale per i professionisti: la loro email ha il ruolo `PRACT
 ### Prenotazione con carta
 
 1. Il cliente sceglie un orario libero (che inizia più di 24 ore dopo, D-030). Se il professionista approva a mano, il cliente vede il tempo di risposta prima di confermare.
-2. Il backend crea la prenotazione in stato "in attesa di pagamento", con un blocco di 30 minuti. Se l'orario nel frattempo è stato preso, il database rifiuta e il cliente vede "orario non più disponibile".
-3. Il backend crea una sessione Stripe Checkout con *manual capture* (D-031) e scadenza uguale al blocco, e restituisce l'indirizzo della pagina di pagamento.
+2. Il backend crea la prenotazione in stato "in attesa di pagamento", con un blocco di 32 minuti (D-061). Se il professionista non ha un conto di incasso (D-057), la richiesta è rifiutata prima. Se l'orario nel frattempo è stato preso, il database rifiuta e il cliente vede "orario non più disponibile".
+3. Nella stessa transazione, il backend crea una sessione Stripe Checkout con *manual capture* (D-031), sul conto del professionista e con scadenza uguale al blocco, registra il pagamento "in attesa" e restituisce l'indirizzo della pagina. Se Stripe non risponde, non resta niente: il cliente riprova (D-061).
 4. Il cliente paga sulla pagina di Stripe e torna sul sito, che mostra "pagamento in verifica". Stripe ha solo **bloccato** l'importo sulla carta.
 5. Stripe avvisa il backend con il webhook `checkout.session.completed`. La prenotazione passa ad "in attesa di approvazione", con la scadenza fotografata.
 6. **Approvazione**:
    - automatica: il backend approva subito;
    - manuale: il backend avvisa il professionista con una notifica push su tutti i suoi dispositivi; se nessuno la accetta, con un'email (D-054). Lui approva o rifiuta dal pannello entro la scadenza.
-7. **Approvata**: il backend chiede a Stripe l'incasso. Quando Stripe risponde che è riuscito, la prenotazione è confermata e il cliente riceve l'email di conferma.
+7. **Approvata**: il backend chiede a Stripe l'incasso, e solo quando Stripe risponde che è riuscito la prenotazione è confermata e il cliente riceve l'email di conferma. Se il blocco non c'è più, la richiesta resta in attesa e il professionista riceve un errore che lo dice (D-063).
 8. **Rifiutata, scaduta o ritirata dal cliente**: il backend annulla il blocco sulla carta, l'orario si libera, e il cliente riceve un'email. Non è stato addebitato niente.
 
 ### Prenotazione con credito
@@ -162,14 +162,18 @@ Nessun passaggio su Stripe.
 Cosa si usa e cosa va documentato oltre al webhook:
 
 - **Stripe Checkout**: la pagina di pagamento è di Stripe. Il backend crea una *Checkout Session* con importo, descrizione e `metadata` (id della prenotazione o del pagamento interno), e riceve un indirizzo a cui mandare il cliente.
-- **Scadenza della sessione**: Stripe accetta scadenze da un minimo di 30 minuti. Per questo il blocco dell'orario dura 30 minuti, allineato alla sessione.
+- **Scadenza della sessione**: Stripe accetta scadenze da 30 minuti a 24 ore **dalla creazione della sessione**, che arriva un attimo dopo la richiesta. Per questo il blocco dell'orario dura 32 minuti e la sessione scade nello stesso istante (D-061).
+- **Conti di incasso** (D-057, D-060): un conto Stripe per professionista o uno comune, dichiarati nella configurazione; ogni pagamento resta sul conto su cui è nato.
 - **Manual capture** (D-031): per le sedute, la sessione Checkout blocca l'importo senza incassarlo. Il backend chiama poi Stripe per **incassare**, all'approvazione, o per **annullare** il blocco, al rifiuto, alla scadenza o al ritiro. Il blocco dura in genere circa 7 giorni. I pacchetti si incassano subito.
 - **Webhook**, gli eventi gestiti:
   - `checkout.session.completed` → seduta: importo bloccato, prenotazione in attesa di approvazione; pacchetto: crea il lotto
-  - `checkout.session.expired` → prenotazione scaduta, orario libero
-  - eventi di incasso e annullamento del PaymentIntent: da scegliere al passo 9
+  - `checkout.session.expired` → pagamento scaduto; la prenotazione la chiude il lavoro programmato entro un minuto
+  - con l'incasso manuale la sessione completata dice `payment_status = unpaid`: conta `status = complete` (D-062)
+  - un indirizzo per conto (`/api/webhooks/stripe/{conto}`), fuori dal CSRF, protetto dalla firma (D-062)
+  - `payment_intent.succeeded` → riconciliazione: se il nostro commit dopo l'incasso era fallito, il pagamento risulta incassato e la prenotazione confermata, senza incassare di nuovo (D-063)
+  - `payment_intent.canceled` → il blocco sciolto da Stripe dopo 7 giorni, o un nostro annullamento che Stripe non aveva confermato (D-063)
 - **Verifica della firma**: ogni webhook arriva firmato. Il backend controlla la firma con il segreto del webhook prima di fidarsi.
-- **Idempotenza**: Stripe può mandare lo stesso evento più volte. Il backend salva l'id di ogni evento elaborato e ignora i doppioni.
+- **Idempotenza**: Stripe può mandare lo stesso evento più volte, e a volte due eventi per la stessa cosa. Il backend salva l'id di ogni evento elaborato nella stessa transazione dell'elaborazione, e ogni passaggio del pagamento ha lo stato di partenza nel `where` (D-062).
 - **Pagamento arrivato tardi**: se un pagamento viene confermato per una prenotazione già scaduta, il backend **annulla il blocco** sulla carta (D-031, prima era un credito) e avvisa il cliente via email.
 - **Modalità test**: in sviluppo si usano le chiavi di test e le carte di prova di Stripe. La Stripe CLI inoltra i webhook al backend in esecuzione sul computer locale.
 - **Rimborsi**: non gestiti dal sistema. In casi eccezionali si fanno a mano dalla dashboard Stripe.

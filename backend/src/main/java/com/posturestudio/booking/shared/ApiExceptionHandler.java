@@ -99,6 +99,14 @@ class ApiExceptionHandler extends ResponseEntityExceptionHandler {
         return ProblemDetail.forStatusAndDetail(HttpStatus.SERVICE_UNAVAILABLE, e.getMessage());
     }
 
+    // 503 with a code: an external service did not answer (already logged where it happened, guide 31, 8.2)
+    @ExceptionHandler(ServiceUnavailableException.class)
+    ProblemDetail serviceUnavailable(ServiceUnavailableException e) {
+        ProblemDetail problem = ProblemDetail.forStatusAndDetail(HttpStatus.SERVICE_UNAVAILABLE, e.getMessage());
+        problem.setProperty("code", e.getCode().name());
+        return problem;
+    }
+
     // a constraint of the database: validation and rules should have stopped it, unless two
     // requests raced. The database message names tables and constraints: log only
     @ExceptionHandler(DataIntegrityViolationException.class)

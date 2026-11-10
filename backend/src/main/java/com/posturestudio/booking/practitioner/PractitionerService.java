@@ -64,6 +64,15 @@ public class PractitionerService {
         }
     }
 
+    // Active or not: the admin assigns a payment account to a deactivated practitioner too, who finds it
+    // again when reactivated (guide 30, 9.2)
+    @Transactional(readOnly = true)
+    public void requireExists(long practitionerId) {
+        if (!repository.existsById(practitionerId)) {
+            throw notFound(practitionerId);
+        }
+    }
+
     // ***** NOTIFICATION (guide 27) *****
 
     // Active or not: an email about a booking already made is still due (guide 27, 5.4)

@@ -67,12 +67,12 @@ public class BookingServiceTest {
     // ***** the request that works *****
 
     @Test
-    void aFreeSlotBecomesAPendingPaymentHeldFor30Minutes() {
+    void aFreeSlotBecomesAPendingPaymentHeldFor32Minutes() {
         CustomerBookingView booked = request(cliente, MONDAY_9);
 
         assertThat(booked.status()).isEqualTo(BookingStatus.PENDING_PAYMENT);
         assertThat(booked.endsAt()).isEqualTo(OffsetDateTime.parse(MONDAY_10));
-        assertThat(booked.holdExpiresAt()).isEqualTo(OffsetDateTime.parse("2026-11-06T10:30+01:00"));
+        assertThat(booked.holdExpiresAt()).isEqualTo(OffsetDateTime.parse("2026-11-06T10:32+01:00"));
         // the row, not the object in memory: saveAndFlush has already written it
         Map<String, Object> row = jdbc.queryForMap(
                 "select customer_id, status, booked_by, paid_with, price_cents from booking where id = ?", booked.id());

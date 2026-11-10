@@ -74,12 +74,15 @@ public class BookingCustomerApiTest {
         assertThat(result).hasStatus(HttpStatus.CREATED);
         int id = JsonPath.read(result.getResponse().getContentAsString(), "$.id");
         assertThat(result).hasHeader("Location", "/api/customer/bookings/" + id);
+        // the page of the fake Stripe (guide 31): its id is random, so read first and compared whole after
+        String paymentUrl = JsonPath.read(result.getResponse().getContentAsString(), "$.paymentUrl");
+        assertThat(paymentUrl).startsWith("https://checkout.stripe.test/c/pay/cs_test_fake_");
         assertThat(result).bodyJson().isStrictlyEqualTo("""
                 {"id": %d, "practitionerId": %d, "serviceId": %d,
                  "startsAt": "2026-11-09T09:00:00+01:00", "endsAt": "2026-11-09T10:00:00+01:00",
-                 "status": "PENDING_PAYMENT", "priceCents": 3000, "holdExpiresAt": "2026-11-06T10:30:00+01:00",
-                 "approvalDeadline": null}
-                """.formatted(id, anna, seduta));
+                 "status": "PENDING_PAYMENT", "priceCents": 3000, "holdExpiresAt": "2026-11-06T10:32:00+01:00",
+                 "approvalDeadline": null, "paymentUrl": "%s"}
+                """.formatted(id, anna, seduta, paymentUrl));
     }
 
     @Test
@@ -156,17 +159,6 @@ public class BookingCustomerApiTest {
         assertThat(mvc.post().uri("/api/customer/bookings/" + waiting + "/withdraw").with(sessions.customer(cliente)))
                 .hasStatus(HttpStatus.CONFLICT)
                 .bodyJson().extractingPath("$.code").isEqualTo("BOOKING_TRANSITION_NOT_ALLOWED");
-    }
-
-    @Test
-    void withoutTheSwitchTheSimulatedPaymentDoesNotExist() throws Exception {
-        // booking.simulated-payments is false by default: the controller is not even created (guide 20, part 5)
-        int pending = JsonPath.read(request(cliente, "2026-11-09T09:00:00+01:00").getResponse().getContentAsString(), "$.id");
-
-        assertThat(mvc.post().uri("/api/dev/bookings/" + pending + "/payment-authorized"))
-                .hasStatus(HttpStatus.NOT_FOUND);
-        String status = jdbc.queryForObject("select status from booking where id = ?", String.class, pending);
-        assertThat(status).isEqualTo("PENDING_PAYMENT");
     }
 
     private MvcTestResult request(String customer, String startsAt) {

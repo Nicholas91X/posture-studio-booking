@@ -22,11 +22,12 @@ public class BookingTest {
             Instant.parse("2026-11-09T08:00:00Z"), Instant.parse("2026-11-09T09:00:00Z"));
 
     @Test
-    void aRequestIsPendingPaymentHeldFor30Minutes() {
+    void aRequestIsPendingPaymentHeldFor32Minutes() {
         Booking booking = requested();
 
         assertThat(booking.getStatus()).isEqualTo(BookingStatus.PENDING_PAYMENT);
-        assertThat(booking.getHoldExpiresAt()).isEqualTo(Instant.parse("2026-11-06T09:30:00Z"));
+        // 32 and not 30 (D-061): the Stripe session must last at least 30 minutes from its own creation
+        assertThat(booking.getHoldExpiresAt()).isEqualTo(Instant.parse("2026-11-06T09:32:00Z"));
         assertThat(booking.getCreatedAt()).isEqualTo(REQUESTED);
     }
 

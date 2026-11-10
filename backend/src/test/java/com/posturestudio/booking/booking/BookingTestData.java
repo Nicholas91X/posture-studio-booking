@@ -17,12 +17,16 @@ final class BookingTestData {
         this.jdbc = jdbc;
     }
 
+    // with the payment account "alpha" of the test configuration (guide 31): its customers can pay by card
     long practitioner(String email) {
         Long userId = jdbc.queryForObject(
                 "insert into app_user (role, email) values ('PRACTITIONER', ?) returning id", Long.class, email);
-        return jdbc.queryForObject(
+        long practitionerId = jdbc.queryForObject(
                 "insert into practitioner (user_id, first_name, last_name) values (?, 'Test', 'Practitioner') returning id",
                 Long.class, userId);
+        jdbc.update("insert into practitioner_payment_account (practitioner_id, account, assigned_at) values (?, 'alpha', now())",
+                practitionerId);
+        return practitionerId;
     }
 
     long customer(String email) {
@@ -71,7 +75,7 @@ final class BookingTestData {
 
     long booking(long practitionerId, long serviceId, long customerId, String startsAt, String endsAt, String status,
                  String holdExpiresAt) {
-        return jdbc.queryForObject("""
+        long id = jdbc.queryForObject("""
                 insert into booking (customer_id, practitioner_id, service_id, starts_at, ends_at, status,
                                      booked_by, paid_with, price_cents, hold_expires_at, approval_deadline)
                 values (?, ?, ?, ?, ?, ?, 'CUSTOMER', 'CARD', 3000, ?, ?)
@@ -79,6 +83,21 @@ final class BookingTestData {
                 """, Long.class,
                 customerId, practitionerId, serviceId, at(startsAt), at(endsAt), status,
                 at(holdExpiresAt), status.equals("PENDING_APPROVAL") ? at(LATER) : null);
+        if (status.equals("PENDING_APPROVAL")) {
+            heldPayment(id);
+        }
+        return id;
+    }
+
+    // A request waiting for the practitioner has its amount held on the card (D-031): the payment AUTHORIZED,
+    // on the test account "alpha", that the capture of an approval needs (guide 33)
+    void heldPayment(long bookingId) {
+        jdbc.update("""
+                insert into payment (booking_id, account, amount_cents, status, stripe_checkout_session_id, checkout_url,
+                                     stripe_payment_intent_id)
+                values (?, 'alpha', 3000, 'AUTHORIZED', 'cs_test_seed_' || ?, 'https://checkout.stripe.test/c/pay/seed',
+                        'pi_test_seed_' || ?)
+                """, bookingId, bookingId, bookingId);
     }
 
     // a booking made by the practitioner from the panel, to be paid in the studio (D-024, D-040)

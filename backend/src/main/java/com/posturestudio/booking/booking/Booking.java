@@ -20,8 +20,11 @@ import com.posturestudio.booking.shared.TimeRange;
 @Table(name = "booking")
 class Booking {
 
-    // while the customer pays, the slot is held for them: the same length as the Stripe session (D-008)
-    static final Duration HOLD = Duration.ofMinutes(30);
+    // While the customer pays, the slot is held for them, and the Stripe session expires at the same instant
+    // (D-008). 32 and not 30 minutes (D-061): Stripe wants a session to last at least 30 minutes from ITS
+    // creation, which comes a moment after the request; the 2 minutes cover that moment, a retry and clocks
+    // that do not agree (guide 31, part 5)
+    static final Duration HOLD = Duration.ofMinutes(32);
 
     protected Booking() {
         // JPA needs a no-arg constructor
@@ -166,11 +169,17 @@ class Booking {
     // A forbidden step is a 409, not a bug (D-027): it really happens, e.g. approving a request
     // the customer has just withdrawn. Nothing changes if the step is refused
     private void moveTo(BookingStatus next) {
+        checkMove(next);
+        this.status = next;
+    }
+
+    // The same question without the change: asked BEFORE an effect outside the database (the capture), so that a
+    // forbidden step never reaches Stripe and a refused capture leaves the booking as it was (guide 33, part 3)
+    void checkMove(BookingStatus next) {
         if (!status.canMoveTo(next)) {
             throw new BusinessRuleException(ErrorCode.BOOKING_TRANSITION_NOT_ALLOWED,
                     "Booking " + id + " cannot go from " + status + " to " + next);
         }
-        this.status = next;
     }
 
     // ***** QUESTIONS *****

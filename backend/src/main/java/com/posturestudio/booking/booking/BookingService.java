@@ -1,5 +1,6 @@
 package com.posturestudio.booking.booking;
 
+import java.net.URI;
 import java.sql.SQLException;
 import java.time.Clock;
 import java.time.Duration;
@@ -24,6 +25,7 @@ import com.posturestudio.booking.booking.BookingEvent.ApprovalRequested;
 import com.posturestudio.booking.booking.BookingEvent.BookingConfirmed;
 import com.posturestudio.booking.booking.BookingEvent.BookingRejected;
 import com.posturestudio.booking.booking.BookingEvent.BookingWithdrawn;
+import com.posturestudio.booking.booking.BookingEvent.LatePaymentReleased;
 import com.posturestudio.booking.catalog.CatalogService;
 import com.posturestudio.booking.catalog.ServiceOnSale;
 import com.posturestudio.booking.customer.CustomerName;
@@ -41,7 +43,7 @@ import com.posturestudio.booking.shared.TimeRange;
  * The only door of the booking module (D-002): returns records, never the entity.
  * Every customer method receives the id of the customer who acts and finds only what is theirs.
  * Dependencies: booking -> customer, catalog, practitioner, schedule. Nobody depends on booking:
- * schedule reaches it only through OccupiedTime (D-044).
+ * schedule reaches it only through OccupiedTime (D-044), payment through CardHolds and CardCheckout.
  *
  * Transactions run with the default isolation of PostgreSQL, READ COMMITTED: every statement sees the
  * data committed when it starts. The customer lock relies on it (guide 19, 4.7): with REPEATABLE READ
@@ -64,18 +66,20 @@ public class BookingService {
     private final PractitionerService practitioners;
     private final ScheduleService schedule;
     private final CardHolds cards;
+    private final CardCheckout checkout;
     private final ApplicationEventPublisher events;
     private final Clock clock;
 
     BookingService(BookingRepository bookings, CatalogService catalog, CustomerService customers,
                    PractitionerService practitioners, ScheduleService schedule, CardHolds cards,
-                   ApplicationEventPublisher events, Clock clock) {
+                   CardCheckout checkout, ApplicationEventPublisher events, Clock clock) {
         this.bookings = bookings;
         this.catalog = catalog;
         this.customers = customers;
         this.practitioners = practitioners;
         this.schedule = schedule;
         this.cards = cards;
+        this.checkout = checkout;
         this.events = events;
         this.clock = clock;
     }
@@ -83,7 +87,8 @@ public class BookingService {
     // ***** CUSTOMER *****
 
     // A customer asks for a slot (guide 19, part 2 for the order). One transaction, one reading of the clock.
-    // Outcome: PENDING_PAYMENT, held for 30 minutes (D-008), until paymentAuthorized
+    // Outcome: PENDING_PAYMENT, held for 32 minutes (D-008, D-061), with the page where the customer pays
+    // (guide 31), until paymentAuthorized
     @Transactional
     public CustomerBookingView request(long customerId, NewBooking request) {
         Instant now = clock.instant();
@@ -92,6 +97,13 @@ public class BookingService {
 
         // 1. the request names something on sale (404): no lock needed for that
         ServiceOnSale service = catalog.serviceOnSale(practitionerId, request.serviceId());
+
+        // 1b. nobody can pay this practitioner by card (no payment account): refused before any lock or
+        // write, so no slot is ever held for a booking nobody can pay (guide 30, part 6)
+        if (!checkout.available(practitionerId)) {
+            throw new BusinessRuleException(ErrorCode.CARD_PAYMENTS_UNAVAILABLE,
+                    "Practitioner " + practitionerId + " cannot take card payments yet");
+        }
 
         // 2. from here on, the requests of this customer go one at a time (guide 19, part 4):
         // a second one waits here until this transaction ends, then counts again and sees this booking
@@ -124,14 +136,19 @@ public class BookingService {
         } catch (DataIntegrityViolationException | PessimisticLockingFailureException e) {
             throw translateOverlap(e, practitionerId, slot);
         }
-        return CustomerBookingView.from(booking);
+
+        // 7. the Stripe page, inside this transaction (guide 31, parts 3 and 4): if Stripe fails, the booking
+        // is rolled back with everything else; if our commit fails after Stripe answered, a session nobody
+        // knows expires by itself. The page expires with the hold, never after it
+        URI page = checkout.start(new CardCheckout.CheckoutRequest(booking.getId(), practitionerId, customerId,
+                service.id(), booking.getPriceCents(), booking.getHoldExpiresAt()));
+        return CustomerBookingView.from(booking, page);
     }
 
     @Transactional(readOnly = true)
     public CustomerBookingView findForCustomer(long customerId, long bookingId) {
-        return bookings.findByIdAndCustomerId(bookingId, customerId)
-                .map(CustomerBookingView::from)
-                .orElseThrow(() -> notFound(bookingId));
+        Booking booking = bookings.findByIdAndCustomerId(bookingId, customerId).orElseThrow(() -> notFound(bookingId));
+        return customerView(booking, clock.instant());
     }
 
     // While waiting for the answer the customer can give up, nothing charged (D-030). Allowed even after
@@ -149,30 +166,61 @@ public class BookingService {
 
     // ***** PAYMENT *****
 
-    // The card hold is in place. Called by the simulated payment now, by the Stripe webhook at step 9.
-    // One path for both approval modes (D-030): PENDING_APPROVAL first, then AUTOMATIC approves at once
-    // with the same confirm() a practitioner uses, inside the same transaction
+    // A card hold is in place: called by the Stripe webhook (guide 32), which has already made sure that
+    // THIS payment is new. One path for both approval modes (D-030): PENDING_APPROVAL first, then AUTOMATIC
+    // approves at once with the same confirm() a practitioner uses, inside the same transaction.
+    // It answers instead of acting (guide 32, part 7): only the webhook knows which payment arrived, so it is
+    // the webhook that releases a payment the booking does not want
     @Transactional
-    public CustomerBookingView paymentAuthorized(long bookingId) {
+    public PaymentOutcome paymentAuthorized(long bookingId) {
         Instant now = clock.instant();
         Booking booking = bookings.findLockedById(bookingId).orElseThrow(() -> notFound(bookingId));
 
-        // paid too late: the booking expired and its slot may be someone else's. Release the money,
-        // change nothing, no error: at step 9 the webhook must answer "received" (D-031, guide 20, 6.3).
-        // A PENDING_PAYMENT whose hold expired is still accepted: nobody took the slot, or the lazy
-        // expiry would have made it EXPIRED
-        if (booking.getStatus() == BookingStatus.EXPIRED) {
-            cards.cancel(booking.getId());
-            return CustomerBookingView.from(booking);
+        // A PENDING_PAYMENT whose hold expired is still accepted: nobody took the slot, or the lazy expiry
+        // would have made it EXPIRED (D-046). Any other state does not want this money, with no error: for
+        // Stripe an error means "try again" (D-031, D-059, guide 32, part 7)
+        if (booking.getStatus() != BookingStatus.PENDING_PAYMENT) {
+            if (booking.getStatus() == BookingStatus.EXPIRED) {
+                // paid too late: the slot may be someone else's. The customer saw "paid" on Stripe's page,
+                // and is told by email, after the commit, that nothing was charged (guide 32, part 9)
+                events.publishEvent(LatePaymentReleased.of(booking));
+            }
+            return new PaymentOutcome.NotWanted(booking.getStatus());
         }
 
         PractitionerSettings settings = practitioners.getSettings(booking.getPractitionerId());
         booking.paymentAuthorized(Duration.ofHours(settings.approvalWindowHours()));
         switch (settings.bookingApproval()) {
-            case AUTOMATIC -> confirm(booking, now);
+            case AUTOMATIC -> {
+                // a capture refused right after the payment (a hold released by hand on Stripe): the request goes
+                // to the practitioner as in manual mode, who decides. No exception: the webhook would make Stripe
+                // retry for three days, and the answer would never change (guide 33, part 4)
+                if (!captureAndConfirm(booking, now)) {
+                    events.publishEvent(ApprovalRequested.of(booking));
+                }
+            }
             case MANUAL -> events.publishEvent(ApprovalRequested.of(booking));
         }
-        return CustomerBookingView.from(booking);
+        return new PaymentOutcome.Accepted(booking.getStatus());
+    }
+
+    // "Stripe captured, our commit failed" (guide 33, part 6): Stripe's payment_intent.succeeded found the payment
+    // still AUTHORIZED. A capture happens only after an approval, so confirming respects that decision, WITHOUT
+    // capturing again. NotWanted: the booking can no longer be confirmed, and money was taken for it (the webhook
+    // logs it as an error: refund by hand from the dashboard, D-015)
+    @Transactional
+    public PaymentOutcome paymentCaptured(long bookingId) {
+        Instant now = clock.instant();
+        Booking booking = bookings.findLockedById(bookingId).orElseThrow(() -> notFound(bookingId));
+        return switch (booking.getStatus()) {
+            case PENDING_APPROVAL -> {
+                booking.approve(now);
+                events.publishEvent(BookingConfirmed.of(booking));
+                yield new PaymentOutcome.Accepted(BookingStatus.CONFIRMED);
+            }
+            case CONFIRMED -> new PaymentOutcome.Accepted(BookingStatus.CONFIRMED);
+            default -> new PaymentOutcome.NotWanted(booking.getStatus());
+        };
     }
 
     // ***** PRACTITIONER *****
@@ -222,7 +270,11 @@ public class BookingService {
         Instant now = clock.instant();
         Booking booking = lockedForPractitioner(practitionerId, bookingId);
         requireBeforeDeadline(booking, now);
-        confirm(booking, now);
+        // the request stays PENDING_APPROVAL: the practitioner may reject it, or let it expire (guide 33, part 5)
+        if (!captureAndConfirm(booking, now)) {
+            throw new BusinessRuleException(ErrorCode.CARD_CAPTURE_FAILED,
+                    "The amount held for booking " + bookingId + " can no longer be captured");
+        }
         return PanelBookingView.from(booking);
     }
 
@@ -260,8 +312,9 @@ public class BookingService {
 
     @Transactional(readOnly = true)
     public List<CustomerBookingView> listForCustomer(long customerId) {
+        Instant now = clock.instant();
         return bookings.findByCustomerIdOrderByStartsAtDesc(customerId).stream()
-                .map(CustomerBookingView::from)
+                .map(booking -> customerView(booking, now))
                 .toList();
     }
 
@@ -297,6 +350,15 @@ public class BookingService {
     }
 
     // ***** HELPERS *****
+
+    // The payment page only while the slot is still held for the customer (guide 31, part 9). At most a few
+    // such bookings per customer (the limit of future bookings), so one question each is fine
+    private CustomerBookingView customerView(Booking booking, Instant now) {
+        if (booking.getStatus() == BookingStatus.PENDING_PAYMENT && booking.holdsTimeAt(now)) {
+            return CustomerBookingView.from(booking, checkout.pageOf(booking.getId()).orElse(null));
+        }
+        return CustomerBookingView.from(booking);
+    }
 
     // The rows of a panel list with names and flags (guide 23, part 2). A fixed number of queries whatever
     // the number of rows: one question per module on a set of ids (D-029), the rest combined in Java.
@@ -358,10 +420,19 @@ public class BookingService {
 
     // The order matters (guide 20, 3.5): the state machine first, so a refused step never reaches Stripe;
     // then the capture, whose failure rolls the transaction back and leaves PENDING_APPROVAL
-    private void confirm(Booking booking, Instant now) {
-        booking.approve(now);
-        cards.capture(booking.getId(), booking.getPriceCents());
-        events.publishEvent(BookingConfirmed.of(booking));
+    // Check, capture, and only then change (guide 33, part 3, D-063): a forbidden step never reaches Stripe, and a
+    // refused capture leaves the booking exactly as it was, so the caller decides without throwing the
+    // transaction away. false: Stripe refused the capture for good. Stripe not answering throws: all rolls back
+    private boolean captureAndConfirm(Booking booking, Instant now) {
+        booking.checkMove(BookingStatus.CONFIRMED);
+        return switch (cards.capture(booking.getId(), booking.getPriceCents())) {
+            case CardHolds.CaptureResult.Captured captured -> {
+                booking.approve(now);
+                events.publishEvent(BookingConfirmed.of(booking));
+                yield true;
+            }
+            case CardHolds.CaptureResult.Refused refused -> false;
+        };
     }
 
     // The request is already void after the deadline (D-030): the job of piece 4 closes it within a minute.

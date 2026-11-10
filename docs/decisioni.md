@@ -90,7 +90,7 @@ Formato: contesto → decisione → alternative scartate → conseguenze.
 ---
 
 ## D-008 — Blocco temporaneo dell'orario: 30 minuti
-**Stato:** accettata · 2026-10-13 · conseguenza sul pagamento tardivo **modificata da D-031** (2026-11-06): si annulla il blocco sulla carta invece di creare un credito
+**Stato:** accettata · 2026-10-13 · conseguenza sul pagamento tardivo **modificata da D-031** (2026-11-06): si annulla il blocco sulla carta invece di creare un credito · durata **modificata da D-061** (2026-11-10): 32 minuti, con la sessione che scade nello stesso istante
 
 **Contesto.** Durante la progettazione si era ipotizzato un blocco di 10 minuti. Stripe però non accetta sessioni Checkout che scadono prima di 30 minuti.
 
@@ -934,3 +934,171 @@ Implementazione (pezzo 3, guida 16): `FreeSlots.compute(SlotQuery)` nel package 
 **Alternative scartate.** *Solo la regola di Spring Security*: basterebbe una porta dimenticata aperta in futuro (un'altra API che chiama il servizio). *Solo il vincolo nel database*: l'errore arriverebbe al commit come una violazione generica, e l'API risponderebbe 500 invece di 403. *Un controllo sul ruolo anche in `requestSms` e `verifySms`*: codice che nessun test può raggiungere, perché il database impedisce lo stato che controlla. *Lasciare 100*: il tetto è il massimo della spesa, e il volume atteso sta comodo sotto 50.
 
 **Conseguenze.** La sicurezza dell'account admin dipende ora solo dalla sua casella email, che va protetta con la verifica in due passaggi del suo fornitore (da ricordare al passo 14). Il frontend del pannello admin (passo 13) non mostra la sezione del telefono. Per i professionisti vale lo stesso ragionamento in misura minore (il loro account vede clienti e prenotazioni): oggi restano con l'SMS, da rivalutare se lo studio lo chiede. **Provato**: tolti a turno la regola di sicurezza, il controllo in `AppUser`, il vincolo della V9 e il valore 50, fallisce ogni volta il test che li protegge (`SmsAccessApiTest`, `SmsCodeServiceTest`, `LoginCodeSchemaTest`).
+
+---
+
+## D-057 — Conti di incasso configurabili: uno per professionista o uno comune, senza Stripe Connect
+**Stato:** accettata · 2026-11-10 · chiude il punto aperto 1 dei requisiti · brief del passo 9
+
+**Contesto.** I due professionisti sono forfettari, quindi due partite IVA distinte (D-022): di regola ognuno incassa sul proprio conto. Lo studio però può preferire, oggi o in futuro, un conto solo; e la scelta può cambiare dopo la messa online. Stripe offre per i casi "più venditori su una piattaforma" il prodotto **Connect**.
+
+**Decisione.**
+- Il sistema conosce uno o più **conti di incasso**, ognuno un conto Stripe a sé, con un **nome** (es. `rossi`, `studio`). Sono dichiarati nella configurazione; la chiave segreta e il segreto del webhook di ogni conto vengono da variabili d'ambiente, mai dal repository (`.env.example` li elenca senza valori).
+- Ogni professionista ha **un conto assegnato**, scelto dall'admin. Più professionisti possono avere lo stesso conto (conto comune). **Aggiungere un conto** richiede un riavvio (nuove variabili d'ambiente); **cambiare l'assegnazione** no, si fa in produzione dall'API dell'admin.
+- Ogni pagamento registra **il conto su cui è stato fatto**. Incasso, annullamento e qualunque altra operazione successiva avvengono sempre su quel conto, mai su quello assegnato in quel momento al professionista: cambiare conto non tocca i pagamenti in corso.
+- **Niente Stripe Connect.**
+
+**Alternative scartate.** *Stripe Connect*: il motivo **non** sono i costi. Con l'opzione "Stripe gestisce le tariffe per i tuoi utenti" la piattaforma non paga commissioni Connect (verificato su stripe.com/connect/pricing il 2026-11-10: nessuna commissione per account attivo né per bonifico; solo con "Gestisci le tariffe in autonomia" si pagano 2 € per account attivo al mese e lo 0,25% + 0,10 € per bonifico). Il motivo è che con Connect **qualcuno diventa la piattaforma** tra lo studio e Stripe: un conto "piattaforma" (di Nicholas, o di uno dei due professionisti) che accetta il contratto di piattaforma con Stripe, ne porta le responsabilità verso i conti collegati, e per cui va costruito un **percorso di registrazione dei conti** (*onboarding*) nel sistema. Tutto questo per due conti che i professionisti possono aprire da soli dalla dashboard di Stripe. *Un solo conto fisso nel codice*: obbligherebbe a una modifica del codice il giorno in cui lo studio passa a due conti, o viceversa. *Due conti fissi, uno per professionista*: non regge il conto comune, né un terzo professionista.
+
+**Conseguenze.**
+- Ogni professionista apre il proprio conto Stripe e ne consegna le chiavi a chi gestisce il server (passo 14); nessun dato della carta passa mai da noi (requisiti).
+- Un webhook per conto, ognuno con il proprio segreto: Stripe firma gli avvisi di un conto con il segreto dell'endpoint configurato su quel conto.
+- **Con un conto comune, i soldi di una partita IVA finiscono sul conto dell'altra**: un professionista incassa prestazioni fatturate dall'altro. **Va verificato con il commercialista** prima di usarlo in produzione.
+- Un professionista senza conto assegnato non può incassare: cosa succede alle richieste dei suoi clienti si decide nella guida del pezzo 1 del passo 9 (risposta chiara, mai un 500).
+- I pacchetti del passo 10 useranno lo stesso meccanismo.
+
+---
+
+## D-058 — Marca da bollo: nessuna gestione nel sistema
+**Stato:** accettata · 2026-11-10 · chiude il punto aperto 9 dei requisiti · brief del passo 9
+
+**Contesto.** Sulle ricevute e fatture non soggette a IVA di importo superiore a 77,47 € va applicata una marca da bollo da 2 €. Riguarda soprattutto i pacchetti: una seduta singola da 30 € resta sotto la soglia. Il bollo può essere addebitato al cliente oppure restare a carico del professionista.
+
+**Decisione.** Il sistema **non gestisce** la marca da bollo: nessuna colonna, nessun calcolo, nessuna riga aggiuntiva nella pagina di pagamento. **L'importo incassato è il prezzo** del servizio o del pacchetto, come vuole D-022.
+
+**Alternative scartate.** *Aggiungere 2 € in automatico sopra la soglia*: una regola fiscale nel codice, da tenere aggiornata, e un prezzo pagato diverso da quello mostrato. *Una colonna per il bollo nei pagamenti*: dati che nessuno leggerebbe, perché la fattura elettronica resta fuori dal sistema (requisiti, "Fuori dalla prima versione").
+
+**Conseguenze.** Il bollo, se dovuto, si applica sulla fattura elettronica che lo studio emette come oggi, fuori dal sistema. Se un professionista vuole farlo pagare al cliente, lo comprende nel **prezzo** del pacchetto, che decide lui dal pannello. Se un giorno il bollo dovrà comparire nel pagamento, servirà una nuova decisione.
+
+---
+
+## D-059 — Link di pagamento per le sedute "in studio": condivisione con WhatsApp dal telefono del professionista
+**Stato:** accettata · 2026-11-10 · chiude il punto aperto 16 dei requisiti · completa D-040 · brief del passo 9
+
+**Contesto.** Le prenotazioni fatte dal pannello senza crediti sono pagate in studio (D-040). Nicholas ha chiesto un pulsante per mandare al cliente un link con cui pagarle prima, con carta. Il punto aperto 16 chiedeva di decidere il canale, il problema del numero non verificato, l'effetto sulla prenotazione e i link vecchi.
+
+**Decisione.**
+- **Canale**: il pannello apre la **condivisione di WhatsApp** con il messaggio pronto (link e testo), dal telefono del professionista. Nessun costo, nessun fornitore, e il professionista vede a chi lo manda prima di premere "invia". Se il cliente ha un numero (verificato, D-055) il messaggio è già indirizzato a lui; altrimenti il professionista sceglie il contatto.
+- **Numero non verificato**: il problema non c'è più. Da D-055 `app_user.phone` è sempre verificato; e comunque è il professionista a scegliere il destinatario.
+- **Quando**: solo su una seduta **sua**, `CONFIRMED` e `IN_STUDIO`.
+- **Un solo link valido per seduta**: chiederne uno nuovo invalida il vecchio.
+- **Blocco, non incasso** (precisato da Nicholas il 2026-11-10): anche il link **blocca** l'importo sulla carta (`capture_method = manual`), come le richieste dei clienti (D-031). All'arrivo del pagamento (webhook): se la seduta è ancora `CONFIRMED` e `IN_STUDIO`, si **incassa subito**; altrimenti si **annulla il blocco**. Stesso meccanismo del pagamento tardivo (D-031). **D-015 resta valida**: il sistema non fa mai rimborsi.
+- **Più link, più pagamenti**: si incassa il **primo** pagamento che arriva mentre la seduta è ancora `IN_STUDIO`; ogni pagamento successivo per la stessa seduta (un link invalidato ma pagato lo stesso, o due link pagati entrambi) si annulla.
+- **Effetto del pagamento incassato**: la seduta resta `CONFIRMED`, `paid_with` passa da `IN_STUDIO` a `CARD`, si registra il pagamento. Niente da approvare. Da quel momento valgono le regole di cancellazione di una seduta pagata con carta (passo 11).
+- La regola "seduta non più valida → annulla il blocco" si scrive al passo 9, nel codice del webhook, provata con un test che scrive lo stato direttamente nel database (al passo 9 una seduta confermata non si può ancora cancellare). La prova con il percorso vero è un criterio di "fatto" del passo 11.
+- Gli altri dettagli (scadenza del link, invalidazione del vecchio) si decidono nella guida del pezzo 5 del passo 9.
+
+**Alternative scartate.** *SMS dal sistema*: a pagamento, con un fornitore ancora da scegliere (punto aperto 17). *Email dal sistema*: possibile, ma meno immediata dal telefono, dove il professionista lavora; si può aggiungere accanto in futuro. *Payment Links di Stripe*: sono pensati per vendere lo stesso prodotto più volte con un link che dura; per una seduta precisa basta una sessione Checkout creata al momento, che scade da sola e porta con sé l'id della prenotazione.
+
+*Incasso immediato con rimborso automatico se la seduta non c'è più* (prima proposta del brief): contro D-015, con le commissioni di Stripe perse sul rimborso; con il blocco non c'è niente da rimborsare.
+
+**Conseguenze.** Il backend restituisce l'indirizzo del pagamento e l'indirizzo di condivisione WhatsApp; il pannello (passo 13) li apre. L'incasso dentro il webhook è una chiamata a Stripe in più, con la stessa doppia scrittura dell'approvazione (riconciliazione con `payment_intent.succeeded`, pezzo 4).
+
+---
+
+## D-060 — Conti di incasso: elenco di nomi più chiavi per convenzione, controlli all'avvio, assegnazione e pagamenti nel modulo `payment`
+**Stato:** accettata · 2026-11-10 · realizza D-057 · confronto completo: `docs/studio/30-conti-di-incasso.md` · scelte di Claude secondo le raccomandazioni della guida, su indicazione di Nicholas
+
+**Contesto.** D-057 vuole conti di incasso dichiarati nella configurazione, aggiungibili con un riavvio, assegnati dall'admin in produzione, e pagamenti che restano sul loro conto. Il brief chiede anche cosa succede a un professionista senza conto, e la tabella `payment` con il conto.
+
+**Decisione.**
+- **Libreria**: `com.stripe:stripe-java` **34.1.0** (29 ottobre 2026, API `2026-10-28.endive`). Dipende solo da Gson, la cui versione la decide Spring Boot (2.13.2 invece di 2.10.1, verificato con `mvnw dependency:tree`). Dal pezzo 2 un `StripeClient` per conto, mai `Stripe.apiKey` statico.
+- **Dichiarazione**: `PAYMENT_ACCOUNTS=nome,nome` (proprietà `payment.accounts`) e, per ogni nome, `STRIPE_<NOME>_SECRET_KEY` e `STRIPE_<NOME>_WEBHOOK_SECRET`, chiesti all'`Environment` di Spring: si trovano uguali nel `.env` letto come file di proprietà (sviluppo) e nelle variabili d'ambiente (produzione). Nomi `^[a-z][a-z0-9]{0,29}$`, mai rinominati. Chiave segreta (`sk_`) o limitata (`rk_`, consigliata).
+- **Controlli all'avvio** (l'applicazione non parte): nome valido e non ripetuto; variabili presenti; prefissi `sk_`/`rk_` e `whsec_`; `payment.live` (`PAYMENT_LIVE`, default `false`) uguale al modo di **ogni** chiave (`_test_` o `_live_`); ogni conto **assegnato** e ogni conto di un pagamento **aperto** (`PENDING`, `AUTHORIZED`) configurato (`PaymentStartupCheck`). Zero conti ammesso. I messaggi nominano la variabile, mai il valore; `PaymentAccount.toString()` mostra solo il nome.
+- **Assegnazione**: tabella `practitioner_payment_account` del modulo `payment` (V10), una riga per professionista; riassegnare lo stesso conto non cambia niente; anche a un professionista disattivato.
+- **Senza conto**: nessun pagamento con carta. Al pezzo 2 la richiesta del cliente riceverà un 409 `CARD_PAYMENTS_UNAVAILABLE` **prima** di creare la prenotazione, tramite un'interfaccia dichiarata da `booking` e implementata da `payment`; le prenotazioni dal pannello pagate in studio non cambiano.
+- **`payment`** (V10): solo le colonne delle sedute più `account`; cinque stati (`PENDING`, `AUTHORIZED`, `SUCCEEDED`, `CANCELED`, `EXPIRED`); `stripe_checkout_session_id` obbligatorio e unico; `stripe_payment_intent_id` unico; al massimo un `PENDING` per prenotazione (indice unico parziale); `version`; `created_at` da Java. Le colonne dei pacchetti al passo 10.
+- **Regola del conto**: il conto si legge una volta, alla creazione (`PaymentAccountService.forNewPayment`), e si copia nella riga (`Payment.pending` riceve un `PaymentAccount`, non un nome); dopo, sempre `PaymentAccounts.of(payment)`. La colonna non è aggiornabile da JPA.
+- **API dell'admin** nel modulo `payment`: `GET /api/admin/payment-accounts` (nomi e professionisti, mai le chiavi), `GET` e `PUT /api/admin/practitioners/{id}/payment-account`; 404 (professionista inesistente o senza conto), 400 (nome malformato), 409 `PAYMENT_ACCOUNT_UNKNOWN` (nome non configurato). Niente `DELETE`. `PractitionerService.requireExists` per il 404.
+
+**Alternative scartate.** *Righe per conto in `application.properties`*: i nomi nel repository, e un conto nuovo diventa una modifica del codice. *Una `Map` legata alle variabili d'ambiente*: la traduzione dei nomi la fa Spring solo per le vere variabili d'ambiente, non per il `.env` letto come file, quindi funzionerebbe in un ambiente e non nell'altro. *Colonna in `practitioner`*: un ciclo tra moduli. *Nascondere il professionista senza conto*: dipendenze in più da `practitioner` e `schedule`, e un cliente confuso. *Creare la prenotazione e fallire dopo*: un orario bloccato 30 minuti per niente. *La tabella `payment` completa del modello dei dati*: colonne e valori che nessun codice scrive fino al passo 10 (D-042).
+
+**Conseguenze.** Togliere un conto dal `.env` mentre ha pagamenti aperti ferma l'avvio: si rimette, o si aspetta che i pagamenti si chiudano. Il controllo all'avvio gira dopo che Tomcat è partito (come `AdminBootstrap`): per un istante l'applicazione può ricevere richieste prima di fermarsi; accettabile. Il test completo "cambiare conto non sposta incasso e annullamento" arriva al pezzo 4; il pezzo 1 prova la metà che c'è (la riga resta sul suo conto). **Provato**: tolti a turno `toString()` senza segreti, il controllo prova/produzione, il controllo dei pagamenti aperti, l'idempotenza dell'assegnazione e il controllo "conto configurato", fallisce ogni volta il test che li protegge. Pagare con il link **cambia le regole di cancellazione** della seduta: da "nessun credito" a "credito se cancellata in tempo" (requisiti, "Cancellazioni").
+
+---
+
+## D-061 — Pagamento della seduta: Checkout nella transazione della richiesta, blocco di 32 minuti, indirizzo salvato, 503 se Stripe non risponde
+**Stato:** accettata · 2026-11-10 · **modifica D-008** (durata del blocco) · confronto completo: `docs/studio/31-pagamento-della-seduta.md` · scelte di Claude secondo le raccomandazioni della guida, su indicazione di Nicholas
+
+**Contesto.** Dopo la richiesta (`PENDING_PAYMENT`) il cliente deve ricevere la pagina di pagamento di Stripe, con l'importo bloccato (D-031) sul conto del professionista (D-057). D-008 voleva blocco e sessione di 30 minuti; ma Stripe vuole una sessione di **almeno 30 minuti dalla sua creazione** (verificato il 2026-11-10), e la sessione nasce un attimo dopo la richiesta.
+
+**Decisione.**
+- **`booking` dichiara `CardCheckout`** (`available`, `start`, `pageOf`), **`payment` la implementa** (`StripeCardCheckout`), come `CardHolds`.
+- **Nella transazione della richiesta**: prima di tutto, se il professionista non ha un conto, 409 `CARD_PAYMENTS_UNAVAILABLE`; poi i passi di D-045 fino all'`insert` con `flush`; poi la **sessione Stripe**; poi la riga `payment` `PENDING`; poi il commit. Se Stripe fallisce, si annulla tutto: nessuna prenotazione, nessun orario bloccato.
+- **Blocco di 32 minuti** (era 30): la sessione scade **nello stesso istante** del blocco, arrotondato per difetto al secondo, e dura per Stripe poco meno di 32 minuti, più dei 30 richiesti anche con un nuovo tentativo e orologi sfasati. La pagina non sopravvive mai al blocco.
+- **Sessione**: `mode=payment`; una riga con `price_data` in euro dal **prezzo fotografato** e il nome del servizio; `payment_intent_data.capture_method=manual`; `booking_id` nei metadati della sessione e del PaymentIntent e in `client_reference_id`; solo carte (`allowed_payment_method_types=card`: in questa versione dell'API `payment_method_types` non c'è più); email del cliente sì, nome no; `locale=it`, `submit_type=book`; ritorni segnaposto `APP_URL/prenotazioni/{id}?pagamento=completato|annullato` (`payment.return-base-url`), fino al passo 12.
+- **Idempotenza**: `Idempotency-Key: booking-{id}-checkout`.
+- **Client**: un `StripeClient` per conto (`StripeClientGateway`), **2 secondi per collegarsi, 5 per leggere, un nuovo tentativo** (precisato da Nicholas il 2026-11-10; i valori della libreria `stripe-java` 34.1.0 sono 30 e 80 secondi e **nessun** nuovo tentativo, con una pausa tra 0,5 e 5 secondi quando i tentativi sono accesi). Ogni `StripeException` diventa **503** `PAYMENT_PROVIDER_UNAVAILABLE` (`ServiceUnavailableException` in `shared`), con nel log tipo, stato, codice e *request id* di Stripe; un `InvalidRequestException` come errore.
+- **Indirizzo salvato** in `payment.checkout_url` (migrazione **V11**: la V10 era già stata eseguita); `CustomerBookingView.paymentUrl` lo mostra solo per una `PENDING_PAYMENT` con blocco valido (richiesta, lettura, lista).
+- **Prove**: interfaccia `StripeGateway`; il finto `FakeStripeGateway` è registrato in ogni contesto di test da `TestcontainersConfiguration`, `@Primary`; il gateway vero è provato contro un server HTTP del JDK su `localhost` (`setApiBase`).
+
+**Alternative scartate.** *Sessione dopo il commit*: con Stripe giù resta un orario bloccato senza pagina. *Seconda chiamata del frontend*: due richieste, e lo stesso orario bloccato se la seconda non arriva. *Sessione più lunga del blocco*: il cliente pagherebbe un orario già liberato (l'alternativa scartata da D-008). *Chiedere ogni volta la sessione a Stripe*: una chiamata esterna per ogni lettura. *Cambiare la V10*: una migrazione eseguita non si tocca.
+
+**La chiamata dentro la transazione è una scelta consapevole.** Durante la chiamata la transazione tiene il lucchetto sul cliente (D-045) e la riga appena inserita nell'indice del vincolo di non sovrapposizione: chi chiede **lo stesso orario** (o lo stesso cliente da un'altra scheda) aspetta; le richieste per altri orari e altri clienti no. **Caso peggiore**: due tentativi di al massimo 2 + 5 secondi e la pausa tra i due, circa **15 secondi**, poi 503 e non resta niente. Con Stripe in salute Checkout risponde in molto meno di un secondo. A questa scala (due professionisti, poche decine di richieste al giorno) due clienti sullo stesso orario nello stesso secondo sono rari, e il prezzo è accettabile in cambio di nessuno stato a metà.
+
+**Alternativa, se il traffico crescesse**: tre passi separati con una **compensazione**. (1) Una transazione salva la prenotazione e il pagamento in uno stato "pagina da creare", e fa commit: lucchetti liberati subito. (2) Fuori da ogni transazione si chiama Stripe. (3) Se Stripe risponde, una seconda transazione registra la sessione; se fallisce, una transazione di **compensazione** annulla la prenotazione (l'orario torna libero) e il cliente riceve il 503. Serve in più un lavoro programmato che ripari i casi rimasti a metà (un riavvio tra il passo 1 e il 3), e la chiave d'idempotenza rende sicuro riprovare il passo 2. Più codice e più stati, per lucchetti tenuti millisecondi invece che secondi.
+
+**Conseguenze.** La transazione della richiesta resta aperta durante la chiamata a Stripe: un'altra richiesta per lo stesso orario aspetta (al peggio circa 15 secondi, poi 503). Una sessione creata con il commit poi fallito resta orfana su Stripe e scade da sola: nessuno ne conosce l'indirizzo. La riga `payment` resta `PENDING` finché il webhook (pezzo 3) non la muove. **Provato**: tolti a turno l'incasso manuale, l'arrotondamento per difetto, il nuovo tentativo, il controllo del conto, il limite "solo finché il blocco vale" per l'indirizzo, i 32 minuti e la chiave d'idempotenza fissa, fallisce ogni volta il test che li protegge. I tempi d'attesa sono provati con i **valori veri** contro un finto Stripe che non risponde (`StripeClientGatewayTest`): il gateway si arrende tra 10 e 15 secondi, dopo due richieste con la stessa chiave; con 15 o con 1 secondo di lettura il test fallisce. L'attesa di collegamento (2 s) non è provata: servirebbe un indirizzo che inghiotte le connessioni.
+
+---
+
+## D-062 — Webhook di Stripe: un indirizzo per conto, eventi visti nella stessa transazione, confronta-e-cambia prima della prenotazione, `paymentAuthorized` che risponde
+**Stato:** accettata · 2026-11-10 · completa D-007, D-031, D-046 e D-051 · **precisata da D-063** (passaggi del pagamento nell'entità con il lucchetto invece degli `update` JPQL; il rischio di `LoggingCardHolds` risolto) · confronto completo: `docs/studio/32-webhook.md` · scelte di Claude secondo le raccomandazioni della guida, su indicazione di Nicholas
+
+**Contesto.** Il cliente paga sulla pagina di Stripe (D-061); il sistema lo deve sapere da Stripe, non dal browser (D-007). Stripe consegna ogni evento **almeno una volta**, in ordine non garantito, e riprova per 3 giorni se non riceve un `2xx`. Verificato sulla documentazione il 2026-11-10: con l'incasso manuale la sessione completata ha `payment_status = unpaid`; la firma è un HMAC-SHA256 di timestamp e corpo grezzo, con 5 minuti di tolleranza.
+
+**Decisione.**
+- **Indirizzi**: `POST /api/webhooks/stripe/{conto}`, uno per conto di incasso; il nome sceglie il segreto. Conto sconosciuto 404; firma mancante, sbagliata o più vecchia di 5 minuti 400 senza dettagli; `Webhook.constructEvent` con il nostro `Clock`. Corpo ricevuto come `byte[]` e decodificato in UTF-8 a mano.
+- **Sicurezza**: prefisso nuovo `/api/webhooks/**`, `permitAll()` e **unica** eccezione al CSRF. Via `/api/dev/**`.
+- **Eventi usati**: `checkout.session.completed` (pagamento `PENDING` → `AUTHORIZED` con il PaymentIntent, poi `paymentAuthorized`; si guarda `status = complete` e la presenza del PaymentIntent, **mai** `payment_status`) e `checkout.session.expired` (pagamento → `EXPIRED`; la prenotazione la chiude il lavoro programmato, D-047). Gli altri tipi: 200, non registrati. I campi si leggono dal **JSON grezzo** dell'oggetto (Jackson), non dal modello tipizzato di `stripe-java`, che con una versione dell'API diversa è vuoto. Sull'endpoint: solo questi due eventi, formato completo (*snapshot*), versione `2026-10-28.endive`.
+- **"Almeno una volta"**, due livelli: tabella **`stripe_event`** (V12), `insert ... on conflict do nothing` **nella stessa transazione** dell'elaborazione; e ogni passaggio del pagamento come **confronta-e-cambia** (`update ... where status = :from`), fatto **prima** di chiedere qualunque cosa alla prenotazione.
+- **Il pagamento deve essere del conto** dell'indirizzo: altrimenti si ignora e si registra come errore.
+- **`BookingService.paymentAuthorized` risponde** con `sealed interface PaymentOutcome` (`Accepted`, `NotWanted`): `PENDING_PAYMENT`, anche con il blocco scaduto, è `Accepted`; **ogni altro stato** è `NotWanted`, senza errore (era 409 per una seconda autorizzazione). `booking` non chiama più `CardHolds.cancel` per il pagamento tardivo: lo annulla il webhook, su **quel** PaymentIntent e sul conto del pagamento (`cancel-{pi}`), e il pagamento passa a `CANCELED`. Un PaymentIntent già non annullabile (`payment_intent_unexpected_state`) va bene così.
+- **Pagamento tardivo**: evento di dominio nuovo `LatePaymentReleased`, email al cliente dopo il commit ("niente addebitato"); nessuna push.
+- **Elaborazione nella richiesta**: un errore annulla tutto, riga di `stripe_event` compresa, e la risposta non è un `2xx` (503 se Stripe non risponde, 500 altrimenti): Stripe rimanda l'evento, che è di nuovo nuovo.
+- **Pagamento simulato rimosso** (era il pezzo 6): `SimulatedPaymentController`, `booking.simulated-payments`, la riga di `.env.example`, `/api/dev/**` e il suo test.
+
+**Alternative scartate.** *Un indirizzo solo provando ogni segreto*: non si sa da quale conto arriva l'evento. *Eventi visti scritti in una transazione a parte, prima*: un errore perderebbe l'evento. *Solo la tabella degli eventi*: Stripe a volte manda due eventi diversi per la stessa cosa, e il secondo annullerebbe un blocco valido. *Aspettare `payment_status = paid`*: con l'incasso manuale non arriva mai. *`payment_intent.amount_capturable_updated`*: dice la stessa cosa senza l'id della sessione. *Modello tipizzato di `stripe-java`*: vuoto in silenzio con un'altra versione dell'API. *Casella d'arrivo con un lavoro programmato*: più tabelle e più codice; la correttezza non dipende dalla velocità, perché un nuovo tentativo di Stripe trova l'evento già visto. *`paymentAuthorized` che annulla da sé*: con più pagamenti per seduta (D-059) non saprebbe quale.
+
+**Conseguenze.** **Finché il pezzo 4 non c'è, `LoggingCardHolds` conferma un'approvazione senza incassare**: i pezzi 3 e 4 arrivano in `main` insieme, e fino ad allora si usa solo la modalità di prova. La tabella `stripe_event` cresce di pochi eventi al giorno: nessuna pulizia per ora. **Provato**: tolti a turno il confronta-e-cambia, la tabella degli eventi, il controllo del conto, la verifica della firma, l'eccezione CSRF, l'annullamento del pagamento tardivo e i controlli su `complete` e PaymentIntent, fallisce ogni volta il test che li protegge; due consegne contemporanee, dello stesso evento o di due eventi per la stessa sessione, hanno un solo effetto.
+
+---
+
+## D-063 — Incasso e annullamento veri: prima incassare poi confermare, il rifiuto come valore, riconciliazione con `payment_intent.succeeded`
+**Stato:** accettata · 2026-11-10 · **precisa D-046** (ordine delle operazioni e firma di `CardHolds`) e D-062 (passaggi del pagamento) · confronto completo: `docs/studio/33-incasso-e-annullamento.md` · scelte di Claude secondo le raccomandazioni della guida, su indicazione di Nicholas
+
+**Contesto.** Con il webhook (D-062) le prenotazioni arrivano davvero in attesa di approvazione, e `LoggingCardHolds` confermava senza incassare. Il brief chiede: incasso all'approvazione, annullamento a rifiuto, ritiro e scadenza; un incasso fallito lascia la richiesta `PENDING_APPROVAL`; "Stripe ha incassato ma il nostro commit è fallito" chiuso dalla riconciliazione con `payment_intent.succeeded`; un annullamento fallito si registra e non blocca. Verificato il 2026-11-10: si incassa solo un PaymentIntent `requires_capture`; Stripe annulla da sé un blocco non incassato dopo 7 giorni (evento `payment_intent.canceled`).
+
+**Decisione.**
+- **`StripeCardHolds`** in `payment` implementa `CardHolds`; **`LoggingCardHolds` rimossa**. Sempre sul conto del **pagamento** (`PaymentAccounts.of`), sempre con la riga del pagamento **bloccata prima** di chiamare Stripe. Chiavi d'idempotenza `capture-{pi}` e `cancel-{pi}`.
+- **Ordine** (precisa D-046): lucchetto sulla prenotazione, **controllo** del passaggio (`Booking.checkMove`), incasso, e **solo dopo** il cambio di stato e l'evento. Un passaggio vietato non arriva mai a Stripe; un incasso rifiutato lascia la prenotazione com'era.
+- **`CardHolds.capture` restituisce `sealed CaptureResult`** (`Captured`, `Refused(reason)`): il rifiuto definitivo (`payment_intent_unexpected_state`, `CardException`) è un valore; Stripe che non risponde resta un'eccezione (503, tutto annullato). Motivo: un'eccezione uscita da un bean `@Transactional` segna la transazione "solo rollback" anche se catturata. `StripeCardHolds` non è `@Transactional`.
+- **Incasso rifiutato**: all'approvazione del professionista → 409 **`CARD_CAPTURE_FAILED`**, richiesta ancora `PENDING_APPROVAL` (si rifiuta o scade); nell'approvazione **automatica** → la richiesta resta `PENDING_APPROVAL` e parte la notifica "da approvare", come in manuale; il webhook risponde 200.
+- **`cancel` non lancia mai**: se Stripe non risponde, avviso nel log e pagamento ancora `AUTHORIZED`. `cancelPaymentIntent` dice se ha annullato: "non più annullabile" (già annullato, o **incassato**) lascia il pagamento com'è, con un errore nel log che indica il rimborso a mano se era incassato.
+- **Webhook, due eventi in più** (da abilitare sugli endpoint): `payment_intent.succeeded` → `AUTHORIZED` → `SUCCEEDED` e `BookingService.paymentCaptured` (conferma **senza** incassare di nuovo; prenotazione non più confermabile → errore "rimborso a mano dalla dashboard", D-015); nel caso normale il pagamento è già `SUCCEEDED` e non succede niente. `payment_intent.canceled` → `AUTHORIZED` → `CANCELED`.
+- **Passaggi del pagamento nell'entità** (precisa D-062): `authorize`, `expire`, `capture`, `cancel` su un pagamento letto con il lucchetto (`findLocked...`), ognuno dice se ha cambiato qualcosa. Sostituiscono gli `update` JPQL del pezzo 3, che lasciavano l'oggetto vecchio in memoria: nell'approvazione automatica l'incasso avrebbe letto un PaymentIntent `null`.
+- **Ordine dei lucchetti**: l'approvazione blocca prenotazione poi pagamento; il webhook pagamento poi prenotazione. Non si incrociano: chi chiama Stripe tiene già il lucchetto del pagamento, e `payment_intent.succeeded` nasce dopo l'incasso.
+
+**Alternative scartate.** *Incasso rifiutato come eccezione*: nel webhook vuol dire tre giorni di nuovi tentativi inutili, e catturata in un altro bean lascia la transazione "solo rollback". *Rifiutare in automatico la richiesta dopo un incasso rifiutato*: il brief vuole che resti in attesa; decide il professionista. *Riconciliazione con un lavoro programmato che interroga Stripe*: Stripe ci avvisa già da sé. *Recuperare il PaymentIntent quando non è più annullabile, per sapere se era incassato*: una chiamata in più per un caso raro, che la riconciliazione risolve comunque. *Tenere gli `update` JPQL e svuotare il persistence context*: staccherebbe anche la prenotazione modificata nella stessa transazione.
+
+**Conseguenze.** I pezzi 3 e 4 possono andare in `main`: nessuna approvazione conferma più senza incassare. Sugli endpoint di Stripe vanno abilitati quattro eventi: `checkout.session.completed`, `checkout.session.expired`, `payment_intent.succeeded`, `payment_intent.canceled`. **Da verificare nella prova manuale**: se un blocco annullato costa una commissione (la documentazione non lo dice). **Provato**: tolti a turno l'ordine incasso-poi-conferma, il conto del pagamento per incasso e annullamento, la tolleranza agli annullamenti falliti, la riconciliazione, l'esito dell'annullamento, il 409 e la chiave d'incasso fissa, fallisce ogni volta il test che li protegge; "incassato ma commit fallito" è provato con commit veri.
+
+---
+
+## D-064 — Annullamenti falliti riprovati dal lavoro programmato; chiave nuova a ogni tentativo
+**Stato:** accettata · 2026-11-10 · **completa D-063** · richiesta di Nicholas dopo il pezzo 4 · scelte di realizzazione di Claude
+
+**Contesto.** Con D-063 un annullamento che fallisce perché Stripe non risponde si registra e non blocca il rifiuto: il blocco si scioglie da solo, ma fino a **7 giorni** dopo. Nicholas: per un problema nostro, il cliente non deve tenere l'importo bloccato sulla carta per una settimana. Verificato sulla documentazione il 2026-11-10: per l'API v1 Stripe **salva** la risposta della prima richiesta con una chiave d'idempotenza, **errori 500 compresi**, e la restituisce di nuovo per 24 ore a chi riusa la chiave.
+
+**Decisione.**
+- **Migrazione V13**: in `payment` `release_attempts` (quanti annullamenti falliti) e `next_release_at` (quando riprovare; `null` = niente da riprovare). `check`: un annullamento può essere dovuto solo da un pagamento ancora `AUTHORIZED`. Indice parziale su `next_release_at`.
+- **Pause tra i tentativi**: 1 minuto, 5, 30, 2 ore (`Payment.RELEASE_RETRY_PAUSES`). Dopo il **quinto** fallimento, circa due ore e mezza dopo il primo, ci si arrende: `next_release_at` torna `null` e il registro scrive un **errore** con l'indicazione di annullare a mano dalla dashboard del conto (il blocco si scioglie comunque da solo).
+- **Lavoro programmato** `PaymentJobs.retryReleases`, ogni minuto con gli altri (`booking.jobs.enabled`): prima gli id dovuti, poi **una transazione per pagamento** con il lucchetto e la condizione **riletta dopo il lucchetto** (`releaseDue`), come D-047: sicuro con due istanze e con un webhook arrivato nel frattempo.
+- **Un solo punto che annulla**: `PaymentReleases.attempt`, usato da `StripeCardHolds.cancel` (rifiuto, ritiro, scadenza) e dal lavoro. Non lancia mai quando Stripe non risponde; non è `@Transactional`.
+- **Chiave nuova a ogni tentativo**: `cancel-{pi}`, poi `cancel-{pi}-1`, `cancel-{pi}-2`, ... Con la stessa chiave, dopo un 500 Stripe restituirebbe lo stesso 500 per 24 ore, e i tentativi non servirebbero a niente. Annullare due volte non fa danni: la seconda volta Stripe risponde "non più annullabile", e niente cambia.
+- **Uscire da `AUTHORIZED`** (annullato, incassato, o "non più annullabile") toglie il tentativo dovuto.
+- **Approvazione automatica con incasso rifiutato** (verifica chiesta da Nicholas): parte `ApprovalRequested` (push, o email di riserva al professionista; email "richiesta inviata" al cliente) e `approval_deadline` è fissata, perché il pagamento la fissa prima dell'incasso. Provato a tre livelli: servizio, webhook, email.
+
+**Alternative scartate.** *Riprovare subito, nella stessa richiesta*: se Stripe non risponde adesso, è probabile che non risponda nemmeno tra un secondo, e il rifiuto del professionista aspetterebbe. *Tentativi senza fine*: un problema permanente (una chiave revocata) riempirebbe il registro per sette giorni; dopo due ore e mezza un intervento a mano è la strada giusta. *La stessa chiave per tutti i tentativi*: dopo un 500 inutile per 24 ore. *Lasciare tutto a `payment_intent.canceled`*: arriva solo dopo 7 giorni.
+
+**Conseguenze.** **Lo stesso limite vale per la chiave dell'incasso** (`capture-{pi}`, D-063), lasciata fissa di proposito: un professionista che riprova "approva" dopo un 500 riceverebbe lo stesso 500 per 24 ore; ma con una chiave nuova un incasso riuscito con la risposta persa diventerebbe un "non più incassabile", cioè un 409 sbagliato. Un 500 di Stripe sull'incasso è raro: si accetta, e lo si ricorda per la produzione. **Provato**: tolti a turno la registrazione del fallimento, la chiave nuova, la resa dopo cinque tentativi e l'`ApprovalRequested` dell'approvazione automatica, fallisce ogni volta il test che li protegge.

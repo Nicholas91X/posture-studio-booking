@@ -14,6 +14,7 @@ import com.posturestudio.booking.booking.BookingEvent.ApprovalRequested;
 import com.posturestudio.booking.booking.BookingEvent.BookingConfirmed;
 import com.posturestudio.booking.booking.BookingEvent.BookingRejected;
 import com.posturestudio.booking.booking.BookingEvent.BookingWithdrawn;
+import com.posturestudio.booking.booking.BookingEvent.LatePaymentReleased;
 import com.posturestudio.booking.notification.OutgoingEmail.Recipient;
 import com.posturestudio.booking.shared.StudioTime;
 
@@ -94,6 +95,16 @@ class BookingEmails {
 
                     Le tue prenotazioni: %s
                     """.formatted(details(facts, withdrawn.startsAt()), NOTHING_CHARGED, appUrl)));
+            case LatePaymentReleased late -> List.of(toCustomer(facts, "Pagamento arrivato in ritardo", late.startsAt(), """
+                    il tuo pagamento è arrivato dopo la scadenza del tempo per pagare, e l'orario non era più
+                    riservato a te:
+
+                    %s
+
+                    %s
+
+                    Per scegliere un altro orario: %s
+                    """.formatted(details(facts, late.startsAt()), NOTHING_CHARGED, appUrl)));
         };
     }
 

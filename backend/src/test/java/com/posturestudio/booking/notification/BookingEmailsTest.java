@@ -15,6 +15,7 @@ import com.posturestudio.booking.booking.BookingEvent.ApprovalRequested;
 import com.posturestudio.booking.booking.BookingEvent.BookingConfirmed;
 import com.posturestudio.booking.booking.BookingEvent.BookingRejected;
 import com.posturestudio.booking.booking.BookingEvent.BookingWithdrawn;
+import com.posturestudio.booking.booking.BookingEvent.LatePaymentReleased;
 import com.posturestudio.booking.customer.CustomerContact;
 import com.posturestudio.booking.notification.OutgoingEmail.Recipient;
 import com.posturestudio.booking.practitioner.PractitionerContact;
@@ -110,6 +111,18 @@ class BookingEmailsTest {
                 });
     }
 
+    // guide 32, part 9: the customer saw "paid" on Stripe's page, and must learn that nothing was charged
+    @Test
+    void aLatePaymentSaysTheSlotWasGoneAndNothingWasCharged() {
+        assertThat(emails.emailsFor(new LatePaymentReleased(1, 2, 3, 4, THURSDAY_930), facts)).singleElement()
+                .satisfies(email -> {
+                    assertThat(email.to()).isEqualTo("maria@example.com");
+                    assertThat(email.subject()).isEqualTo("Pagamento arrivato in ritardo: giovedì 12 novembre, 9:30");
+                    assertThat(email.text()).contains("dopo la scadenza del tempo per pagare",
+                            "Non ti è stato addebitato niente", "Per scegliere un altro orario");
+                });
+    }
+
     @Test
     void aWithdrawalIsAReceipt() {
         assertThat(emails.emailsFor(new BookingWithdrawn(1, 2, 3, 4, THURSDAY_930), facts)).singleElement()
@@ -139,13 +152,14 @@ class BookingEmailsTest {
                 new BookingConfirmed(1, 2, 3, 4, THURSDAY_930),
                 new BookingRejected(1, 2, 3, 4, THURSDAY_930),
                 new ApprovalExpired(1, 2, 3, 4, THURSDAY_930),
-                new BookingWithdrawn(1, 2, 3, 4, THURSDAY_930));
+                new BookingWithdrawn(1, 2, 3, 4, THURSDAY_930),
+                new LatePaymentReleased(1, 2, 3, 4, THURSDAY_930));
 
         List<String> subjects = every.flatMap(event -> emails.emailsFor(event, facts).stream())
                 .map(OutgoingEmail::subject)
                 .toList();
 
-        assertThat(subjects).hasSize(6).allSatisfy(subject -> assertThat(subject)
+        assertThat(subjects).hasSize(7).allSatisfy(subject -> assertThat(subject)
                 .doesNotContain("Maria", "Bianchi", "Anna", "Rossi", "Valutazione"));
     }
 }

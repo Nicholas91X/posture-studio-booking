@@ -50,6 +50,13 @@
 			<artifactId>flyway-database-postgresql</artifactId>
 		</dependency>
 
+		<!-- Stripe (step 9, guide 30, part 2): 34.1.0 of 2026-10-29, API version 2026-10-28.endive.
+		     Only depends on Gson, whose version is managed by Spring Boot -->
+		<dependency>
+			<groupId>com.stripe</groupId>
+			<artifactId>stripe-java</artifactId>
+			<version>34.1.0</version>
+		</dependency>
 		<dependency>
 			<groupId>org.postgresql</groupId>
 			<artifactId>postgresql</artifactId>

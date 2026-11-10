@@ -15,6 +15,7 @@ import com.posturestudio.booking.booking.BookingEvent.ApprovalRequested;
 import com.posturestudio.booking.booking.BookingEvent.BookingConfirmed;
 import com.posturestudio.booking.booking.BookingEvent.BookingRejected;
 import com.posturestudio.booking.booking.BookingEvent.BookingWithdrawn;
+import com.posturestudio.booking.booking.BookingEvent.LatePaymentReleased;
 import com.posturestudio.booking.notification.PushMessage.PushPayload;
 import com.posturestudio.booking.shared.StudioTime;
 
@@ -48,6 +49,8 @@ class PushMessages {
             case BookingRejected rejected -> Optional.empty();
             case ApprovalExpired expired -> Optional.empty();
             case BookingWithdrawn withdrawn -> Optional.empty();
+            // the customer is told by email; nothing for the practitioner to do (guide 32, part 9)
+            case LatePaymentReleased late -> Optional.empty();
         };
     }
 
