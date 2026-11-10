@@ -54,7 +54,11 @@ class SecurityConfiguration {
                         .requestMatchers("/api/panel/**").hasRole(Role.PRACTITIONER.name())
                         .requestMatchers("/api/customer/**").hasRole(Role.CUSTOMER.name())
                         .requestMatchers("/api/admin/**").hasRole(Role.ADMIN.name())
-                        // the account itself (its phone, guide 29, 8.2): whoever is signed in, of any role
+                        // the phone, and so the SMS sign-in, is not for the admin (D-056): a SIM swap would
+                        // open the most valuable account. Before the rule of the whole area: the first match wins
+                        .requestMatchers("/api/account/phone/**")
+                                .hasAnyRole(Role.CUSTOMER.name(), Role.PRACTITIONER.name())
+                        // the account itself (guide 29, 8.2): whoever is signed in, of any role
                         .requestMatchers("/api/account/**").authenticated()
                         // the simulated payment (D-046), which exists only with booking.simulated-payments=true
                         .requestMatchers("/api/dev/**").permitAll()

@@ -1,6 +1,6 @@
 # Passo 08 — Accesso e notifiche
 
-> **Stato: chiuso** (2026-11-09). Pezzi 1–6 fatti, 660 test verdi (`mvnw clean test`). Branch `feat/step-8-access` dal pezzo 2 (il pezzo 1 è su `main`): **PR verso `main` da aprire**.
+> **Stato: chiuso** (2026-11-09). Pezzi 1–6 fatti, 660 test verdi (`mvnw clean test`). Branch `feat/step-8-access` dal pezzo 2 (il pezzo 1 è su `main`), unito in `main` con la PR #3 (2026-11-10). Correzione dopo la chiusura (2026-11-10, D-056, branch `fix/step-8-admin-sms`): tetto degli SMS a 50 al giorno, l'admin accede solo con l'email (migrazione V9).
 
 ## Obiettivo
 Il sistema sa chi lo sta usando: accesso con un codice via email o via SMS (solo da un numero verificato), sessione con cookie, ruoli, account disattivati fuori. I sostituti provvisori (`DevHeaderCurrentPractitioner`, `DevHeaderCurrentCustomer`) spariscono. Le notifiche email e push si agganciano agli eventi del passo 7.
@@ -149,6 +149,8 @@ I pezzi (guida 24, parte 0):
 - **D-052** — admin e professionisti.
 - **D-053** — notifiche email (completa **D-039** e **D-046**: `serviceId` negli eventi, `@Async` dopo il commit, nessuna *outbox*).
 - **D-054** — notifiche push (completa **D-032** e **D-039**; precisa `modello-dati.md`: dispositivi riferiti a `practitioner`).
+- **D-055** — codice di accesso via SMS.
+- **D-056** — correzione dopo la chiusura: l'admin accede solo con l'email (scambio di SIM), tetto degli SMS a 50 al giorno (modifica **D-055**).
 
 ## Errori fatti e come sono stati corretti
 

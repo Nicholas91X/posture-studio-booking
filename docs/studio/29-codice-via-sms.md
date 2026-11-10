@@ -57,7 +57,7 @@ Teoria di riferimento: D-014 (6 cifre, 10 minuti, 5 tentativi), D-050 (tabella `
 
 ### 2.1 Dove: in `app_user`
 
-Il numero diventa un **modo per accedere**, come l'email: appartiene all'account, quindi ad `auth`, e vale per ogni ruolo (un professionista può entrare via SMS come un cliente). La nota del passo 8 in `stato.md` l'aveva già detto: in `app_user`, unico, in un formato standard, con la data di verifica.
+Il numero diventa un **modo per accedere**, come l'email: appartiene all'account, quindi ad `auth`, e vale per ogni ruolo (un professionista può entrare via SMS come un cliente). **Corretto il 2026-11-10 (D-056)**: non per l'admin, che accede solo con l'email. Con lo scambio di SIM, chi si fa intestare il numero riceverebbe i codici dell'account più prezioso. La nota del passo 8 in `stato.md` l'aveva già detto: in `app_user`, unico, in un formato standard, con la data di verifica.
 
 ### 2.2 Un solo modo di scriverlo: E.164
 
@@ -181,7 +181,7 @@ Per noi i moduli che mandano SMS sono due:
 | Per destinazione: 3 in 15 minuti, 10 al giorno | Gli SMS a raffica verso lo stesso numero (anche come molestia) | I limiti di D-050, contati sul canale `SMS` |
 | Per IP: 30 l'ora, email e SMS insieme | Chi chiede da un solo indirizzo | Il limite di D-050 |
 | **Per account: 5 verifiche al giorno** | Un account che prova numero dopo numero | Nuovo |
-| **Tetto giornaliero: 100 SMS spediti** | Il caso peggiore, qualunque cosa sia passata sopra: la spesa ha un massimo | Nuovo |
+| **Tetto giornaliero: 50 SMS spediti** (D-056; nella prima versione 100) | Il caso peggiore, qualunque cosa sia passata sopra: la spesa ha un massimo | Nuovo |
 
 Il tetto è il **paracadute**: con circa 5–9 centesimi a SMS in Italia (prezzi di mercato, da verificare sul listino del fornitore scelto), il caso peggiore costa qualche euro al giorno. La stima del volume vero (requisiti, punto 5) è di poche decine di codici al giorno, e la sessione dura 30–90 giorni (D-051). Oltre il tetto: 429 per tutti, e resta l'email. Che un attaccante possa esaurire il tetto e lasciare tutti senza SMS è il prezzo di un massimo di spesa: si vede nei log, e il tetto si alza senza ricompilare.
 
@@ -302,7 +302,7 @@ alter table login_code add column message_sent boolean not null default true;
 | Quali numeri | Solo cellulari italiani `+39 3`; regola nostra, non libphonenumber | parte 2.3 |
 | Verifica | Da entrati, codice `VERIFY_PHONE` legato all'account che lo chiede; il numero passa a chi lo verifica | parte 3 |
 | Accesso | Nessun account nuovo; riga anche per i numeri di nessuno; invio in un altro thread | parte 4 |
-| Abusi | I limiti di D-050 sul canale SMS, più 5 verifiche al giorno per account e 100 SMS spediti al giorno in tutto | parte 5 |
+| Abusi | I limiti di D-050 sul canale SMS, più 5 verifiche al giorno per account e 50 SMS spediti al giorno in tutto (D-056) | parte 5 |
 | Chi spedisce | `SmsCodeSender` facoltativo; senza, 503 `SMS_UNAVAILABLE`; in sviluppo Mailpit; il fornitore vero è un punto aperto prima del passo 14 | parte 6 |
 | Testo | ≤ 160 caratteri GSM-7, "non darlo a nessuno", riga WebOTP | parte 7 |
 | API | Indirizzi `/sms` accanto a quelli dell'email; area `/api/account/**` per chiunque sia entrato; 409 nella verifica | parte 8 |
@@ -323,7 +323,7 @@ Costruito come raccomandato nella parte 11 (D-055). 660 test verdi con `mvnw cle
 | "SMS solo al numero verificato di un account attivo" | il numero di nessuno riceve l'SMS; l'account disattivato pure |
 | la riga per il numero di nessuno | i limiti non scattano più uguali |
 | il tetto giornaliero | `theDailyCapCountsOnlyTheSmsThatLeft` |
-| "solo gli SMS spediti" nel conteggio del tetto | lo stesso: 100 codici per numeri di nessuno lo esauriscono |
+| "solo gli SMS spediti" nel conteggio del tetto | lo stesso: 100 codici per numeri di nessuno lo esauriscono (con il tetto di allora; oggi 50, D-056) |
 | il legame del codice di verifica all'account | `anotherAccountCannotUseTheCode`: Bruno usa il codice di Anna |
 | il `flush` prima di spostare il numero | `theNumberMovesToWhoVerifiesIt`: `duplicate key ... app_user_phone_uq` (vedi sotto) |
 | il limite di 5 verifiche per account | `fiveVerificationsADayPerAccount` |

@@ -111,16 +111,19 @@ class SmsCodeServiceTest {
         assertThat(sms.sent()).isEmpty();
     }
 
-    // the cap counts the SMS that left (guide 29, 4.3): 100 codes for numbers of nobody do not exhaust it,
-    // 100 SMS that left do, for every number
+    // the cap counts the SMS that left (guide 29, 4.3; 50 a day, D-056): 50 codes for numbers of nobody do
+    // not exhaust it, 50 SMS that left do, for every number
     @Test
     void theDailyCapCountsOnlyTheSmsThatLeft() {
         account("anna@sms.example", ANNA_PHONE, true);
-        insertSmsRows(100, false);
+        insertSmsRows(50, false);
         service.requestSms(ANNA_PHONE, home);
         assertThat(sms.sent()).hasSize(1);
 
-        insertSmsRows(100, true);
+        // 49 left with this one: the fiftieth still leaves, the fifty-first does not
+        insertSmsRows(48, true);
+        service.requestSms(ANNA_PHONE, home);
+        assertThat(sms.sent()).hasSize(2);
 
         assertThatThrownBy(() -> service.requestSms(ANNA_PHONE, home)).isInstanceOf(TooManyRequestsException.class);
         assertThatThrownBy(() -> service.requestSms(NOBODYS_PHONE, home)).isInstanceOf(TooManyRequestsException.class);
@@ -199,6 +202,22 @@ class SmsCodeServiceTest {
 
         assertThatThrownBy(() -> service.requestPhoneVerification(anna, "+393331000009", home))
                 .isInstanceOf(TooManyRequestsException.class);
+    }
+
+    // D-056: the guard of AppUser, under the rule of SecurityConfiguration that already stops the admin at
+    // the door (SmsAccessApiTest) and above the check of V9 (LoginCodeSchemaTest). Here the service is
+    // called directly, as a door forgotten open would
+    @Test
+    void theAdminNeverGetsANumber() {
+        long admin = jdbc.queryForObject(
+                "insert into app_user (role, email) values ('ADMIN', 'admin@sms.example') returning id", Long.class);
+        service.requestPhoneVerification(admin, ANNA_PHONE, home);
+        String code = sms.lastCodeFor(ANNA_PHONE, CodePurpose.VERIFY_PHONE);
+
+        assertThatThrownBy(() -> service.confirmPhone(admin, ANNA_PHONE, code))
+                .isInstanceOf(IllegalStateException.class)
+                .hasMessageContaining("D-056");
+        assertThat(service.phoneOf(admin).phone()).isNull();
     }
 
     @Test

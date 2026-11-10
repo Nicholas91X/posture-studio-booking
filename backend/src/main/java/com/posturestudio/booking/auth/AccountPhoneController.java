@@ -18,8 +18,9 @@ import jakarta.servlet.http.HttpServletRequest;
 import jakarta.validation.Valid;
 
 /**
- * The phone of the signed-in account, of any role (guide 29, part 3). Under /api/account: the area of
- * whoever is signed in (guide 29, 8.2).
+ * The phone of the signed-in account (guide 29, part 3): customers and practitioners, never the admin, who
+ * signs in by email only (D-056, SecurityConfiguration). Under /api/account: the area of whoever is signed
+ * in (guide 29, 8.2).
  *
  * A wrong code here is a 409, not the 401 of the sign-in: the person is signed in, and a 401 would make the
  * frontend believe the session had ended (guide 29, 8.3).
