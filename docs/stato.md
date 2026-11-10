@@ -1,6 +1,6 @@
 # Stato del progetto
 
-Ultimo aggiornamento: 2026-11-10 (**passo 9 chiuso**; prossimo: passo 10, crediti e pacchetti)
+Ultimo aggiornamento: 2026-11-10 (**passo 10 in corso**: decisioni D-066–D-068 registrate, guida 36 del pezzo 1 in attesa delle scelte di Nicholas)
 
 ## Dove siamo
 
@@ -56,6 +56,8 @@ Fatto nel passo 4: struttura del repository, progetto Spring Boot 4.1.1 su Java 
 **Pezzo 6 fatto** (guida 35): via le tracce del pagamento simulato (i metadati di `booking.simulated-payments`, sostituiti dalle proprietà `payment.*`; due commenti), un test che vuole chiusa a tutti la vecchia porta `/api/dev/**`, i criteri di "fatto" del brief verificati uno per uno (guida 35, parte 3).
 
 **Passo 9 chiuso** (2026-11-10, `passi/09-pagamenti.md`, con le risposte modello alle domande da colloquio). 812 test verdi (`mvnw clean test`). **Prossimo: passo 10, crediti e pacchetti**, sulla base del passo 9: l'acquisto di un pacchetto è una sessione Checkout con incasso **immediato** (D-031), e `payment` riceve `purpose`, `package_offer_id`, `credit_lot_id`, `customer_id`, con `booking_id` facoltativo (guida 30, 7.1). Pezzi 1–4 uniti in `main` (PR #5 e #6 del 2026-11-10). Del pezzo 6, la rimozione del pagamento simulato e di `LoggingCardHolds` è già fatta (pezzi 3 e 4); restano la verifica finale e la chiusura del passo. **Prossimo: la prova manuale di Nicholas con la Stripe CLI** (guida 32, parte 13.1, e guida 34, parte 12 per il link), poi il pezzo 6 e la chiusura del passo 9. **Sugli endpoint di Stripe** vanno abilitati quattro eventi: `checkout.session.completed`, `checkout.session.expired`, `payment_intent.succeeded`, `payment_intent.canceled`. **Da verificare nella prova manuale**: se un blocco annullato costa una commissione.
+
+**Passo 10 in corso** (crediti e pacchetti, dal brief del 2026-11-10, branch `feat/step-10-credits`). Registrate le tre decisioni preliminari: **D-066** i clienti di un professionista (nelle liste: chi ha una prenotazione, in qualunque stato, o un lotto con lui; concessioni e prenotazione dal pannello per email a qualunque cliente), **D-067** concessioni (omaggio come lotto nuovo, proroga con la traccia delle due date, correzione come movimento; chi, quando, perché con nota obbligatoria; nessun limite oltre ai propri lotti e al saldo mai negativo), **D-068** nessuna origine `LATE_PAYMENT`. Punto aperto 6 chiuso. **Guida 36 scritta** (`docs/studio/36-registro-dei-crediti.md`, pezzo 1: migrazione V15, lotti, movimenti, proroghe, pagamenti dei pacchetti), in attesa delle scelte di Nicholas. Due scelte della guida toccano regole già scritte e vanno confermate esplicitamente: la scadenza come `date` (ultimo giorno valido a Roma) allarga l'eccezione alla convenzione "date in UTC" di CLAUDE.md, come già `working_schedule.valid_from`; il collegamento pagamento–lotto va dal lotto (`credit_lot.payment_id` unico) invece che da `payment.credit_lot_id` come nel modello dei dati.
 
 **Porta del database** (trovato nella prova del 2026-11-10): se un altro progetto usa già la 5432 (sul computer di Nicholas `auto2g-db`), il container PostgreSQL di questo progetto resta `Created` e il backend si collega al database sbagliato (*password authentication failed*). Soluzione: `POSTGRES_PORT=5433` nel `.env`, che vale sia per Compose sia per il backend.
 
@@ -118,7 +120,7 @@ Elencati in `requisiti.md`, sezione "Punti aperti". Da chiudere prima del passo 
 - Servizio email (orientamento: Brevo) → **prima del passo 14** (spostato il 2026-11-09: in sviluppo basta Mailpit, D-050; servono anche il dominio e l'indirizzo mittente dello studio)
 - ~~Codice di accesso anche via SMS~~ → chiuso il 2026-11-09: sì, da un numero verificato (D-055)
 - Fornitore degli SMS (requisiti, punto 17) → **prima del passo 14**
-- Concessioni discrezionali del professionista (crediti, omaggi) → prima del passo 10
+- ~~Concessioni discrezionali del professionista (crediti, omaggi)~~ → chiuso il 2026-11-10 (D-067); il credito su una cancellazione tardiva al passo 11
 - Cancellazione dei dati di un cliente (GDPR, anonimizzazione) → prima del passo 14
 
 ## Note per i passi futuri
@@ -154,5 +156,5 @@ Elencati in `requisiti.md`, sezione "Punti aperti". Da chiudere prima del passo 
 - **Passo 14, push** (D-054): chiavi VAPID di produzione generate una volta e diverse da quelle di sviluppo (cambiarle invalida tutti i dispositivi); `VAPID_SUBJECT` con l'email dello studio; il server deve poter uscire in `https` verso i servizi push.
 - **Passo 9, pagamento arrivato tardi** ✅ **fatto** al pezzo 3 (D-062): evento `LatePaymentReleased` ed email al cliente. Testo originale (D-053, `architettura.md`): su una prenotazione già scaduta il blocco si annulla, ma oggi nessun evento lo annuncia e il cliente non riceve email. Da aggiungere con il pagamento vero (un evento nuovo: lo `switch` di `BookingEmails` smetterà di compilare finché non lo gestisce).
 - **Passo 14, email** (D-053): con il fornitore vero, verificare che le email non finiscano nello spam (SPF, DKIM e DMARC sul dominio dello studio) e tenere d'occhio nei log le righe `Email to the ... not sent`: se diventano frequenti, è il momento dell'*outbox* (guida 27, 3.4).
-- **Passo 13 (pannello)**: gestione dei professionisti da parte dell'admin (D-021), compresa la disattivazione. L'API c'è (D-052, `/api/admin/practitioners`): manca la pagina, che prima di disattivare un professionista dovrebbe mostrare le sue prenotazioni future. Prenotazione per conto di un cliente e creazione del cliente con nome, cognome ed email (D-024). Da chiarire prima: quali clienti può cercare e vedere un professionista.
+- **Passo 13 (pannello)**: gestione dei professionisti da parte dell'admin (D-021), compresa la disattivazione. L'API c'è (D-052, `/api/admin/practitioners`): manca la pagina, che prima di disattivare un professionista dovrebbe mostrare le sue prenotazioni future. Prenotazione per conto di un cliente e creazione del cliente con nome, cognome ed email (D-024). ~~Da chiarire prima: quali clienti può cercare e vedere un professionista.~~ Chiarito da D-066: nelle liste, chi ha una prenotazione o un lotto con lui; prenotazione e concessioni per email.
 

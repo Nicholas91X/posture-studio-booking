@@ -235,9 +235,9 @@ Un gruppo di crediti con la stessa origine e la stessa scadenza. **Un pacchetto 
 | customer_id | bigint | |
 | practitioner_id | bigint | |
 | service_id | bigint | per quale servizio valgono i crediti |
-| source | text | `PACKAGE`, `CANCELLATION`, `LATE_PAYMENT` (probabilmente inutile con D-031: un pagamento tardivo si annulla; da confermare al passo 10) |
+| source | text | `PACKAGE`, `CANCELLATION`, e l'origine della seduta omaggio (D-067, nome al passo 10). `LATE_PAYMENT` tolta (D-068): un pagamento tardivo si annulla |
 | package_offer_id | bigint | solo se `PACKAGE` |
-| origin_booking_id | bigint | solo se `CANCELLATION` o `LATE_PAYMENT` |
+| origin_booking_id | bigint | solo se `CANCELLATION` (passo 11) |
 | initial_credits | int | |
 | expires_at | timestamptz | |
 | price_cents | bigint | fotografato, solo se `PACKAGE` |

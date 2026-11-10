@@ -98,7 +98,7 @@ Formato: contesto → decisione → alternative scartate → conseguenze.
 
 **Alternative scartate.** Blocco più breve con sessione Stripe più lunga: il cliente potrebbe pagare un orario già liberato e riassegnato.
 
-**Conseguenze.** Un orario può restare bloccato fino a 30 minuti da chi poi non paga. Accettabile con due professionisti. Se un pagamento arriva comunque tardi, il cliente riceve un credito (lotto `LATE_PAYMENT`).
+**Conseguenze.** Un orario può restare bloccato fino a 30 minuti da chi poi non paga. Accettabile con due professionisti. Se un pagamento arriva comunque tardi, il cliente riceve un credito (lotto `LATE_PAYMENT`). *(Superato: D-031 annulla il blocco, D-068 toglie l'origine `LATE_PAYMENT`.)*
 
 ---
 
@@ -291,7 +291,7 @@ Le due regole valgono solo quando **prenota il cliente**. Le prenotazioni fatte 
 ---
 
 ## D-024 — Il professionista può prenotare per un cliente dal pannello
-**Stato:** accettata · 2026-10-29 · pagamento in studio **confermato da D-040** (2026-11-06); chi ha creato la prenotazione: D-042
+**Stato:** accettata · 2026-10-29 · pagamento in studio **confermato da D-040** (2026-11-06); chi ha creato la prenotazione: D-042 · "cosa rende un cliente suo" **completato da D-066** (2026-11-10)
 
 **Contesto.** Non tutti i clienti prenoteranno da soli: alcuni chiedono la seduta di persona o al telefono. Il professionista deve poterla inserire lui.
 
@@ -451,7 +451,7 @@ Nella guida l'interfaccia era proposta in `auth`; spostata in `practitioner` dur
 - D-007 resta valida nel principio (a dire che i soldi ci sono è Stripe, mai il browser), ma il webhook ora conferma il **blocco**. La conferma della prenotazione arriva con la risposta di Stripe all'incasso.
 - Due chiamate in uscita verso Stripe (incasso, annullamento), con errori da gestire al passo 9. Un incasso può fallire, per esempio con un blocco scaduto: il professionista ha approvato, ma la prenotazione non si può confermare.
 - Il blocco sulla carta dura in genere circa 7 giorni per i pagamenti online: la finestra di risposta (D-030) deve restare molto più breve. Se un annullamento fallisce, il blocco si scioglie comunque da solo.
-- Il lotto `LATE_PAYMENT` probabilmente non serve più per le sedute: da confermare al passo 10.
+- Il lotto `LATE_PAYMENT` probabilmente non serve più per le sedute: da confermare al passo 10. **Confermato da D-068** (2026-11-10): l'origine non esiste.
 - Da verificare al passo 9 sulla documentazione di Stripe: eventuali commissioni sui blocchi annullati, e la durata esatta del blocco per le carte europee. **Verificato il 2026-11-10**: il blocco dura in genere 7 giorni per le carte online (Visa per le transazioni avviate dall'esercente 5), e Stripe annulla da sé un PaymentIntent non incassato dopo 7 giorni (documentazione). La documentazione **non** dice se un blocco annullato costa una commissione; nella **prova manuale in modalità di prova** il blocco annullato non ha lasciato niente nel saldo (né importo né commissione), mentre il pagamento incassato da 30 € ha portato 28,80 € (1,20 € di commissione, con la carta di prova `4242`, statunitense). Da riconfermare in produzione con il primo rifiuto vero (passo 14).
 
 ---
@@ -1126,3 +1126,52 @@ Implementazione (pezzo 3, guida 16): `FreeSlots.compute(SlotQuery)` nel package 
 **Alternative scartate.** *Distinguere i pagamenti dai metadati di Stripe*: la verità sui nostri pagamenti è nel nostro database. *Far scadere la pagina vecchia senza leggerla*: un link appena pagato verrebbe "sostituito" mentre i soldi arrivano. *`CardHolds.capture(bookingId)` anche per i link*: con due link pagati quasi insieme, "il" pagamento `AUTHORIZED` della seduta potrebbero essere due. *Lucchetto sulla seduta anche alla creazione del link*: un possibile deadlock in cambio di niente (il caso che eviterebbe si risolve da solo con "il primo vince"). *Ignorare un `completed` per un pagamento già `EXPIRED`*: un blocco che nessuno annulla.
 
 **Conseguenze.** **Passo 11**: cancellare una seduta "in studio" deve far scadere il link aperto (stessa lettura di prima), e la prova con il percorso vero ("cancellata con un link attivo, poi pagato → blocco annullato") è un suo criterio di "fatto". **Passo 13**: il pannello apre `whatsappUrl`, e traduce i 409. **Provato**: tolti a turno il "solo se ancora in studio", l'`EXPIRED` → `AUTHORIZED`, il `flush`, il "fai scadere" su Stripe, il rifiuto di un link appena pagato, il cambio di `paid_with` e il lucchetto sulla seduta, fallisce ogni volta il test che li protegge; due link pagati nello stesso istante incassano una volta sola.
+
+---
+
+## D-066 — I clienti di un professionista: chi ha una prenotazione o un lotto di crediti con lui; concessioni e prenotazione dal pannello per email
+**Stato:** accettata · 2026-11-10 · brief del passo 10 · **completa D-024** ("cosa rende un cliente suo") e D-048
+
+**Contesto.** D-024 ha lasciato aperto cosa rende un cliente "suo", e quindi chi può comparire nelle liste del pannello; D-048 l'ha aggirato per la prenotazione dal pannello, che trova o crea il cliente per email. Il passo 10 porta due cose nuove: una lista "i miei clienti" con i loro crediti, e le concessioni (D-067), che si fanno a un cliente preciso. La regola di riservatezza resta: il professionista vede solo le **proprie** cose (requisiti, "Riservatezza del calendario").
+
+**Decisione.**
+- **Nelle liste del pannello** ("i miei clienti", e da lì i crediti di un cliente) i clienti di un professionista sono quelli con **almeno una prenotazione** con lui, in qualunque stato, **o almeno un lotto di crediti** con lui.
+- **Le concessioni** (D-067) **e la prenotazione dal pannello** si fanno **per email**, a **qualunque** cliente, anche nuovo: trovato o creato come in D-048. Dopo, quel cliente è suo, perché ha un lotto o una prenotazione con lui.
+- **Mai le cose dell'altro professionista**: di un cliente comune, ognuno vede solo i propri lotti e le proprie prenotazioni. Il lotto di un altro è un 404, come la cosa inesistente (D-026).
+
+**Alternative scartate.** *Tutti i clienti dello studio*: ogni professionista vedrebbe i clienti dell'altro, contro la riservatezza. *Solo chi ha una seduta confermata*: un cliente che ha comprato un pacchetto e non l'ha ancora usato sparirebbe dalla lista proprio quando ha dei crediti. *Concessioni scelte solo da un elenco*: non si potrebbe regalare una seduta a un cliente nuovo, e non serve: l'email trova il cliente giusto (D-048).
+
+**Conseguenze.** La lista nasce da due moduli (`booking` e `credit` sanno chi ha cosa con chi), con i nomi chiesti a `customer` su un insieme di id (D-029, D-049). Si chiude la domanda del passo 13 ("quali clienti può cercare e vedere un professionista"). **Da verificare nella guida delle concessioni**: per email si può raggiungere anche un cliente dell'altro professionista, quindi la risposta non deve rivelare più di quanto il professionista ha scritto (per esempio il nome vero di un cliente già esistente, che D-048 non cambia).
+
+---
+
+## D-067 — Concessioni del professionista: omaggio come lotto nuovo, proroga con la traccia delle due date, correzione come movimento
+**Stato:** accettata · 2026-11-10 · brief del passo 10 · **chiude il punto aperto 6** dei requisiti · perimetro deciso da Nicholas il 2026-10-16
+
+**Contesto.** Il punto aperto 6 chiedeva come il professionista possa decidere caso per caso: regalare sedute, prorogare una scadenza, concedere il credito su una cancellazione oltre il preavviso. Il modello a lotti e movimenti (D-009, D-010) le regge senza stravolgimenti; restavano da fissare la forma di ognuna e la traccia.
+
+**Decisione.** Tre concessioni, ognuna solo sui **propri** lotti e per i **propri** servizi, per email del cliente (D-066):
+- **Seduta omaggio**: un **lotto nuovo** con un'**origine propria** (nome nella guida del pezzo 1), N crediti, per un servizio del professionista. Scadenza scelta da lui, o per default quella delle sedute singole (`single_credit_validity_days`).
+- **Proroga di una scadenza**: cambia la scadenza di un lotto, e registra l'evento con **la vecchia e la nuova data**. È l'unica concessione che modifica qualcosa invece di aggiungere: la sua storia non deve perdersi. Se si possa anche anticipare, si decide nella guida.
+- **Correzione**: un **movimento** sul lotto, con un **motivo proprio**, che non porta mai il saldo sotto zero. Mai la modifica di un movimento esistente (D-009).
+- **Sempre la traccia**: **chi** (l'account del professionista), **quando** (l'orologio dell'applicazione), **perché** (una nota, obbligatoria).
+- Sono sempre **crediti**, mai denaro (D-015), e non cambiano lo stato di nessuna prenotazione.
+- **Limiti**: nessuno oltre a quelli sopra (propri lotti, saldo mai negativo). Il controllo è la traccia: ogni concessione dice chi l'ha fatta e perché.
+- **Credito concesso su una cancellazione tardiva**: al **passo 11**, con lo stesso meccanismo e la stessa traccia.
+
+**Alternative scartate.** *Omaggio come movimento +N su un lotto esistente*: mescola crediti pagati e regalati, che prenderebbero la scadenza di quel lotto; e un cliente senza lotti non riceverebbe niente. *Proroga come lotto nuovo* (−N sul vecchio, +N sul nuovo): spezza la storia, e un credito che torna da una prenotazione rifiutata tornerebbe al lotto vecchio, già scaduto. *Correzione modificando un movimento*: contro D-009, la storia si perde. *Nota facoltativa*: una concessione senza motivo, un anno dopo, non la sa spiegare nessuno.
+
+**Conseguenze.** Un'origine di lotto e un motivo di movimento nuovi, nomi fissati nella guida del pezzo 1 del passo 10; una traccia della proroga (vecchia e nuova data, chi, quando, perché). Il punto aperto 6 è chiuso.
+
+---
+
+## D-068 — Nessun lotto `LATE_PAYMENT`: un pagamento arrivato tardi si annulla
+**Stato:** accettata · 2026-11-10 · brief del passo 10 · **conferma** la conseguenza di D-031 ("il lotto `LATE_PAYMENT` probabilmente non serve più") · la toglie dal modello dei dati
+
+**Contesto.** D-008 voleva che un pagamento arrivato dopo la scadenza del blocco diventasse un credito, in un lotto con origine `LATE_PAYMENT`. D-031 l'ha sostituito con l'annullamento del blocco sulla carta (il cliente non è addebitato), e D-062 l'ha realizzato: evento `LatePaymentReleased` ed email al cliente. Anche il link di pagamento (D-059, D-065), quando la seduta non è più da pagare in studio, annulla il blocco.
+
+**Decisione.** L'origine `LATE_PAYMENT` **non esiste**. Un pagamento arrivato tardi non crea mai crediti: si annulla il blocco, come oggi.
+
+**Alternative scartate.** *Tenerla nello schema "per sicurezza"*: un valore che nessun codice produce, contro D-042.
+
+**Conseguenze.** In `modello-dati.md` le origini dei lotti perdono `LATE_PAYMENT`, e `origin_booking_id` resta solo per le cancellazioni (passo 11).
