@@ -69,9 +69,9 @@ final class PaymentTestData {
         jdbc.update("update booking set status = 'PENDING_APPROVAL', approval_deadline = '2026-11-06T22:00+01:00' where id = ?",
                 bookingId);
         jdbc.update("""
-                insert into payment (booking_id, account, amount_cents, status, stripe_checkout_session_id, checkout_url,
+                insert into payment (purpose, booking_id, account, amount_cents, status, stripe_checkout_session_id, checkout_url,
                                      stripe_payment_intent_id)
-                values (?, ?, 3000, 'AUTHORIZED', 'cs_test_' || ?, 'https://checkout.stripe.test/c/pay/x', 'pi_' || ?)
+                values ('BOOKING', ?, ?, 3000, 'AUTHORIZED', 'cs_test_' || ?, 'https://checkout.stripe.test/c/pay/x', 'pi_' || ?)
                 """, bookingId, account, bookingId, bookingId);
         return bookingId;
     }
@@ -79,19 +79,51 @@ final class PaymentTestData {
     // a payment link of a session (V14): PENDING for a valid one, EXPIRED for one already invalidated
     long linkPayment(long bookingId, String account, String status, String checkoutSessionId) {
         return jdbc.queryForObject("""
-                insert into payment (booking_id, account, amount_cents, status, stripe_checkout_session_id, checkout_url,
+                insert into payment (purpose, booking_id, account, amount_cents, status, stripe_checkout_session_id, checkout_url,
                                      source)
-                values (?, ?, 3000, ?, ?, 'https://checkout.stripe.test/c/pay/' || ?, 'LINK')
+                values ('BOOKING', ?, ?, 3000, ?, ?, 'https://checkout.stripe.test/c/pay/' || ?, 'LINK')
                 returning id
                 """, Long.class, bookingId, account, status, checkoutSessionId, checkoutSessionId);
     }
 
     long payment(long bookingId, String account, String status, String checkoutSessionId) {
         return jdbc.queryForObject("""
-                insert into payment (booking_id, account, amount_cents, status, stripe_checkout_session_id, checkout_url)
-                values (?, ?, 3000, ?, ?, 'https://checkout.stripe.test/c/pay/' || ?)
+                insert into payment (purpose, booking_id, account, amount_cents, status, stripe_checkout_session_id, checkout_url)
+                values ('BOOKING', ?, ?, 3000, ?, ?, 'https://checkout.stripe.test/c/pay/' || ?)
                 returning id
                 """, Long.class, bookingId, account, status, checkoutSessionId, checkoutSessionId);
+    }
+
+    long customer(String email) {
+        Long userId = jdbc.queryForObject(
+                "insert into app_user (role, email) values ('CUSTOMER', ?) returning id", Long.class, email);
+        return jdbc.queryForObject(
+                "insert into customer (user_id, first_name, last_name) values (?, 'Test', 'Customer') returning id",
+                Long.class, userId);
+    }
+
+    // a package of 5 sessions on a new service of the practitioner (V2)
+    long packageOffer(long practitionerId) {
+        Long serviceId = jdbc.queryForObject(
+                "insert into service (practitioner_id, name, duration_minutes, price_cents) values (?, 'Seduta', 60, 3000) returning id",
+                Long.class, practitionerId);
+        return jdbc.queryForObject("""
+                insert into package_offer (practitioner_id, service_id, name, sessions_count, price_cents, validity_days)
+                values (?, ?, '5 sedute', 5, 12000, 90) returning id
+                """, Long.class, practitionerId, serviceId);
+    }
+
+    // A purchase of a package (V15): the photo of what the customer saw, 5 sessions for 120 euros, 90 days, on
+    // "alpha". createdAt decides until when its page can be paid (an hour, guide 37, part 3)
+    long packagePayment(long customerId, long packageOfferId, String status, String checkoutSessionId,
+                        String createdAt) {
+        return jdbc.queryForObject("""
+                insert into payment (purpose, package_offer_id, customer_id, package_credits, package_validity_days,
+                                     account, amount_cents, status, stripe_checkout_session_id, checkout_url, created_at)
+                values ('PACKAGE', ?, ?, 5, 90, 'alpha', 12000, ?, ?, 'https://checkout.stripe.test/c/pay/' || ?,
+                        ?::timestamptz)
+                returning id
+                """, Long.class, packageOfferId, customerId, status, checkoutSessionId, checkoutSessionId, createdAt);
     }
 
     void assign(long practitionerId, String account) {

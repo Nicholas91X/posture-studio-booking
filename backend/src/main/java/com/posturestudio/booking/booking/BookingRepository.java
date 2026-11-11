@@ -115,6 +115,10 @@ interface BookingRepository extends JpaRepository<Booking, Long> {
     @Lock(LockModeType.PESSIMISTIC_WRITE)
     Optional<Booking> findLockedById(Long id);
 
+    // the customers with at least one booking with this practitioner, in any state: half of "my customers" (D-066)
+    @Query("select distinct b.customerId from Booking b where b.practitionerId = :practitionerId")
+    List<Long> findCustomerIdsOf(long practitionerId);
+
     @Lock(LockModeType.PESSIMISTIC_WRITE)
     Optional<Booking> findLockedByIdAndPractitionerId(Long id, Long practitionerId);
 

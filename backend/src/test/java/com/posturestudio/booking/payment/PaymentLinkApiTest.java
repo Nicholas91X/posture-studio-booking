@@ -177,6 +177,16 @@ public class PaymentLinkApiTest {
 
     // ***** who and what *****
 
+    // a credit of the customer paid it (D-024, guide 39, part 4): there is nothing to pay
+    @Test
+    void aSessionPaidWithACreditGetsNoLink() {
+        jdbc.update("update booking set paid_with = 'CREDIT' where id = ?", booking);
+
+        assertThat(link(booking)).hasStatus(HttpStatus.CONFLICT)
+                .bodyJson().extractingPath("$.code").isEqualTo("PAYMENT_LINK_NOT_ALLOWED");
+        assertThat(stripe.calls()).isEmpty();
+    }
+
     @Test
     void aSessionPaidByCardGetsNoLink() {
         long request = data.pendingBooking(anna, "carta@example.com");

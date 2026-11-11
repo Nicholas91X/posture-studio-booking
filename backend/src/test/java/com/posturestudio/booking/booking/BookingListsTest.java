@@ -25,7 +25,7 @@ import com.posturestudio.booking.schedule.ScheduleService;
 // looked at is Monday 9 - Sunday 15 November. Anna and Marco share the room. Same context as the
 // other booking tests
 @DataJpaTest
-@Import({TestcontainersConfiguration.class, FixedClockConfiguration.class, BookingService.class,
+@Import({TestcontainersConfiguration.class, FixedClockConfiguration.class, BookingService.class, com.posturestudio.booking.credit.CreditService.class,
         BookingOccupiedTime.class, ScheduleService.class, CatalogService.class, PractitionerService.class,
         AccountService.class, CustomerService.class, BookingTestDoubles.class})
 public class BookingListsTest {

@@ -150,6 +150,29 @@ public class CatalogService {
         return services.findEvaluationIdsAmong(serviceIds);
     }
 
+    // For payment, when a customer buys a package (step 10, guide 37, part 2): on sale = an active package, on
+    // its active service, of an active practitioner. Missing, deactivated, on a deactivated service or of a
+    // deactivated practitioner: the same NotFoundException, as for a service (D-027, D-029)
+    @Transactional(readOnly = true)
+    public PackageOnSale packageOnSale(long packageId) {
+        PackageOffer offer = packages.findWithServiceById(packageId)
+                .filter(PackageOffer::isActive)
+                .filter(found -> found.getService().isActive())
+                .orElseThrow(() -> new NotFoundException("Package " + packageId + " not found"));
+        practitioners.requireActive(offer.getPractitionerId());
+        return PackageOnSale.from(offer);
+    }
+
+    // For payment, when the package is paid (guide 37, part 7): whose package, on which service. Deactivated
+    // packages too: the customer paid it, the lot is born anyway. Practitioner and service of a package never
+    // change (changeDetails does not touch them), so reading them later gives what the customer bought
+    @Transactional(readOnly = true)
+    public PackageOwner packageOwnerOf(long packageId) {
+        return packages.findById(packageId)
+                .map(offer -> new PackageOwner(offer.getPractitionerId(), offer.getService().getId()))
+                .orElseThrow(() -> new NotFoundException("Package " + packageId + " not found"));
+    }
+
     // For notification (guide 27, 5.4): the name of a service already booked. Deactivated services too:
     // a session booked before the deactivation is still valid (D-027 is about new bookings)
     @Transactional(readOnly = true)

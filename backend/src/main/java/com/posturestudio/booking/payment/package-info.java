@@ -8,10 +8,12 @@
  *   StripeWebhookService, piece 3);
  * - capture at approval and release otherwise, on the account of the payment, with the reconciliation
  *   (StripeCardHolds, booking's CardHolds, piece 4), and the releases tried again by a job (PaymentJobs);
- * - the payment link of a session paid in the studio (PaymentLinks, piece 5).
+ * - the payment link of a session paid in the studio (PaymentLinks, piece 5);
+ * - from step 10, the purchase of a package, captured at once, whose webhook creates the lot of credits
+ *   (PackagePurchases, StripeWebhookService.packagePaid, guide 37).
  * Stripe itself is behind StripeGateway: the real StripeClientGateway, a fake in every test context.
  *
- * Dependencies go one way: payment -> practitioner, payment -> booking. Nobody depends on payment: when
+ * Dependencies go one way: payment -> practitioner, booking, catalog, customer, credit. Nobody depends on payment: when
  * booking needs it, booking declares an interface in its own words and payment implements it (D-044, D-046).
  */
 package com.posturestudio.booking.payment;

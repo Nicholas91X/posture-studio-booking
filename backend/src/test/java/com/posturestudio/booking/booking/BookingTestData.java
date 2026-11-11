@@ -93,11 +93,40 @@ final class BookingTestData {
     // on the test account "alpha", that the capture of an approval needs (guide 33)
     void heldPayment(long bookingId) {
         jdbc.update("""
-                insert into payment (booking_id, account, amount_cents, status, stripe_checkout_session_id, checkout_url,
+                insert into payment (purpose, booking_id, account, amount_cents, status, stripe_checkout_session_id, checkout_url,
                                      stripe_payment_intent_id)
-                values (?, 'alpha', 3000, 'AUTHORIZED', 'cs_test_seed_' || ?, 'https://checkout.stripe.test/c/pay/seed',
+                values ('BOOKING', ?, 'alpha', 3000, 'AUTHORIZED', 'cs_test_seed_' || ?, 'https://checkout.stripe.test/c/pay/seed',
                         'pi_test_seed_' || ?)
                 """, bookingId, bookingId, bookingId);
+    }
+
+    // A lot of credits of this customer for this service (step 10): a gift of the practitioner, the simplest
+    // valid lot, with its LOT_CREATED movement. validUntil: the last day it can be used, a day of Rome (D-069)
+    long creditLot(long practitionerId, long serviceId, long customerId, String validUntil, int credits) {
+        long lot = jdbc.queryForObject("""
+                insert into credit_lot (customer_id, practitioner_id, service_id, source, granted_by, note,
+                                        valid_until, created_at)
+                values (?, ?, ?, 'GRANT', (select user_id from practitioner where id = ?), 'Prova', ?::date, now())
+                returning id
+                """, Long.class, customerId, practitionerId, serviceId, practitionerId, validUntil);
+        jdbc.update("""
+                insert into credit_movement (credit_lot_id, amount, reason, created_at)
+                values (?, ?, 'LOT_CREATED', now())
+                """, lot, credits);
+        return lot;
+    }
+
+    long balance(long lotId) {
+        return jdbc.queryForObject("select coalesce(sum(amount), 0) from credit_movement where credit_lot_id = ?",
+                Long.class, lotId);
+    }
+
+    // the movements of a booking, as "REASON amount lot"
+    java.util.List<String> movementsOf(long bookingId) {
+        return jdbc.queryForList("""
+                select reason || ' ' || amount || ' ' || credit_lot_id from credit_movement
+                where booking_id = ? order by id
+                """, String.class, bookingId);
     }
 
     // a booking made by the practitioner from the panel, to be paid in the studio (D-024, D-040)

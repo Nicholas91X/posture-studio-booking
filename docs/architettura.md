@@ -144,16 +144,33 @@ Lo stesso meccanismo vale per i professionisti: la loro email ha il ruolo `PRACT
 
 ### Prenotazione con credito
 
-1. Il cliente sceglie un orario. Il backend vede che ha crediti validi per quel professionista e servizio.
-2. In un'unica transazione: crea la prenotazione in attesa di approvazione e registra un movimento −1 sul lotto che scade prima (il credito è **impegnato**).
-3. Approvazione come per la carta. Approvata: confermata. Rifiutata, scaduta o ritirata: movimento +1 sullo stesso lotto, che mantiene la sua scadenza.
+1. Il cliente sceglie un orario, con la stessa richiesta di sempre. Il backend vede che ha un credito per quel professionista e servizio **il cui ultimo giorno valido copre il giorno della seduta** (D-071); il cliente non sceglie: se il credito c'è si usa, altrimenti si paga con la carta. Il limite di prenotazioni future vale anche qui.
+2. In un'unica transazione, con il lucchetto sul cliente e sul lotto: crea la prenotazione in attesa di approvazione e registra un movimento −1 sul lotto che scade prima (il credito è **impegnato**). Un professionista senza conto di incasso riceve comunque queste prenotazioni.
+3. Approvazione come per la carta, senza niente da incassare (in automatica, subito). Approvata: confermata. Rifiutata, scaduta o ritirata: movimento +1 sullo stesso lotto, che mantiene la sua scadenza. Le email parlano del credito, non della carta.
 
 Nessun passaggio su Stripe.
 
+### Concessioni del professionista (D-067, D-073)
+
+Dal pannello, sui propri lotti e servizi, sempre con chi (l'account), quando e perché (una nota obbligatoria):
+- **seduta omaggio**: un lotto nuovo per un cliente trovato o creato per email, valido fino al giorno scelto o quanto una seduta singola;
+- **proroga**: l'ultimo giorno valido di un lotto più avanti, anche se è già scaduto, con la riga della storia;
+- **correzione**: un movimento ±N, mai sotto zero.
+
+Il cliente riceve un'email per ognuna, senza la nota del professionista.
+
+### Cosa si vede dei crediti (D-074)
+
+- **Il cliente** vede tutti i suoi lotti, con il saldo, l'ultimo giorno valido e lo stato (utilizzabile, esaurito, scaduto) deciso dal backend, e la storia di ognuno (nato, prenotazioni, restituzioni, correzioni, proroghe), mai le note del professionista.
+- **Il professionista** vede "i miei clienti" (chi ha una prenotazione o un lotto con lui, D-066) con nome ed email, e di ognuno solo i propri lotti, con la storia e le note.
+
 ### Acquisto di un pacchetto
 
-1. Il cliente sceglie il pacchetto. Il backend crea un pagamento "in attesa" e la sessione Stripe Checkout.
-2. Al webhook `checkout.session.completed`: crea il lotto di crediti con la scadenza del pacchetto e il movimento +N.
+1. Il cliente sceglie un pacchetto in vendita (`POST /api/customer/package-purchases`). Se il professionista non ha un conto di incasso, la richiesta è rifiutata prima di chiamare Stripe (D-057).
+2. Nella stessa transazione il backend crea la sessione Stripe Checkout con **incasso immediato** (D-031) sul conto del professionista, che dura **un'ora**, e registra il pagamento "in attesa" con la **fotografia** di quello che il cliente vede: prezzo, sedute, validità (D-069). Se Stripe non risponde, non resta niente.
+3. Il cliente paga e torna alla pagina dei suoi crediti, che chiede lo stato degli acquisti (D-007).
+4. Al webhook `checkout.session.completed` con `payment_status = paid`: il pagamento diventa "riuscito" e nasce il lotto dalla fotografia (anche se nel frattempo il pacchetto è cambiato o è stato disattivato), con il movimento +N e l'ultimo giorno valido contato dal giorno del pagamento a Roma. **Una volta sola**: evento già visto, pagamento letto con il lucchetto, un lotto per pagamento nel database (D-070).
+5. Dopo il commit, il cliente riceve l'email "Acquisto confermato".
 
 ### Cancellazione
 
@@ -173,7 +190,7 @@ Cosa si usa, con le decisioni da cui viene:
 - **Tempi d'attesa verso Stripe** (D-061): 2 secondi per collegarsi, 5 per leggere, un nuovo tentativo; ogni errore di Stripe diventa un 503 e annulla la transazione.
 - **Manual capture** (D-031, D-063): per le sedute la sessione blocca l'importo senza incassarlo. All'**approvazione** il backend legge il PaymentIntent e, se è ancora da incassare, incassa; poi conferma (D-064). Al **rifiuto**, al **ritiro** e alla **scadenza della risposta** annulla il blocco; se Stripe non risponde, un lavoro programmato riprova con pause crescenti, poi si arrende (D-064). Il blocco dura in genere 7 giorni. I pacchetti (passo 10) si incassano subito.
 - **Webhook** (D-062, D-063): un indirizzo per conto, `/api/webhooks/stripe/{conto}`, fuori dal CSRF e protetto dalla firma. **Sugli endpoint di Stripe si abilitano quattro eventi**, formato completo, versione dell'API `2026-10-28.endive`:
-  - `checkout.session.completed` → pagamento bloccato, prenotazione in attesa di approvazione. Con l'incasso manuale la sessione dice `payment_status = unpaid`: conta `status = complete`. (Al passo 10, per un pacchetto: il lotto di crediti.)
+  - `checkout.session.completed` → pagamento bloccato, prenotazione in attesa di approvazione. Con l'incasso manuale la sessione dice `payment_status = unpaid`: conta `status = complete`. Per un **pacchetto** (incasso immediato) deve dire `paid`: il pagamento è riuscito e nasce il lotto di crediti (D-070).
   - `checkout.session.expired` → pagamento scaduto; la prenotazione la chiude il lavoro programmato entro un minuto.
   - `payment_intent.succeeded` → riconciliazione: se il nostro commit dopo l'incasso era fallito, il pagamento risulta incassato e la prenotazione confermata, senza incassare di nuovo.
   - `payment_intent.canceled` → il blocco sciolto da Stripe dopo 7 giorni, o un nostro annullamento che Stripe non aveva confermato.

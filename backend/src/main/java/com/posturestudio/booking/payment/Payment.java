@@ -18,8 +18,8 @@ import jakarta.persistence.Version;
 
 import com.posturestudio.booking.shared.Checks;
 
-// A payment of a session through Stripe Checkout (V10, guide 30, part 7). Created at piece 2, moved by the
-// webhook (piece 3) and by capture and cancel (piece 4)
+// A payment through Stripe Checkout: of a session (V10, guide 30, part 7), held then captured or released;
+// or, from step 10, of a package (V15, guide 37), captured at once. purpose says which
 @Entity
 @Table(name = "payment")
 class Payment {
@@ -39,8 +39,36 @@ class Payment {
                            String checkoutSessionId, URI checkoutUrl, Instant now) {
         Objects.requireNonNull(account, "account must not be null");
         Payment payment = new Payment();
+        payment.purpose = PaymentPurpose.BOOKING;
         payment.source = Objects.requireNonNull(source, "source must not be null");
         payment.bookingId = bookingId;
+        payment.account = account.name();
+        payment.amountCents = Checks.requirePositive(amountCents, "amountCents");
+        payment.status = PaymentStatus.PENDING;
+        payment.stripeCheckoutSessionId = Checks.requireNotBlank(checkoutSessionId, "checkoutSessionId");
+        payment.checkoutUrl = Objects.requireNonNull(checkoutUrl, "checkoutUrl must not be null").toString();
+        payment.createdAt = Objects.requireNonNull(now, "now must not be null");
+        return payment;
+    }
+
+    // The page of a package lasts an hour (guide 37, part 3): nothing to hold, time enough to pay calmly, and
+    // after it a customer who comes back sees the package as it is now. Far from Stripe's limits (30 min, 24 h)
+    static final Duration PACKAGE_PAGE_LIFE = Duration.ofMinutes(60);
+
+    // A package bought by a customer (guide 37, part 2), born when Stripe has answered, with the PHOTO of what
+    // the customer sees on the page: price, sessions, validity (D-069). The lot is born from here, never from
+    // the package on sale, which may change or be deactivated before the webhook
+    static Payment packagePending(long customerId, long packageOfferId, PaymentAccount account, long amountCents,
+                                  int credits, int validityDays, String checkoutSessionId, URI checkoutUrl,
+                                  Instant now) {
+        Objects.requireNonNull(account, "account must not be null");
+        Payment payment = new Payment();
+        payment.purpose = PaymentPurpose.PACKAGE;
+        payment.source = PaymentSource.REQUEST;
+        payment.customerId = customerId;
+        payment.packageOfferId = packageOfferId;
+        payment.packageCredits = Checks.requireAtLeast(credits, 2, "credits");
+        payment.packageValidityDays = Checks.requirePositive(validityDays, "validityDays");
         payment.account = account.name();
         payment.amountCents = Checks.requirePositive(amountCents, "amountCents");
         payment.status = PaymentStatus.PENDING;
@@ -65,6 +93,24 @@ class Payment {
     // copied from the booking (D-011)
     @Column(updatable = false)
     private long amountCents;
+
+    // a session or a package (V15, D-069)
+    @Column(updatable = false)
+    @Enumerated(EnumType.STRING)
+    private PaymentPurpose purpose;
+
+    // PACKAGE only (payment_purpose_columns_ck): who buys which package, and the photo of what they saw
+    @Column(updatable = false)
+    private Long customerId;
+
+    @Column(updatable = false)
+    private Long packageOfferId;
+
+    @Column(updatable = false)
+    private Integer packageCredits;
+
+    @Column(updatable = false)
+    private Integer packageValidityDays;
 
     // a customer's request, or a payment link (V14, D-065)
     @Column(updatable = false)
@@ -112,12 +158,34 @@ class Payment {
     // (a link invalidated while the customer was paying) means money really held on the card, to be judged like
     // any other; ignoring it would leave a hold nobody releases
     boolean authorize(String paymentIntentId) {
+        if (purpose != PaymentPurpose.BOOKING) {
+            throw new IllegalStateException("Payment " + id + " is a " + purpose + ": it is captured at once, never held");
+        }
         if (status != PaymentStatus.PENDING && status != PaymentStatus.EXPIRED) {
             return false;
         }
         this.stripePaymentIntentId = Checks.requireNotBlank(paymentIntentId, "paymentIntentId");
         this.status = PaymentStatus.AUTHORIZED;
         return true;
+    }
+
+    // A package paid (guide 37, part 7): captured at once (D-031), PENDING -> SUCCEEDED with its PaymentIntent.
+    // false: already paid, a second event for the same session; the caller stops, and no second lot is born
+    boolean paid(String paymentIntentId) {
+        if (purpose != PaymentPurpose.PACKAGE) {
+            throw new IllegalStateException("Payment " + id + " is a " + purpose + ": it is held, not paid at once");
+        }
+        if (status != PaymentStatus.PENDING) {
+            return false;
+        }
+        this.stripePaymentIntentId = Checks.requireNotBlank(paymentIntentId, "paymentIntentId");
+        this.status = PaymentStatus.SUCCEEDED;
+        return true;
+    }
+
+    // the end of the page of a package: the second of its expires_at on Stripe (guide 37, part 3)
+    Instant packagePageExpiresAt() {
+        return createdAt.plus(PACKAGE_PAGE_LIFE).truncatedTo(java.time.temporal.ChronoUnit.SECONDS);
     }
 
     // the page expired unpaid (checkout.session.expired)
@@ -187,6 +255,26 @@ class Payment {
 
     Long getBookingId() {
         return bookingId;
+    }
+
+    PaymentPurpose getPurpose() {
+        return purpose;
+    }
+
+    Long getCustomerId() {
+        return customerId;
+    }
+
+    Long getPackageOfferId() {
+        return packageOfferId;
+    }
+
+    Integer getPackageCredits() {
+        return packageCredits;
+    }
+
+    Integer getPackageValidityDays() {
+        return packageValidityDays;
     }
 
     PaymentSource getSource() {

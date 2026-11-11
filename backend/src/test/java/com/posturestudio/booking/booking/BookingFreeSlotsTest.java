@@ -30,7 +30,7 @@ import com.posturestudio.booking.schedule.ScheduleService;
 // hourly starts (default step 60), sessions of 60 minutes: on Monday 9 November, 9 free slots.
 // Same configuration as BookingServiceTest (BookingService and CustomerService unused here): same context
 @DataJpaTest
-@Import({TestcontainersConfiguration.class, FixedClockConfiguration.class, BookingService.class,
+@Import({TestcontainersConfiguration.class, FixedClockConfiguration.class, BookingService.class, com.posturestudio.booking.credit.CreditService.class,
         BookingOccupiedTime.class, ScheduleService.class, CatalogService.class, PractitionerService.class,
         AccountService.class, CustomerService.class, BookingTestDoubles.class})
 public class BookingFreeSlotsTest {

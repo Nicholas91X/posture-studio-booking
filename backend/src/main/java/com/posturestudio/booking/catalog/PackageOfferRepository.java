@@ -11,6 +11,10 @@ interface PackageOfferRepository extends JpaRepository<PackageOffer, Long> {
     // ownership is part of the query (see ServiceOfferRepository)
     Optional<PackageOffer> findByIdAndPractitionerId(Long id, Long practitionerId);
 
+    // one package with its service, active or not: the caller decides what "on sale" means (CatalogService)
+    @Query("select p from PackageOffer p join fetch p.service where p.id = :id")
+    Optional<PackageOffer> findWithServiceById(Long id);
+
     // panel: deactivated ones too. join fetch loads the service in the same query (no N+1)
     @Query("""
             select p from PackageOffer p join fetch p.service

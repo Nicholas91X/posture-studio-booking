@@ -35,6 +35,12 @@ interface PaymentRepository extends JpaRepository<Payment, Long> {
     @Lock(LockModeType.PESSIMISTIC_WRITE)
     Optional<Payment> findLockedById(Long id);
 
+    // the packages of a customer, the latest first (guide 37, part 5)
+    List<Payment> findByCustomerIdAndPurposeOrderByIdDesc(Long customerId, PaymentPurpose purpose);
+
+    // one purchase of a customer: someone else's is not found (404, as every "of another")
+    Optional<Payment> findByIdAndCustomerIdAndPurpose(Long id, Long customerId, PaymentPurpose purpose);
+
     // the held payments that owe a release whose time has come (D-064), the oldest first
     @Query("select p.id from Payment p where p.status = :status and p.nextReleaseAt <= :now order by p.nextReleaseAt")
     List<Long> idsOfReleasesDue(PaymentStatus status, Instant now);

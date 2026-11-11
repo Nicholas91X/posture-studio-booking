@@ -39,6 +39,15 @@ public enum ErrorCode {
     // one role per user (D-021), nobody is promoted (guide 26, 4.1)
     EMAIL_ALREADY_IN_USE,
 
+    // a gift or an extension to a last valid day already gone: it would give the customer nothing (guide 40)
+    CREDIT_VALID_UNTIL_IN_THE_PAST,
+
+    // an extension moves the last valid day forward only (D-069, guide 40, part 4)
+    CREDIT_EXTENSION_NOT_LATER,
+
+    // a correction would take a lot below zero (D-067, guide 40, part 5)
+    CREDIT_BALANCE_INSUFFICIENT,
+
     // a customer signed in for the first time and has not given first and last name yet (D-050, guide 25, 7.3)
     PROFILE_INCOMPLETE,
 

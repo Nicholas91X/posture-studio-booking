@@ -16,7 +16,7 @@ import org.springframework.jdbc.core.JdbcTemplate;
 
 import com.posturestudio.booking.TestcontainersConfiguration;
 
-// Tests the constraints of V4 on booking with plain SQL: it is the database that defends itself.
+// Tests the constraints of V4 (and of V15: paid with a credit) on booking with plain SQL: it is the database that defends itself.
 // The two inserts of an overlap run one after the other in the same transaction; two simultaneous
 // transactions are in BookingConcurrencyTest. Monday 9 November 2026, times in Rome
 @DataJpaTest
@@ -169,10 +169,38 @@ public class BookingSchemaTest {
         assertViolates("booking_deadline_ck", () -> insertWith("PENDING_APPROVAL", "CUSTOMER", "CARD", 3000, null));
     }
 
+    // ***** paid with a credit (V15, guide 36, part 11) *****
+
     @Test
-    void creditIsNotAPaymentMethodYet() {
-        // arrives with step 10 (D-042)
-        assertViolates("booking_paid_with_ck", () -> insertWith("CONFIRMED", "CUSTOMER", "CREDIT", 3000, null));
+    void aCustomerCanPayWithACredit() {
+        Assertions.assertDoesNotThrow(() -> insertWith("CONFIRMED", "CUSTOMER", "CREDIT", 3000, null));
+    }
+
+    // a booking from the panel uses the credit of the customer when there is one (D-024)
+    @Test
+    void aPractitionerCanBookWithTheCreditOfTheCustomer() {
+        Assertions.assertDoesNotThrow(() -> insertWith("CONFIRMED", "PRACTITIONER", "CREDIT", 3000, null));
+    }
+
+    @Test
+    void aRequestWithACreditWaitsForTheApprovalOnly() {
+        Assertions.assertDoesNotThrow(
+                () -> insertWith("PENDING_APPROVAL", "CUSTOMER", "CREDIT", 3000, BookingTestData.LATER));
+    }
+
+    // with its hold, so that only this rule is broken
+    @Test
+    void aBookingWithACreditNeverWaitsForAPayment() {
+        assertViolates("booking_credit_no_hold_ck", () -> jdbc.update("""
+                insert into booking (customer_id, practitioner_id, service_id, starts_at, ends_at, status,
+                                     booked_by, paid_with, price_cents, hold_expires_at)
+                values (?, ?, ?, ?, ?, 'PENDING_PAYMENT', 'CUSTOMER', 'CREDIT', 3000, ?)
+                """, customer, anna, annasService, at(MONDAY_9), at(MONDAY_10), at(BookingTestData.LATER)));
+    }
+
+    @Test
+    void anUnknownWayOfPayingIsRejected() {
+        assertViolates("booking_paid_with_ck", () -> insertWith("CONFIRMED", "CUSTOMER", "CASH", 3000, null));
     }
 
     @Test

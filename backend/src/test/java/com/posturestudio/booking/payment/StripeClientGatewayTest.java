@@ -39,7 +39,7 @@ class StripeClientGatewayTest {
             "STRIPE_BETA_SECRET_KEY", "rk_test_beta_key",
             "STRIPE_BETA_WEBHOOK_SECRET", "whsec_beta")::get);
 
-    private static final StripeGateway.NewCheckoutSession SESSION = new StripeGateway.NewCheckoutSession(
+    private static final StripeGateway.NewCheckoutSession SESSION = new StripeGateway.BookingCheckout(
             42, 3000, "Seduta", "cliente@example.com", Instant.parse("2026-11-06T09:32:00.900Z"),
             URI.create("http://localhost:3000/prenotazioni/42?pagamento=completato"),
             URI.create("http://localhost:3000/prenotazioni/42?pagamento=annullato"));
@@ -147,6 +147,36 @@ class StripeClientGatewayTest {
                 .containsEntry("cancel_url", "http://localhost:3000/prenotazioni/42?pagamento=annullato");
         // never the name of the customer (guide 31, part 6)
         assertThat(request.form().keySet()).noneMatch(key -> key.contains("name") && !key.contains("product_data"));
+    }
+
+    // guide 37, part 6: a package is captured at once, with no booking anywhere
+    @Test
+    void aPackageIsCapturedAtOnceAndCarriesNoBooking() {
+        StripeGateway.NewCheckoutSession purchase = new StripeGateway.PackageCheckout(12, 12000, "5 sedute · Seduta",
+                "cliente@example.com", Instant.parse("2026-11-06T10:00:00.700Z"),
+                URI.create("http://localhost:3000/crediti?acquisto=completato"),
+                URI.create("http://localhost:3000/crediti?acquisto=annullato"));
+
+        gateway.createCheckoutSession(ACCOUNTS.byName("alpha").orElseThrow(), purchase, "package-7-12-x");
+
+        Received request = received.getFirst();
+        assertThat(request.idempotencyKey()).isEqualTo("package-7-12-x");
+        assertThat(request.form())
+                .containsEntry("mode", "payment")
+                .containsEntry("payment_intent_data[capture_method]", "automatic")
+                .containsEntry("payment_intent_data[metadata][purpose]", "package")
+                .containsEntry("payment_intent_data[metadata][package_offer_id]", "12")
+                .containsEntry("metadata[purpose]", "package")
+                .containsEntry("metadata[package_offer_id]", "12")
+                .containsEntry("line_items[0][price_data][unit_amount]", "12000")
+                .containsEntry("line_items[0][price_data][product_data][name]", "5 sedute · Seduta")
+                .containsEntry("allowed_payment_method_types[0]", "card")
+                .containsEntry("expires_at", Long.toString(Instant.parse("2026-11-06T10:00:00Z").getEpochSecond()))
+                .containsEntry("customer_email", "cliente@example.com")
+                .containsEntry("submit_type", "pay")
+                .containsEntry("success_url", "http://localhost:3000/crediti?acquisto=completato");
+        assertThat(request.form().keySet()).noneMatch(key -> key.contains("booking_id"))
+                .doesNotContain("client_reference_id");
     }
 
     // D-057: every account its own client, its own key

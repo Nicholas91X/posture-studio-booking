@@ -85,7 +85,7 @@ class PaymentLinks {
         String serviceName = catalog.serviceNameOf(target.serviceId());
         CustomerContact customer = customers.contactOf(target.customerId());
         StripeGateway.CheckoutSession session = stripe.createCheckoutSession(account,
-                new StripeGateway.NewCheckoutSession(bookingId, target.priceCents(), serviceName, customer.email(),
+                new StripeGateway.BookingCheckout(bookingId, target.priceCents(), serviceName, customer.email(),
                         expiresAt, returnUrl(bookingId, "completato"), returnUrl(bookingId, "annullato")),
                 // every press of the button is a new intention (guide 34, part 5)
                 "booking-" + bookingId + "-link-" + UUID.randomUUID());

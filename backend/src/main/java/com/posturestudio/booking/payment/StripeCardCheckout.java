@@ -60,7 +60,7 @@ class StripeCardCheckout implements CardCheckout {
                 .orElseThrow(() -> new IllegalStateException("Practitioner " + request.practitionerId()
                         + " has no payment account: available() should have been asked first"));
         StripeGateway.CheckoutSession session = stripe.createCheckoutSession(account,
-                new StripeGateway.NewCheckoutSession(request.bookingId(), request.amountCents(),
+                new StripeGateway.BookingCheckout(request.bookingId(), request.amountCents(),
                         catalog.serviceNameOf(request.serviceId()),
                         customers.contactOf(request.customerId()).email(),
                         request.expiresAt(),

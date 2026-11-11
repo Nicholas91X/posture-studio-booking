@@ -98,7 +98,7 @@ Formato: contesto → decisione → alternative scartate → conseguenze.
 
 **Alternative scartate.** Blocco più breve con sessione Stripe più lunga: il cliente potrebbe pagare un orario già liberato e riassegnato.
 
-**Conseguenze.** Un orario può restare bloccato fino a 30 minuti da chi poi non paga. Accettabile con due professionisti. Se un pagamento arriva comunque tardi, il cliente riceve un credito (lotto `LATE_PAYMENT`).
+**Conseguenze.** Un orario può restare bloccato fino a 30 minuti da chi poi non paga. Accettabile con due professionisti. Se un pagamento arriva comunque tardi, il cliente riceve un credito (lotto `LATE_PAYMENT`). *(Superato: D-031 annulla il blocco, D-068 toglie l'origine `LATE_PAYMENT`.)*
 
 ---
 
@@ -291,7 +291,7 @@ Le due regole valgono solo quando **prenota il cliente**. Le prenotazioni fatte 
 ---
 
 ## D-024 — Il professionista può prenotare per un cliente dal pannello
-**Stato:** accettata · 2026-10-29 · pagamento in studio **confermato da D-040** (2026-11-06); chi ha creato la prenotazione: D-042
+**Stato:** accettata · 2026-10-29 · pagamento in studio **confermato da D-040** (2026-11-06); chi ha creato la prenotazione: D-042 · "cosa rende un cliente suo" **completato da D-066** (2026-11-10)
 
 **Contesto.** Non tutti i clienti prenoteranno da soli: alcuni chiedono la seduta di persona o al telefono. Il professionista deve poterla inserire lui.
 
@@ -451,7 +451,7 @@ Nella guida l'interfaccia era proposta in `auth`; spostata in `practitioner` dur
 - D-007 resta valida nel principio (a dire che i soldi ci sono è Stripe, mai il browser), ma il webhook ora conferma il **blocco**. La conferma della prenotazione arriva con la risposta di Stripe all'incasso.
 - Due chiamate in uscita verso Stripe (incasso, annullamento), con errori da gestire al passo 9. Un incasso può fallire, per esempio con un blocco scaduto: il professionista ha approvato, ma la prenotazione non si può confermare.
 - Il blocco sulla carta dura in genere circa 7 giorni per i pagamenti online: la finestra di risposta (D-030) deve restare molto più breve. Se un annullamento fallisce, il blocco si scioglie comunque da solo.
-- Il lotto `LATE_PAYMENT` probabilmente non serve più per le sedute: da confermare al passo 10.
+- Il lotto `LATE_PAYMENT` probabilmente non serve più per le sedute: da confermare al passo 10. **Confermato da D-068** (2026-11-10): l'origine non esiste.
 - Da verificare al passo 9 sulla documentazione di Stripe: eventuali commissioni sui blocchi annullati, e la durata esatta del blocco per le carte europee. **Verificato il 2026-11-10**: il blocco dura in genere 7 giorni per le carte online (Visa per le transazioni avviate dall'esercente 5), e Stripe annulla da sé un PaymentIntent non incassato dopo 7 giorni (documentazione). La documentazione **non** dice se un blocco annullato costa una commissione; nella **prova manuale in modalità di prova** il blocco annullato non ha lasciato niente nel saldo (né importo né commissione), mentre il pagamento incassato da 30 € ha portato 28,80 € (1,20 € di commissione, con la carta di prova `4242`, statunitense). Da riconfermare in produzione con il primo rifiuto vero (passo 14).
 
 ---
@@ -1126,3 +1126,180 @@ Implementazione (pezzo 3, guida 16): `FreeSlots.compute(SlotQuery)` nel package 
 **Alternative scartate.** *Distinguere i pagamenti dai metadati di Stripe*: la verità sui nostri pagamenti è nel nostro database. *Far scadere la pagina vecchia senza leggerla*: un link appena pagato verrebbe "sostituito" mentre i soldi arrivano. *`CardHolds.capture(bookingId)` anche per i link*: con due link pagati quasi insieme, "il" pagamento `AUTHORIZED` della seduta potrebbero essere due. *Lucchetto sulla seduta anche alla creazione del link*: un possibile deadlock in cambio di niente (il caso che eviterebbe si risolve da solo con "il primo vince"). *Ignorare un `completed` per un pagamento già `EXPIRED`*: un blocco che nessuno annulla.
 
 **Conseguenze.** **Passo 11**: cancellare una seduta "in studio" deve far scadere il link aperto (stessa lettura di prima), e la prova con il percorso vero ("cancellata con un link attivo, poi pagato → blocco annullato") è un suo criterio di "fatto". **Passo 13**: il pannello apre `whatsappUrl`, e traduce i 409. **Provato**: tolti a turno il "solo se ancora in studio", l'`EXPIRED` → `AUTHORIZED`, il `flush`, il "fai scadere" su Stripe, il rifiuto di un link appena pagato, il cambio di `paid_with` e il lucchetto sulla seduta, fallisce ogni volta il test che li protegge; due link pagati nello stesso istante incassano una volta sola.
+
+---
+
+## D-066 — I clienti di un professionista: chi ha una prenotazione o un lotto di crediti con lui; concessioni e prenotazione dal pannello per email
+**Stato:** accettata · 2026-11-10 · brief del passo 10 · **completa D-024** ("cosa rende un cliente suo") e D-048
+
+**Contesto.** D-024 ha lasciato aperto cosa rende un cliente "suo", e quindi chi può comparire nelle liste del pannello; D-048 l'ha aggirato per la prenotazione dal pannello, che trova o crea il cliente per email. Il passo 10 porta due cose nuove: una lista "i miei clienti" con i loro crediti, e le concessioni (D-067), che si fanno a un cliente preciso. La regola di riservatezza resta: il professionista vede solo le **proprie** cose (requisiti, "Riservatezza del calendario").
+
+**Decisione.**
+- **Nelle liste del pannello** ("i miei clienti", e da lì i crediti di un cliente) i clienti di un professionista sono quelli con **almeno una prenotazione** con lui, in qualunque stato, **o almeno un lotto di crediti** con lui.
+- **Le concessioni** (D-067) **e la prenotazione dal pannello** si fanno **per email**, a **qualunque** cliente, anche nuovo: trovato o creato come in D-048. Dopo, quel cliente è suo, perché ha un lotto o una prenotazione con lui.
+- **Mai le cose dell'altro professionista**: di un cliente comune, ognuno vede solo i propri lotti e le proprie prenotazioni. Il lotto di un altro è un 404, come la cosa inesistente (D-026).
+
+**Alternative scartate.** *Tutti i clienti dello studio*: ogni professionista vedrebbe i clienti dell'altro, contro la riservatezza. *Solo chi ha una seduta confermata*: un cliente che ha comprato un pacchetto e non l'ha ancora usato sparirebbe dalla lista proprio quando ha dei crediti. *Concessioni scelte solo da un elenco*: non si potrebbe regalare una seduta a un cliente nuovo, e non serve: l'email trova il cliente giusto (D-048).
+
+**Conseguenze.** La lista nasce da due moduli (`booking` e `credit` sanno chi ha cosa con chi), con i nomi chiesti a `customer` su un insieme di id (D-029, D-049). Si chiude la domanda del passo 13 ("quali clienti può cercare e vedere un professionista"). **Da verificare nella guida delle concessioni**: per email si può raggiungere anche un cliente dell'altro professionista, quindi la risposta non deve rivelare più di quanto il professionista ha scritto (per esempio il nome vero di un cliente già esistente, che D-048 non cambia).
+
+---
+
+## D-067 — Concessioni del professionista: omaggio come lotto nuovo, proroga con la traccia delle due date, correzione come movimento
+**Stato:** accettata · 2026-11-10 · brief del passo 10 · **chiude il punto aperto 6** dei requisiti · perimetro deciso da Nicholas il 2026-10-16
+
+**Contesto.** Il punto aperto 6 chiedeva come il professionista possa decidere caso per caso: regalare sedute, prorogare una scadenza, concedere il credito su una cancellazione oltre il preavviso. Il modello a lotti e movimenti (D-009, D-010) le regge senza stravolgimenti; restavano da fissare la forma di ognuna e la traccia.
+
+**Decisione.** Tre concessioni, ognuna solo sui **propri** lotti e per i **propri** servizi, per email del cliente (D-066):
+- **Seduta omaggio**: un **lotto nuovo** con un'**origine propria** (nome nella guida del pezzo 1), N crediti, per un servizio del professionista. Scadenza scelta da lui, o per default quella delle sedute singole (`single_credit_validity_days`).
+- **Proroga di una scadenza**: cambia la scadenza di un lotto, e registra l'evento con **la vecchia e la nuova data**. È l'unica concessione che modifica qualcosa invece di aggiungere: la sua storia non deve perdersi. Se si possa anche anticipare, si decide nella guida.
+- **Correzione**: un **movimento** sul lotto, con un **motivo proprio**, che non porta mai il saldo sotto zero. Mai la modifica di un movimento esistente (D-009).
+- **Sempre la traccia**: **chi** (l'account del professionista), **quando** (l'orologio dell'applicazione), **perché** (una nota, obbligatoria).
+- Sono sempre **crediti**, mai denaro (D-015), e non cambiano lo stato di nessuna prenotazione.
+- **Limiti**: nessuno oltre a quelli sopra (propri lotti, saldo mai negativo). Il controllo è la traccia: ogni concessione dice chi l'ha fatta e perché.
+- **Credito concesso su una cancellazione tardiva**: al **passo 11**, con lo stesso meccanismo e la stessa traccia.
+
+**Alternative scartate.** *Omaggio come movimento +N su un lotto esistente*: mescola crediti pagati e regalati, che prenderebbero la scadenza di quel lotto; e un cliente senza lotti non riceverebbe niente. *Proroga come lotto nuovo* (−N sul vecchio, +N sul nuovo): spezza la storia, e un credito che torna da una prenotazione rifiutata tornerebbe al lotto vecchio, già scaduto. *Correzione modificando un movimento*: contro D-009, la storia si perde. *Nota facoltativa*: una concessione senza motivo, un anno dopo, non la sa spiegare nessuno.
+
+**Conseguenze.** Un'origine di lotto e un motivo di movimento nuovi, nomi fissati nella guida del pezzo 1 del passo 10; una traccia della proroga (vecchia e nuova data, chi, quando, perché). Il punto aperto 6 è chiuso.
+
+---
+
+## D-068 — Nessun lotto `LATE_PAYMENT`: un pagamento arrivato tardi si annulla
+**Stato:** accettata · 2026-11-10 · brief del passo 10 · **conferma** la conseguenza di D-031 ("il lotto `LATE_PAYMENT` probabilmente non serve più") · la toglie dal modello dei dati
+
+**Contesto.** D-008 voleva che un pagamento arrivato dopo la scadenza del blocco diventasse un credito, in un lotto con origine `LATE_PAYMENT`. D-031 l'ha sostituito con l'annullamento del blocco sulla carta (il cliente non è addebitato), e D-062 l'ha realizzato: evento `LatePaymentReleased` ed email al cliente. Anche il link di pagamento (D-059, D-065), quando la seduta non è più da pagare in studio, annulla il blocco.
+
+**Decisione.** L'origine `LATE_PAYMENT` **non esiste**. Un pagamento arrivato tardi non crea mai crediti: si annulla il blocco, come oggi.
+
+**Alternative scartate.** *Tenerla nello schema "per sicurezza"*: un valore che nessun codice produce, contro D-042.
+
+**Conseguenze.** In `modello-dati.md` le origini dei lotti perdono `LATE_PAYMENT`, e `origin_booking_id` resta solo per le cancellazioni (passo 11).
+
+---
+
+## D-069 — Il registro dei crediti (V15): trigger contro modifiche e saldo negativo, scadenza come giorno di calendario, un lotto per pagamento, proroga solo in avanti
+**Stato:** accettata · 2026-11-10 · realizza D-009, D-010, D-067 e D-068 · confronto completo: `docs/studio/36-registro-dei-crediti.md` · scelte di Claude secondo le raccomandazioni della guida, **confermate da Nicholas** una per una lo stesso giorno · **estende la convenzione su date e ore** di CLAUDE.md (giorni di calendario)
+
+**Contesto.** Il pezzo 1 del passo 10 decide la forma del registro dei crediti e quali regole il database fa rispettare da solo, anche con un bug in Java o con un `update` scritto a mano. Tre fatti trovati nel codice pesano sulle scelte: il pacchetto in vendita **si modifica** (sedute, prezzo, validità); l'applicazione si collega a PostgreSQL con `POSTGRES_USER`, che l'immagine ufficiale crea come **superuser** (i permessi non lo fermano); alcuni test fanno commit veri e puliscono con `delete from`.
+
+**Decisione.**
+- **Nomi**: origini `PACKAGE`, `GRANT`, `CANCELLATION` (passo 11); motivi `LOT_CREATED` (+N), `BOOKING` (−1), `BOOKING_RELEASE` (+1, rifiuto, risposta scaduta o ritiro; era `APPROVAL_RELEASE`), `ADJUSTMENT` (±N), `CANCELLATION_RESTORE` (+1, passo 11). Nei `check` della V15 solo quelli del passo 10.
+- **Lotto** (`credit_lot`): foreign key composta verso `service (id, practitioner_id)` (D-025); niente `initial_credits` (lo dice il movimento `LOT_CREATED`); `price_cents` sì (copia tra moduli, D-011); traccia dell'omaggio nella riga (`granted_by`, `note`, `created_at`), pretesa da un `check`.
+- **Un lotto per pagamento**: `credit_lot.payment_id` **unico**, con `check ((source = 'PACKAGE') = (payment_id is not null))` (Nicholas). Sostituisce `payment.credit_lot_id` del modello dei dati: con il collegamento dal pagamento un secondo lotto si creerebbe comunque.
+- **Movimento** (`credit_movement`): un `check` per motivo (importo e prenotazione); traccia della correzione (`created_by`, `note`) pretesa da un `check`; tre indici unici parziali: un `LOT_CREATED` per lotto, un `BOOKING` per prenotazione, **una sola restituzione** (movimento positivo) per prenotazione.
+- **Registro immutabile**: trigger `before update or delete` per riga e `before truncate` per istruzione su `credit_movement` e `credit_lot_extension`; su `credit_lot` niente `delete` né `truncate`. Valgono anche per il superuser; un superuser li può spegnere, quindi proteggono dagli errori, non da un amministratore. **Al passo 14** l'applicazione si collega con un utente non superuser, senza `update`, `delete` e `truncate` su `credit_movement`.
+- **Saldo mai negativo**: la regola sta in **Java** (pezzo 3, per una risposta leggibile) **e** in un **trigger** `before insert` che, per ogni movimento negativo, prende il **lucchetto sulla riga del lotto** e poi somma. `for no key update`, non `for update`: due addebiti si mettono in fila, ma una restituzione non aspetta (la foreign key del suo `insert` prende `for key share`, che non è in conflitto). Ordine dei lucchetti: cliente, poi lotto; nessuno prende il lotto e poi il cliente. **Il trigger regge solo in `READ COMMITTED`** (l'isolamento di default, D-045): lì ogni istruzione di una funzione `volatile` prende una fotografia nuova, e la somma dopo l'attesa vede l'addebito appena confermato dall'altra transazione. In `REPEATABLE READ` la fotografia è una sola, presa prima dell'attesa, e il saldo potrebbe andare sotto zero.
+- **Scadenza come giorno di calendario**: `credit_lot.valid_until date`, l'**ultimo giorno valido** a Europe/Rome. Si usa in un istante se il giorno di quell'istante, a Roma, non è dopo. "Valido N giorni" = giorno dell'acquisto a Roma + N giorni di calendario. Una regola sola, il `record ValidUntil`, con lo `StudioTime.ZONE`. Precedente: `working_schedule.valid_from` (D-034); l'eccezione è scritta in CLAUDE.md.
+- **Proroga**: `valid_until` modificabile, la storia in `credit_lot_extension` (vecchia e nuova data, `extended_by`, `note`, `created_at`); **solo in avanti** (`check`). Un trigger su `credit_lot` permette di cambiare **solo** `valid_until`, e **solo** se esiste la riga della proroga con le stesse due date.
+- **Pagamenti dei pacchetti** (`payment`): `purpose` (`BOOKING`, `PACKAGE`, senza default dopo la migrazione), `package_offer_id`, `customer_id` (solo per i pacchetti), e la **fotografia presa alla creazione della sessione Checkout**: `package_credits`, `package_validity_days` (il prezzo è `amount_cents`). Il lotto nasce dalla fotografia, mai dal pacchetto in vendita. Un `check` tiene coerenti scopo e colonne, con un `is not null` esplicito per ogni colonna obbligatoria (un `check` che vale `NULL` accetta la riga); un pacchetto è sempre `REQUEST` e mai `AUTHORIZED` né `CANCELED`.
+- **`booking.paid_with`** riceve `CREDIT`, per il cliente e per il professionista; una prenotazione `CREDIT` non è mai `PENDING_PAYMENT`.
+- **Pulizia dei test**: `LedgerCleanup`, **solo nel codice di test**, cancella con `session_replication_role = replica` in una transazione (Nicholas).
+
+**Alternative scartate.** *Permessi invece dei trigger, ora*: non fermano un superuser né il proprietario delle tabelle; servono due utenti, al passo 14. *Saldo solo in Java*: un `insert` a mano o un metodo che dimentica il lucchetto lo scavalcano. *Lucchetto sul cliente*: la correzione del professionista non passa da lì. *Scadenza come istante* (`expires_at`, la mezzanotte di Roma del giorno dopo): ogni lettura e ogni proroga richiede una conversione, e ogni conversione è un'occasione di errore nei giorni del cambio dell'ora. *Proroga tutta a sola aggiunta* (scadenza = ultima proroga): ogni query sui lotti utilizzabili avrebbe bisogno di una sotto-query. *Proroga anche all'indietro*: toglierebbe giorni al cliente in silenzio; per togliere c'è la correzione. *Fotografia del pacchetto all'arrivo dell'avviso*: il cliente riceverebbe quello che il pacchetto è diventato, non quello che ha pagato. *`purpose` e `source` in una colonna sola*: da riscrivere il codice del passo 9. *Copiare cliente, professionista e servizio nel movimento con due foreign key composte*: tre colonne in più in ogni riga per una regola che vive in un solo metodo Java (pezzo 3).
+
+**Conseguenze.** La V15 non scrive nessun dato: le righe esistenti di `payment` diventano `BOOKING`, e i test che scrivono pagamenti con SQL dicono lo scopo. Il modulo `credit` ha le entità (`CreditLot`, `CreditMovement` e `CreditLotExtension`, le ultime due `@Immutable`) e repository senza `delete`; i servizi arrivano con i pezzi 2–5. Che una prenotazione `CREDIT` abbia il suo movimento `BOOKING`, e che il lotto sia dello stesso cliente, professionista e servizio, lo garantisce Java (pezzo 3). **Provato** (rifatto con lo script corretto il 2026-11-11, D-072): tolti a turno il lucchetto del trigger del saldo (due transazioni prendono entrambe l'ultimo credito), il trigger di `truncate`, l'`is not null` di `package_credits`, l'indice "una sola restituzione", `unique (payment_id)` e il controllo della traccia nel trigger del lotto, fallisce ogni volta il test che li protegge.
+
+---
+
+## D-070 — Acquisto di un pacchetto: pagina di un'ora con incasso immediato, lotto dalla fotografia una volta sola, validità dal giorno del pagamento
+**Stato:** accettata · 2026-11-11 · realizza D-010, D-031 (pacchetti con incasso immediato) e D-069 · confronto completo: `docs/studio/37-acquisto-di-un-pacchetto.md` · scelte di Claude secondo le raccomandazioni della guida, su indicazione di Nicholas ("se non hai domande, procedi") · **precisata da Nicholas il 2026-11-11**: anche il professionista riceve l'avviso della vendita
+
+**Contesto.** Il cliente compra un pacchetto su Stripe e il lotto di crediti nasce quando Stripe avvisa (D-007). Il brief chiede: incasso immediato sul conto del professionista, chiave d'idempotenza, 409 senza conto; il lotto **una volta sola** anche con avvisi doppi o contemporanei; il lotto anche se il pacchetto è stato disattivato nel frattempo; una durata della pagina scelta da noi; un evento per l'email di conferma.
+
+**Decisione.**
+- **API del cliente** nel modulo `payment`: `POST /api/customer/package-purchases` (`{packageOfferId}`, 201 + `Location`), `GET` della lista (dal più recente) e di uno per id (404 per l'acquisto di un altro, o per un pagamento di una seduta).
+- **Ordine**: pacchetto in vendita (attivo, servizio attivo, professionista attivo; altrimenti 404) → conto del professionista (409 `CARD_PAYMENTS_UNAVAILABLE`, prima di Stripe) → sessione Checkout → riga `payment` `PENDING`, `PACKAGE`, con la fotografia (prezzo, sedute, validità) → commit. Stripe giù: 503, niente resta (D-061). Nessun riuso di una pagina aperta: due clic, due pagine, una scade.
+- **Pagina di un'ora** (`Payment.PACKAGE_PAGE_LIFE`): niente da bloccare, tempo per pagare con calma, e dopo un'ora chi torna vede il pacchetto com'è adesso. Lontano dai limiti di Stripe (30 minuti, meno di 24 ore).
+- **Chiave d'idempotenza nuova a ogni richiesta** (`package-{cliente}-{pacchetto}-{casuale}`): copre il nuovo tentativo della libreria; il doppio clic è innocuo.
+- **Ritorno da Stripe** alla pagina dei crediti (`APP_URL/crediti?acquisto=completato|annullato`, segnaposto fino al passo 12), che chiede la lista degli acquisti. Niente `{CHECKOUT_SESSION_ID}`: un `java.net.URI` non ammette le graffe. Stati per il cliente: `PENDING` (con `paymentUrl` e `pageExpiresAt` finché la pagina vale **per l'orologio**), `PAID` (con il lotto e l'ultimo giorno valido), `EXPIRED`.
+- **Due percorsi verso Stripe**: `StripeGateway.NewCheckoutSession` diventa una `sealed interface` con `BookingCheckout` (incasso manuale, `booking_id`, `submit_type=book`) e `PackageCheckout` (incasso `automatic` scritto esplicitamente, `purpose` e `package_offer_id` nei metadati, `submit_type=pay`); il gateway costruisce la parte comune e fa uno `switch` senza `default`.
+- **Webhook**: si divide per `payment.purpose`. Per un pacchetto serve `payment_status = paid` (altrimenti nessun credito); poi `Payment.paid` (`PENDING` → `SUCCEEDED` sulla riga bloccata, `false` se già fatto) e `CreditService.lotFromPackage`, in `Propagation.MANDATORY`. **Tre livelli contro il doppione**: `stripe_event` (lo stesso evento), il confronta-e-cambia sul pagamento (due eventi diversi), `credit_lot_payment_uq` (un bug).
+- **Il lotto nasce dalla fotografia del pagamento**, mai dal pacchetto in vendita: un pacchetto cambiato o disattivato dopo la pagina dà al cliente quello che ha visto e pagato. Professionista e servizio si chiedono al catalogo (`packageOwnerOf`), perché di un pacchetto non cambiano mai.
+- **Validità dall'istante dell'evento di Stripe** (`created`, quando il cliente ha pagato, firmato, uguale a ogni nuovo invio), non dal nostro orologio: un avviso in ritardo non regala né toglie giorni. `created_at` del lotto resta il nostro orologio.
+- **Evento** `CreditEvent.PackagePurchased` (`sealed interface`), pubblicato nella transazione; `notification` lo ascolta dopo il commit (`CreditNotifications`, testi in `CreditEmails`): email "Acquisto confermato" **al cliente**. **Al professionista l'avviso della vendita** (Nicholas, 2026-11-11: "comodo e utile"), come per una richiesta da approvare (D-054): prima una **push** a tutti i suoi dispositivi ("Pacchetto venduto", sedute e ultimo giorno valido, mai il cliente né il trattamento; TTL di un giorno), e l'**email** "Pacchetto venduto" solo se nessun dispositivo l'ha presa. L'email, che è la riserva della push, non nomina il cliente (D-032).
+
+**Alternative scartate.** *Pagina di 24 ore*: per un giorno resterebbe in vendita un pacchetto forse già cambiato o tolto. *30 minuti*: senza margine per un orologio sfasato. *Chiave mandata dal frontend*: un contratto in più per un doppio clic che non fa danni. *Segnaposto `{CHECKOUT_SESSION_ID}`*: una `String` al posto di un `URI` e un'API per id di Stripe, per una pagina che può chiedere la lista. *Un metodo in più sul gateway*: due metodi quasi uguali che costruiscono la stessa sessione. *Rileggere il pacchetto all'avviso*: il cliente riceverebbe quello che il pacchetto è diventato. *Validità dal nostro orologio*: un server giù un giorno sposterebbe la scadenza. *Solo l'email al professionista, senza push*: dal telefono, dove il professionista lavora, la push arriva prima e non riempie la casella. *Il nome del cliente nell'avviso*: una push si legge a schermo bloccato (D-032); il nome lo darà il pannello (pezzo 6).
+
+**Conseguenze.** `payment` dipende anche da `credit` (oltre a `catalog` e `customer`), e `notification` da `credit`; `credit` non dipende da nessuno di loro. `payment_intent.succeeded` arriva anche per i pacchetti: dopo il `completed` non cambia niente; prima, è un PaymentIntent che non conosciamo ancora (avviso nel registro) e il `completed` fa tutto. **Provato** (rifatto con lo script corretto il 2026-11-11, D-072): tolti a turno il confronta-e-cambia del pagamento (il secondo evento è fermato da `credit_lot_payment_uq`, verificato nel registro), il controllo di `payment_status`, la validità dall'istante dell'evento, il filtro "pacchetto attivo" e la scadenza della pagina per l'orologio, fallisce ogni volta il test che li protegge; lo stesso evento consegnato due volte nello stesso istante, e due eventi diversi nello stesso istante, danno un solo lotto. **Prova manuale con la Stripe CLI fatta** il 2026-11-11 (guida 37, parte 12.1): incasso "Riuscito", lotto valido dal giorno del pagamento, lo stesso evento rimandato con `stripe events resend` → un solo lotto.
+
+---
+
+## D-071 — Prenotare con un credito: si usa da solo se copre il giorno della seduta, il lotto che scade prima, restituzione sullo stesso lotto, uno `switch` su come è pagata
+**Stato:** accettata · 2026-11-11 · realizza D-010 e D-030 per i crediti · **precisa D-061** (il 409 senza conto non viene più "prima di tutto" quando c'è un credito) · confronto completo: `docs/studio/38-prenotare-con-un-credito.md` · scelte di Claude secondo le raccomandazioni della guida, su indicazione di Nicholas ("se non hai domande, procedi") · **la regola della scadenza è da confermare con lo studio**
+
+**Contesto.** Il cliente con un credito valido per quel professionista e quel servizio prenota senza Stripe: il credito si impegna, poi l'approvazione come sempre (D-030); rifiuto, risposta scaduta e ritiro lo restituiscono. Il brief chiedeva di decidere se un credito che scade prima della seduta si può usare, se il cliente può scegliere la carta, e di verificare che il lucchetto sul cliente (D-045) basti contro due richieste che vogliono l'ultimo credito.
+
+**Decisione.**
+- **Un credito si usa se il suo ultimo giorno valido copre il giorno della seduta** (`ValidUntil.covers(inizioDellaSeduta)`), non solo il giorno della richiesta. "Scade il 15" vuol dire "sedute entro il 15"; e un credito restituito (rifiuto, scadenza della risposta, ritiro, che arrivano tutti prima della seduta) trova sempre il suo lotto ancora valido. Altrimenti la richiesta va con la carta. **Da confermare con lo studio**: la regola opposta ("valido al momento della prenotazione") cambia un solo argomento.
+- **Nessuna scelta del cliente**: se c'è un credito utilizzabile si usa, altrimenti la carta. `NewBooking` non cambia.
+- **"Scade prima, si usa prima"** (FEFO): il lotto di quel cliente, professionista e servizio con `valid_until` più vicino tra quelli che coprono la seduta e hanno saldo positivo (`group by ... having sum(amount) > 0`), a parità il più vecchio.
+- **Ordine della richiesta** (precisa D-045 e D-061): servizio in vendita (404) → **409 `CARD_PAYMENTS_UNAVAILABLE` solo se non c'è né un credito né un conto**, con una lettura senza lucchetti → lucchetto sul cliente → **limite, che vale anche con il credito** (protegge il calendario) → orario libero → blocchi scaduti → **scelta vera** del lotto, con il suo lucchetto e il saldo riletto → con il credito: `insert` in `PENDING_APPROVAL` (`Booking.requestedWithCredit`, con la scadenza della risposta), movimento −1, poi approvazione automatica o richiesta al professionista; senza: 409 se manca il conto (il credito è sparito nel frattempo), altrimenti carta come oggi. Un professionista senza conto riceve le prenotazioni di chi ha un suo credito.
+- **Lucchetti**: il lucchetto sul cliente **basta** contro due richieste dello stesso cliente (con `READ COMMITTED` la seconda, dopo l'attesa, vede il −1 della prima); si prende comunque anche quello sul lotto, regola di D-069 per ogni addebito, che copre la correzione del professionista. Ordine: cliente, poi lotto.
+- **Transizioni**: approvazione, rifiuto, ritiro e scadenza fanno uno `switch` su `paidWith`. Approvazione: `CARD` incassa, `CREDIT` conferma e basta, `IN_STUDIO` lancia (non aspetta mai un'approvazione); uno `switch` **espressione**, che il compilatore vuole completo. Rifiuto, ritiro, scadenza: `CARD` annulla il blocco, `CREDIT` chiama `CreditService.release`, che scrive +1 sullo stesso lotto, una volta sola (e l'indice della V15 lo garantisce comunque), nella stessa transazione e con la prenotazione bloccata.
+- **Moduli**: `booking → credit` (`hasUsableCredit`, `lockUsableLot`, `commit`, `release`, gli ultimi tre in `MANDATORY`).
+- **Email e vista**: gli eventi `ApprovalRequested`, `BookingConfirmed`, `BookingRejected`, `ApprovalExpired`, `BookingWithdrawn` portano `paidWith` (un fatto del momento); con un credito le email non parlano di carta ("hai usato un credito, è impegnato", "il credito torna al cliente", "il credito che avevi usato è di nuovo disponibile, con la sua scadenza"). `CustomerBookingView` riceve `paidWith`; `paymentUrl` resta `null` per un credito.
+
+**Alternative scartate.** *Credito valido al momento della richiesta*: un rifiuto dopo la scadenza del lotto farebbe perdere al cliente un credito per una decisione non sua. *Un campo per scegliere carta o credito*: combinazioni in più da provare per un caso quasi inesistente; si aggiunge, facoltativo, se servirà. *Il 409 senza conto sempre per primo*: un professionista senza conto non potrebbe ricevere le prenotazioni dei clienti a cui ha regalato una seduta. *Solo il lucchetto sul cliente*: basta per le richieste, ma una correzione del professionista non passa da lì. *Rileggere come è pagata la prenotazione nell'ascoltatore delle email*: dopo il commit, in un altro thread, lo stato potrebbe essere cambiato.
+
+**Conseguenze.** Le prenotazioni con credito non toccano mai `payment` né Stripe. Il prezzo resta fotografato anche per loro (servirà al passo 11). Il pezzo 4 (prenotazione dal pannello con credito) userà gli stessi metodi di `CreditService`. **Provato**: tolti a turno la regola "copre il giorno della seduta" (con "valido oggi"), l'ordine FEFO, la restituzione nelle tre transizioni e la conferma senza incasso, fallisce ogni volta il test che li protegge; due richieste contemporanee dello stesso cliente con un solo credito: una `CREDIT`, l'altra `CARD` (o 409 senza conto), saldo 0. Tolto il lucchetto sul lotto il test resta verde (il lucchetto sul cliente basta); tolti entrambi i lucchetti fallisce. *(Il "fallimento non ripetuto" annotato qui in un primo momento era lo script che non lanciava Maven: vedi D-072. Tutto rifatto con lo script corretto il 2026-11-11.)*
+
+---
+
+## D-072 — Prenotazione dal pannello con credito: si usa da solo, con la regola del cliente; il professionista e il cliente lo vedono
+**Stato:** accettata · 2026-11-11 · **realizza la parte di D-024** rimasta da fare ("se il cliente ha crediti validi per quel servizio, si usano") · completa D-040 e D-048 · confronto completo: `docs/studio/39-prenotazione-dal-pannello-con-credito.md` · scelte di Claude secondo le raccomandazioni della guida, su indicazione di Nicholas ("se non hai domande, procedi")
+
+**Contesto.** D-024 voleva che una prenotazione dal pannello usasse i crediti del cliente, quando ci sono, e restasse "in studio" (D-040) altrimenti. Il pezzo 3 (D-071) ha costruito la regola per la richiesta del cliente; restava da applicarla al pannello e decidere chi lo vede.
+
+**Decisione.**
+- **La stessa regola del cliente** (D-071): il lotto di quel cliente, professionista e servizio che copre il giorno della seduta, con saldo positivo, che scade prima. Altrimenti `IN_STUDIO`. Dal pannello non c'è orizzonte, quindi una seduta lontana va "in studio" se il credito scade prima.
+- **Nessuna scelta**: se c'è un credito utilizzabile si usa, come vuole D-024. Se lo studio vorrà la scelta, un campo facoltativo con default "sì".
+- **Ordine**: dentro `bookFromPanel`, sotto il lucchetto sul cliente che c'era già (D-048), `lockUsableLot` prima dell'`insert` e `commit` (−1) dopo. La prenotazione nasce `CONFIRMED` in entrambi i casi; il credito è usato subito, e lo restituirà solo una cancellazione in tempo (passo 11). `Booking.bookedFromPanel` accetta solo `IN_STUDIO` o `CREDIT`.
+- **Chi lo vede**: `PanelBookingView` riceve `paidWith`; l'email "Prenotazione confermata" dice "Per questa seduta è stato usato uno dei tuoi crediti." quando è vero (anche per una richiesta con credito approvata).
+- Il **link di pagamento** resta solo per `IN_STUDIO` (D-059): una seduta pagata con un credito risponde 409 `PAYMENT_LINK_NOT_ALLOWED`, ora con un test.
+
+**Alternative scartate.** *Un campo `useCredit` nella richiesta del pannello*: una domanda in più su ogni prenotazione per un caso raro. *Non dire niente al cliente*: un credito suo speso da un'altra persona, che scoprirebbe solo quando prova a usarlo.
+
+**Conseguenze.** Il passo 11 dovrà restituire il credito (`CANCELLATION_RESTORE`) anche per le sedute del pannello pagate con un credito. **Provato** con lo script corretto (vedi sotto): tolti a turno la scelta del credito, il −1 dopo l'`insert` e la riga dell'email, fallisce ogni volta il test che li protegge.
+
+**Un errore negli script delle prove, trovato qui e corretto (2026-11-11).** Gli script che tolgono le difese a turno, dal pezzo 1 a questo, lanciavano `cmd /c mvnw.cmd`: lanciato da Python in questo ambiente, `cmd` non trova un programma nella cartella corrente per nome relativo, e **Maven non partiva**; lo script leggeva l'errore del comando come "test fallito". Trovato perché ora gli script salvano l'output (lezione del pezzo 3). Corretto con il percorso completo e con il controllo che l'output contenga `Tests run:`. **Tutte le difese di D-069, D-070, D-071 e D-072 sono state rifatte** con lo script corretto il 2026-11-11: **20 su 20** come previsto, ognuna con il motivo del fallimento nel registro di Maven. Quello che era già stato provato a mano reggeva prima (il lucchetto del trigger del saldo, `credit_lot_payment_uq`, il lucchetto sul cliente che basta). Il "fallimento non ripetuto" annotato in D-071 era questo: Maven che non partiva.
+
+---
+
+## D-073 — Concessioni dal pannello: API, chi firma la traccia, le regole di ognuna, il cliente avvisato senza la nota
+**Stato:** accettata · 2026-11-11 · **realizza D-067** e la parte di D-066 sulle concessioni · confronto completo: `docs/studio/40-concessioni.md` · scelte di Claude secondo le raccomandazioni della guida, su indicazione di Nicholas ("se non hai domande, procedi")
+
+**Contesto.** D-067 ha deciso le tre concessioni (omaggio, proroga, correzione), con chi, quando e perché, e nessun limite oltre ai propri lotti e al saldo mai negativo; D-066, che si fanno per email a qualunque cliente. La V15 ha già le colonne della traccia, i `check` che la pretendono e i trigger. Restava da decidere le API, chi firma, le regole di dettaglio, e se il cliente lo sa.
+
+**Decisione.**
+- **API del pannello**, modulo `credit`: `POST /api/panel/credit-grants` (201 + `Location`), `POST /api/panel/credit-lots/{id}/extensions`, `POST /api/panel/credit-lots/{id}/adjustments`, `GET /api/panel/credit-lots/{id}`. La risposta è il lotto con saldo e ultimo giorno valido, **senza nomi** (D-066: per email si raggiunge anche un cliente esistente).
+- **Chi firma**: l'account che agisce (`CurrentUser.id()`), passato al servizio separato dal professionista di cui sono lotti e servizi.
+- **Omaggio**: cliente trovato o creato per email (D-048, un cliente esistente tiene il suo nome); servizio proprio e in vendita (404 altrimenti); almeno 1 seduta, nessun massimo; ultimo giorno scelto, o per default quello delle sedute singole (`single_credit_validity_days`); un giorno già passato → 409 **`CREDIT_VALID_UNTIL_IN_THE_PAST`** (oggi va bene); nota obbligatoria (400).
+- **Proroga**: lotto proprio letto **con il lucchetto** e con il professionista nella query (404 per quello di un altro); **solo in avanti** → 409 **`CREDIT_EXTENSION_NOT_LATER`**; mai a un giorno già passato (`CREDIT_VALID_UNTIL_IN_THE_PAST`); permessa anche su un lotto scaduto.
+- **Correzione**: lotto proprio con il lucchetto (l'addebito di D-069 che non passa dal lucchetto sul cliente); importo diverso da zero (400, `@AssertTrue` sulla richiesta); mai sotto zero → 409 **`CREDIT_BALANCE_INSUFFICIENT`**, il trigger come ultima difesa; permessa anche su un lotto scaduto.
+- **Il cliente è avvisato**: eventi `CreditGranted`, `CreditExtended`, `CreditAdjusted` e un'email per ognuno ("Sedute in omaggio", "Scadenza dei crediti prorogata", "Crediti corretti", con l'importo e il saldo che resta). **Mai la nota**: è la traccia interna. Nessuna push e nessuna email al professionista: l'ha fatto lui.
+- **Moduli**: `credit → catalog, customer, practitioner` (nessuno di loro dipende da `credit`).
+
+**Alternative scartate.** *Un massimo di sedute per omaggio*: contro D-067; il controllo è la traccia. *La nota nell'email*: cambierebbe cosa il professionista ci scrive. *Proroga solo dei lotti non scaduti*: il caso tipico è proprio quello di crediti appena scaduti. *Il nome del cliente nella risposta*: rivelerebbe il nome vero di un cliente esistente a chi ha scritto solo un'email.
+
+**Conseguenze.** Il professionista può fare correzioni e proroghe solo conoscendo l'id del lotto: le liste dei crediti dei suoi clienti arrivano con il pezzo 6. Il credito concesso su una cancellazione tardiva (passo 11) userà lo stesso omaggio, legato alla prenotazione. **Provato** con lo script corretto (D-072): tolti a turno il professionista nella query del lotto, il controllo del saldo in Java (risponde il trigger, con un 500), "solo in avanti" in Java e la data di default dell'omaggio, fallisce ogni volta il test che li protegge.
+
+---
+
+## D-074 — Cosa si vede dei crediti: lo stato deciso dal backend, la storia in una lista, le note solo nel pannello, "i miei clienti" costruita da `booking`
+**Stato:** accettata · 2026-11-11 · realizza la parte di D-066 sulle liste del pannello · confronto completo: `docs/studio/41-cosa-si-vede.md` · scelte di Claude secondo le raccomandazioni della guida, su indicazione di Nicholas ("se non hai domande, procedi")
+
+**Contesto.** Dopo i pezzi 1–5 i crediti si creano, si usano e si correggono, ma nessuno li legge: il cliente non sa quanti ne ha, e il professionista non ha l'id di un lotto da prorogare o correggere. Il brief chiede: per il cliente i crediti per professionista e servizio, con saldo, scadenza e storia; per il professionista "i miei clienti" (D-066) e i crediti di un suo cliente, solo sui propri lotti; niente sotto `/api/public`; test di riservatezza.
+
+**Decisione.**
+- **Cliente**: `GET /api/customer/credits` (tutti i suoi lotti, per ultimo giorno valido, a parità il più vecchio) e `GET /api/customer/credits/{id}` (un lotto con la storia; quello di un altro è un 404).
+- **Professionista**: `GET /api/panel/customers` ("i miei clienti": almeno una prenotazione con lui, in qualunque stato, o almeno un lotto; nome, cognome, email; per cognome e nome), `GET /api/panel/customers/{id}/credits` (solo i suoi lotti di quel cliente), `GET /api/panel/credit-lots/{id}` (un suo lotto con la storia **e le note**; prima del pezzo 6 restituiva solo il lotto).
+- **Stato deciso dal backend** con il giorno di Roma (D-069): `USABLE` (crediti e ultimo giorno non passato; oggi vale ancora), `USED_UP` (saldo 0), `EXPIRED` (crediti ma giorno passato). Il frontend lo mostra, non lo calcola (D-005).
+- **Id, non nomi**, per professionista e servizio dei lotti, come `CustomerBookingView`: i nomi il frontend li ha dal catalogo pubblico.
+- **La storia**: movimenti e proroghe in una lista sola, in ordine di tempo (a parità, i movimenti prima, poi per id): `LOT_CREATED` (con l'origine), `BOOKING`, `BOOKING_RELEASE`, `ADJUSTMENT`, `EXTENSION` (vecchia e nuova data). **Le note solo nel pannello**: chi costruisce la vista del cliente passa esplicitamente "senza note" (`CreditViews.Notes.LEFT_OUT`), e un test controlla che non escano mai.
+- **Due query per una lista**, qualunque sia la sua lunghezza: i lotti, poi i saldi di tutti con una `group by` (`balancesOf`).
+- **"I miei clienti" la costruisce `booking`**, che dipende già da `credit` e `customer`: gli id dei clienti delle sue prenotazioni, più `CreditService.customerIdsOf`, poi `CustomerService.contactsOf` su un insieme (due query: clienti e account).
+
+**Alternative scartate.** *Lo stato calcolato dal frontend*: una regola (il giorno di Roma) in due posti. *Nascondere i lotti finiti*: la storia è del cliente, e un lotto scaduto con crediti è quello da prorogare. *I nomi nei lotti*: `credit` dovrebbe chiedere a due moduli per un dato che il frontend ha già. *Un record senza note per il cliente*: più sicuro ma una seconda copia della stessa storia; il parametro esplicito più il test bastano. *"I miei clienti" in `customer`*: dovrebbe dipendere da `booking` e `credit`, un ciclo.
+
+**Conseguenze.** Il pannello (passo 13) ha tutto per le concessioni: trova il cliente, vede i suoi lotti, sceglie quello da prorogare o correggere. Nessuna paginazione: se servirà, si aggiunge. **Provato** con lo script corretto (D-072): tolti a turno il professionista nella lista dei lotti di un cliente, le note escluse per il cliente, "l'ultimo giorno vale ancora oggi" e i clienti con un lotto in "i miei clienti", fallisce ogni volta il test che li protegge. Il giorno di **Roma** del calcolo dello stato non è provato da questi test (il loro orologio è alle 10 di Roma, dove il giorno UTC e quello di Roma coincidono): lo garantisce `StudioTime.today`, usato apposta.

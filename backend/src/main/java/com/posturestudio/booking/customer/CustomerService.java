@@ -1,6 +1,7 @@
 package com.posturestudio.booking.customer;
 
 import java.util.Collection;
+import java.util.List;
 import java.util.Map;
 import java.util.stream.Collectors;
 
@@ -91,6 +92,20 @@ public class CustomerService {
         Customer customer = repository.findById(customerId)
                 .orElseThrow(() -> new NotFoundException("Customer " + customerId + " not found"));
         return accounts.phoneOf(customer.getUserId());
+    }
+
+    // Names and email of a set of customers, in two queries whatever their number (D-029): for "my customers" of
+    // the panel (D-066, guide 41, part 4). The email is the account's, asked to auth
+    @Transactional(readOnly = true)
+    public Map<Long, CustomerContact> contactsOf(Collection<Long> customerIds) {
+        if (customerIds.isEmpty()) {
+            return Map.of();
+        }
+        List<Customer> found = repository.findByIdIn(customerIds);
+        Map<Long, com.posturestudio.booking.auth.AccountSummary> accountsByUser =
+                accounts.summariesOf(found.stream().map(Customer::getUserId).toList());
+        return found.stream().collect(Collectors.toMap(Customer::getId, customer -> new CustomerContact(
+                accountsByUser.get(customer.getUserId()).email(), customer.getFirstName(), customer.getLastName())));
     }
 
     // The names of a set of customers, in one query: for the panel lists of booking (piece 6)

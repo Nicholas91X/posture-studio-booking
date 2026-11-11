@@ -38,7 +38,7 @@ import com.posturestudio.booking.shared.NotFoundException;
 // commit, which is BookingAfterCommitTest). Today is Friday 6 November 2026, 10:00 in Rome.
 // Bookings are requested through the service: their request time comes from the fixed clock
 @DataJpaTest
-@Import({TestcontainersConfiguration.class, FixedClockConfiguration.class, BookingService.class,
+@Import({TestcontainersConfiguration.class, FixedClockConfiguration.class, BookingService.class, com.posturestudio.booking.credit.CreditService.class,
         BookingOccupiedTime.class, ScheduleService.class, CatalogService.class, PractitionerService.class,
         AccountService.class, CustomerService.class, BookingTestDoubles.class})
 @RecordApplicationEvents

@@ -1,7 +1,7 @@
 package com.posturestudio.booking.booking;
 
 /**
- * How a booking is paid. Same values as booking_paid_with_ck; CREDIT arrives with step 10.
+ * How a booking is paid. Same values as booking_paid_with_ck (V15).
  * Public: the panel lists show it, so its names are part of the API contract (as D-027).
  */
 public enum PaidWith {
@@ -10,5 +10,8 @@ public enum PaidWith {
     CARD,
 
     // in the studio: only for bookings made from the panel, no credit if cancelled in time (D-040)
-    IN_STUDIO
+    IN_STUDIO,
+
+    // with a credit of a lot, committed at request and given back if the request goes nowhere (step 10, D-010)
+    CREDIT
 }

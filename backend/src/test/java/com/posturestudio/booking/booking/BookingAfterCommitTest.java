@@ -35,7 +35,7 @@ import com.posturestudio.booking.schedule.ScheduleService;
 // the service is a transaction of its own, really committed or rolled back, and @AfterEach deletes what
 // was written, as in BookingConcurrencyTest. Same context as the other booking tests
 @DataJpaTest
-@Import({TestcontainersConfiguration.class, FixedClockConfiguration.class, BookingService.class,
+@Import({TestcontainersConfiguration.class, FixedClockConfiguration.class, BookingService.class, com.posturestudio.booking.credit.CreditService.class,
         BookingOccupiedTime.class, ScheduleService.class, CatalogService.class, PractitionerService.class,
         AccountService.class, CustomerService.class, BookingTestDoubles.class})
 @Transactional(propagation = Propagation.NOT_SUPPORTED)
