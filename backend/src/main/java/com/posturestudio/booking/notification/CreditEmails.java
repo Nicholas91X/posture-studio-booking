@@ -8,6 +8,9 @@ import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Component;
 
 import com.posturestudio.booking.credit.CreditEvent;
+import com.posturestudio.booking.credit.CreditEvent.CreditAdjusted;
+import com.posturestudio.booking.credit.CreditEvent.CreditExtended;
+import com.posturestudio.booking.credit.CreditEvent.CreditGranted;
 import com.posturestudio.booking.credit.CreditEvent.PackagePurchased;
 import com.posturestudio.booking.notification.OutgoingEmail.Recipient;
 
@@ -39,7 +42,52 @@ class CreditEmails {
     List<OutgoingEmail> emailsFor(CreditEvent event, BookingFacts facts) {
         return switch (event) {
             case PackagePurchased purchased -> List.of(confirmation(purchased, facts), sold(purchased, facts));
+            // the concessions (guide 40, part 6): to the customer only, who must know why their credits changed.
+            // Never the note of the practitioner: it is the internal trace (D-067), not written for the customer
+            case CreditGranted granted -> List.of(toCustomer(facts, "Sedute in omaggio", """
+                    hai ricevuto %s in omaggio:
+
+                        %s con %s %s
+
+                    Puoi %s per prenotare fino a %s compreso.
+
+                    Per prenotare: %s
+                    """.formatted(sessions(granted.credits()), facts.serviceName(), facts.practitioner().firstName(),
+                    facts.practitioner().lastName(), granted.credits() == 1 ? "usarla" : "usarle",
+                    DAY.format(granted.validUntil()), appUrl)));
+            case CreditExtended extended -> List.of(toCustomer(facts, "Scadenza dei crediti prorogata", """
+                    la scadenza dei tuoi crediti è stata prorogata:
+
+                        %s con %s %s
+
+                    Prima potevi usarli fino a %s, ora fino a %s compreso.
+
+                    Per prenotare: %s
+                    """.formatted(facts.serviceName(), facts.practitioner().firstName(), facts.practitioner().lastName(),
+                    DAY.format(extended.oldValidUntil()), DAY.format(extended.newValidUntil()), appUrl)));
+            case CreditAdjusted adjusted -> List.of(toCustomer(facts, "Crediti corretti", """
+                    i tuoi crediti sono stati corretti:
+
+                        %s con %s %s
+                        %s: %s
+
+                    Ora ne hai %d, da usare entro %s compreso.
+
+                    Per qualsiasi domanda, contatta lo studio: %s
+                    """.formatted(facts.serviceName(), facts.practitioner().firstName(), facts.practitioner().lastName(),
+                    adjusted.amount() > 0 ? "aggiunte" : "tolte", sessions(Math.abs(adjusted.amount())),
+                    adjusted.balance(), DAY.format(adjusted.validUntil()), appUrl)));
         };
+    }
+
+    private static OutgoingEmail toCustomer(BookingFacts facts, String subject, String body) {
+        return new OutgoingEmail(Recipient.CUSTOMER, facts.customer().email(), subject,
+                "Gentile " + facts.customer().firstName() + ",\n\n" + body + FOOTER);
+    }
+
+    // "1 seduta", "3 sedute"
+    private static String sessions(int count) {
+        return count == 1 ? "1 seduta" : count + " sedute";
     }
 
     private OutgoingEmail sold(PackagePurchased purchased, BookingFacts facts) {

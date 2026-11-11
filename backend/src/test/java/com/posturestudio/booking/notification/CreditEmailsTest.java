@@ -60,4 +60,37 @@ class CreditEmailsTest {
                     .doesNotContain("Maria").doesNotContain("Bianchi");
         });
     }
+    // ***** the concessions (guide 40, part 6): to the customer only, never the note *****
+
+    @Test
+    void aGiftIsToldToTheCustomer() {
+        var sent = emails.emailsFor(new CreditEvent.CreditGranted(7, 1, 2, 3, 1, LocalDate.of(2027, 2, 8)), FACTS);
+
+        assertThat(sent).singleElement().satisfies(email -> {
+            assertThat(email.recipient()).isEqualTo(Recipient.CUSTOMER);
+            assertThat(email.subject()).isEqualTo("Sedute in omaggio");
+            assertThat(email.text()).contains("hai ricevuto 1 seduta in omaggio")
+                    .contains("Seduta posturale con Anna Rossi")
+                    .contains("Puoi usarla per prenotare fino a lunedì 8 febbraio 2027 compreso");
+        });
+    }
+
+    @Test
+    void anExtensionIsToldWithBothDays() {
+        var sent = emails.emailsFor(new CreditEvent.CreditExtended(7, 1, 2, 3, LocalDate.of(2026, 12, 31),
+                LocalDate.of(2027, 3, 31)), FACTS);
+
+        assertThat(sent).singleElement().satisfies(email -> assertThat(email.text())
+                .contains("Prima potevi usarli fino a giovedì 31 dicembre 2026, ora fino a mercoledì 31 marzo 2027 compreso"));
+    }
+
+    @Test
+    void aCorrectionIsToldWithWhatIsLeft() {
+        var sent = emails.emailsFor(new CreditEvent.CreditAdjusted(7, 1, 2, 3, -1, 2, LocalDate.of(2026, 12, 31)), FACTS);
+
+        assertThat(sent).singleElement().satisfies(email -> {
+            assertThat(email.subject()).isEqualTo("Crediti corretti");
+            assertThat(email.text()).contains("tolte: 1 seduta").contains("Ora ne hai 2, da usare entro giovedì 31 dicembre 2026");
+        });
+    }
 }

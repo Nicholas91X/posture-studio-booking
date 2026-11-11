@@ -8,7 +8,10 @@
  * The database defends the ledger by itself (V15): append-only movements, a lot that changes only its last
  * valid day and only with its trace, no lot below zero.
  *
- * Other modules refer to lots, payments, bookings and accounts by id (D-026). Dependencies will go into this
- * module (booking -> credit, payment -> credit), never out of it towards them.
+ * - the concessions of the practitioner from the panel: gift, extension, correction (CreditConcessions, D-073).
+ *
+ * Other modules refer to lots, payments, bookings and accounts by id (D-026). booking and payment depend on
+ * credit, never the other way; credit depends on catalog, customer and practitioner (for the concessions), none of
+ * which depends on it.
  */
 package com.posturestudio.booking.credit;

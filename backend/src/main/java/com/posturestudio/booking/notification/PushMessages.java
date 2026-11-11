@@ -17,6 +17,9 @@ import com.posturestudio.booking.booking.BookingEvent.BookingRejected;
 import com.posturestudio.booking.booking.BookingEvent.BookingWithdrawn;
 import com.posturestudio.booking.booking.BookingEvent.LatePaymentReleased;
 import com.posturestudio.booking.credit.CreditEvent;
+import com.posturestudio.booking.credit.CreditEvent.CreditAdjusted;
+import com.posturestudio.booking.credit.CreditEvent.CreditExtended;
+import com.posturestudio.booking.credit.CreditEvent.CreditGranted;
 import com.posturestudio.booking.credit.CreditEvent.PackagePurchased;
 import com.posturestudio.booking.notification.PushMessage.PushPayload;
 import com.posturestudio.booking.shared.StudioTime;
@@ -69,6 +72,10 @@ class PushMessages {
                             purchased.credits() + " sedute · valide fino a " + DAY.format(purchased.validUntil()),
                             appUrl, "lot-" + purchased.lotId()),
                     SOLD_PACKAGE_TTL));
+            // the practitioner made them: nothing to tell them (guide 40, part 6)
+            case CreditGranted granted -> Optional.empty();
+            case CreditExtended extended -> Optional.empty();
+            case CreditAdjusted adjusted -> Optional.empty();
         };
     }
 

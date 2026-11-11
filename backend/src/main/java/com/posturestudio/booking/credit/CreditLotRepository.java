@@ -37,6 +37,12 @@ interface CreditLotRepository extends Repository<CreditLot, Long> {
     @Lock(LockModeType.PESSIMISTIC_WRITE)
     Optional<CreditLot> findLockedById(long id);
 
+    // the same, for a concession: the practitioner is part of the query, the lot of another is not found
+    @Lock(LockModeType.PESSIMISTIC_WRITE)
+    Optional<CreditLot> findLockedByIdAndPractitionerId(long id, long practitionerId);
+
+    Optional<CreditLot> findByIdAndPractitionerId(long id, long practitionerId);
+
     // the lots bought by these payments, with the credits of their LOT_CREATED movement: one query for a list
     @Query("""
             select new com.posturestudio.booking.credit.PackageLot(l.paymentId, l.id, m.amount, l.validUntil)

@@ -150,6 +150,15 @@ Lo stesso meccanismo vale per i professionisti: la loro email ha il ruolo `PRACT
 
 Nessun passaggio su Stripe.
 
+### Concessioni del professionista (D-067, D-073)
+
+Dal pannello, sui propri lotti e servizi, sempre con chi (l'account), quando e perché (una nota obbligatoria):
+- **seduta omaggio**: un lotto nuovo per un cliente trovato o creato per email, valido fino al giorno scelto o quanto una seduta singola;
+- **proroga**: l'ultimo giorno valido di un lotto più avanti, anche se è già scaduto, con la riga della storia;
+- **correzione**: un movimento ±N, mai sotto zero.
+
+Il cliente riceve un'email per ognuna, senza la nota del professionista.
+
 ### Acquisto di un pacchetto
 
 1. Il cliente sceglie un pacchetto in vendita (`POST /api/customer/package-purchases`). Se il professionista non ha un conto di incasso, la richiesta è rifiutata prima di chiamare Stripe (D-057).

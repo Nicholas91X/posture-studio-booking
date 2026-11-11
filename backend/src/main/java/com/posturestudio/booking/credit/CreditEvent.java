@@ -23,4 +23,21 @@ public sealed interface CreditEvent {
     record PackagePurchased(long lotId, long customerId, long practitionerId, long serviceId, int credits,
                             LocalDate validUntil) implements CreditEvent {
     }
+
+    // the concessions of the practitioner (D-067, guide 40, part 6): the customer is told, never the note
+
+    // a gift: a new lot of credits sessions
+    record CreditGranted(long lotId, long customerId, long practitionerId, long serviceId, int credits,
+                         LocalDate validUntil) implements CreditEvent {
+    }
+
+    // an extension: the last valid day moved forward
+    record CreditExtended(long lotId, long customerId, long practitionerId, long serviceId, LocalDate oldValidUntil,
+                          LocalDate newValidUntil) implements CreditEvent {
+    }
+
+    // a correction of amount (+N or -N); balance: what is left on the lot after it
+    record CreditAdjusted(long lotId, long customerId, long practitionerId, long serviceId, int amount, long balance,
+                          LocalDate validUntil) implements CreditEvent {
+    }
 }
