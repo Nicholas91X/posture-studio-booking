@@ -216,6 +216,20 @@ Il brief la chiede ("acquisto provato con la Stripe CLI; avviso doppio → un so
 5. **avviso doppio**: `stripe events resend <evt_...>` del `checkout.session.completed` → risposta 200, nel database **un solo** lotto (`select count(*) from credit_lot where payment_id = ...`);
 6. l'email "Acquisto confermato" in Mailpit.
 
+### 12.1 Com'è andata (2026-11-11)
+
+Fatta da Nicholas, guidato in chat, con tutti i risultati attesi:
+- **dati di partenza** di ieri ancora validi: Anna è il professionista **5** (gli id di servizi e professionisti sono indipendenti: `practitioners/1` dava 404), con il conto `prova`; V15 applicata (`flyway_schema_history`);
+- **pacchetto** creato da Anna (`POST /api/panel/packages`, id 1); **acquisto** `201`, `PENDING`, pagina fino a un'ora dopo;
+- **pagamento** con `4242`: in `stripe listen` prima `payment_intent.succeeded` (nel registro "no payment of ours": arriva prima del `completed`, ed è il caso previsto nella parte 7), poi `checkout.session.completed` → "Package payment 10 paid: lot 1 with 5 credits, valid until 2027-02-09". Pagato l'11 novembre, 90 giorni: 9 febbraio;
+- **lista degli acquisti**: il 10 `PAID` con il lotto, il 9 (una seconda pagina aperta e mai pagata) `PENDING` finché la pagina valeva, poi `EXPIRED` per l'orologio;
+- **dashboard**: 120 € "Riuscito" (incasso immediato); **Mailpit**: "Acquisto confermato" a Maria, "Pacchetto venduto" ad Anna (riserva della push);
+- **avviso doppio**: `stripe events resend` dello stesso `checkout.session.completed` → `200`, e nel database **un solo lotto**, saldo 5.
+
+Due inciampi, nessuno del codice:
+- **il backend con le classi vecchie**: il primo acquisto ha risposto 404 "No static resource", cioè nessun controller per quell'indirizzo. L'avvio aveva usato classi compilate prima del pezzo 2. Riavviato con `mvnw spring-boot:run`, che ricompila sempre. Lezione: "la migrazione c'è" non prova che il codice sia aggiornato (la V15 era del pezzo 1);
+- **un falso allarme mio**: dopo il pagamento ho letto l'acquisto 9, ancora `PENDING`, e ho pensato a un webhook che rispondeva 200 senza fare niente. Ma era stata pagata la pagina dell'acquisto 10, aperta da un secondo `POST`: lo diceva l'id della sessione nell'evento (`cs_test_a0KXt...` contro `cs_test_a0tmi...`). Lezione: prima di dichiarare un difetto, confrontare gli identificativi, non le impressioni. Gli orari di `stripe listen` sono ora di Roma, quelli delle nostre risposte UTC.
+
 ---
 
 ## Parte 13 — Cosa c'è da decidere
