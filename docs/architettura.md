@@ -159,6 +159,11 @@ Dal pannello, sui propri lotti e servizi, sempre con chi (l'account), quando e p
 
 Il cliente riceve un'email per ognuna, senza la nota del professionista.
 
+### Cosa si vede dei crediti (D-074)
+
+- **Il cliente** vede tutti i suoi lotti, con il saldo, l'ultimo giorno valido e lo stato (utilizzabile, esaurito, scaduto) deciso dal backend, e la storia di ognuno (nato, prenotazioni, restituzioni, correzioni, proroghe), mai le note del professionista.
+- **Il professionista** vede "i miei clienti" (chi ha una prenotazione o un lotto con lui, D-066) con nome ed email, e di ognuno solo i propri lotti, con la storia e le note.
+
 ### Acquisto di un pacchetto
 
 1. Il cliente sceglie un pacchetto in vendita (`POST /api/customer/package-purchases`). Se il professionista non ha un conto di incasso, la richiesta è rifiutata prima di chiamare Stripe (D-057).

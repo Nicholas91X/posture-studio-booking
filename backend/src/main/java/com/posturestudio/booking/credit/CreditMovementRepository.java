@@ -16,6 +16,13 @@ interface CreditMovementRepository extends Repository<CreditMovement, Long> {
 
     List<CreditMovement> findByCreditLotIdOrderById(long lotId);
 
+    // the balances of a list of lots in one query (guide 41, part 1): no sum per lot
+    @Query("""
+            select new com.posturestudio.booking.credit.LotBalance(m.creditLotId, sum(m.amount))
+            from CreditMovement m where m.creditLotId in :lotIds group by m.creditLotId
+            """)
+    List<LotBalance> balancesOf(java.util.Collection<Long> lotIds);
+
     // the credit a booking took: at most one (credit_movement_one_debit_per_booking_uq)
     java.util.Optional<CreditMovement> findByBookingIdAndReason(long bookingId, MovementReason reason);
 

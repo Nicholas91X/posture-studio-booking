@@ -43,6 +43,17 @@ interface CreditLotRepository extends Repository<CreditLot, Long> {
 
     Optional<CreditLot> findByIdAndPractitionerId(long id, long practitionerId);
 
+    // what can be read (guide 41): the lots of a customer, of a customer with one practitioner, one of a customer
+    List<CreditLot> findByCustomerIdOrderByValidUntilAscIdAsc(long customerId);
+
+    List<CreditLot> findByCustomerIdAndPractitionerIdOrderByValidUntilAscIdAsc(long customerId, long practitionerId);
+
+    Optional<CreditLot> findByIdAndCustomerId(long id, long customerId);
+
+    // the customers with at least one lot with this practitioner: half of "my customers" (D-066)
+    @Query("select distinct l.customerId from CreditLot l where l.practitionerId = :practitionerId")
+    List<Long> findCustomerIdsOf(long practitionerId);
+
     // the lots bought by these payments, with the credits of their LOT_CREATED movement: one query for a list
     @Query("""
             select new com.posturestudio.booking.credit.PackageLot(l.paymentId, l.id, m.amount, l.validUntil)

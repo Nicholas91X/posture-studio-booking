@@ -105,12 +105,6 @@ class CreditConcessions {
         return PanelCreditLotView.of(lot, after);
     }
 
-    @Transactional(readOnly = true)
-    public PanelCreditLotView find(long practitionerId, long lotId) {
-        CreditLot lot = lots.findByIdAndPractitionerId(lotId, practitionerId).orElseThrow(() -> notFound(lotId));
-        return PanelCreditLotView.of(lot, movements.balanceOf(lot.getId()));
-    }
-
     // the practitioner is part of the query: the lot of another is not found (404), as everything of another
     private CreditLot ownLocked(long practitionerId, long lotId) {
         return lots.findLockedByIdAndPractitionerId(lotId, practitionerId).orElseThrow(() -> notFound(lotId));

@@ -16,7 +16,8 @@ import com.posturestudio.booking.practitioner.CurrentPractitioner;
 import jakarta.validation.Valid;
 
 /**
- * The concessions from the panel (D-067, guide 40), under /api/panel: only practitioners (D-051).
+ * The credits in the panel, under /api/panel: only practitioners (D-051). The concessions (D-067, guide 40) and
+ * what can be read of the own lots (guide 41).
  * Who acts comes from the session, never from the request: the practitioner (whose lots) and the account (who
  * signs the trace, guide 40, part 2).
  */
@@ -25,11 +26,14 @@ import jakarta.validation.Valid;
 class CreditPanelController {
 
     private final CreditConcessions concessions;
+    private final CreditViews views;
     private final CurrentPractitioner practitioner;
     private final CurrentUser user;
 
-    CreditPanelController(CreditConcessions concessions, CurrentPractitioner practitioner, CurrentUser user) {
+    CreditPanelController(CreditConcessions concessions, CreditViews views, CurrentPractitioner practitioner,
+                          CurrentUser user) {
         this.concessions = concessions;
+        this.views = views;
         this.practitioner = practitioner;
         this.user = user;
     }
@@ -50,8 +54,16 @@ class CreditPanelController {
         return concessions.adjust(practitioner.id(), user.id(), id, request);
     }
 
+    // one own lot with its history and the notes (guide 41, part 3)
     @GetMapping("/credit-lots/{id}")
-    PanelCreditLotView find(@PathVariable long id) {
-        return concessions.find(practitioner.id(), id);
+    CreditLotDetail find(@PathVariable long id) {
+        return views.lotOfPractitioner(practitioner.id(), id);
+    }
+
+    // the lots of a customer with this practitioner only (guide 41, part 4); in the credit module, which owns
+    // them, even if the address speaks of customers (as the payment account under practitioners, D-060)
+    @GetMapping("/customers/{customerId}/credits")
+    java.util.List<CreditLotSummary> creditsOf(@PathVariable long customerId) {
+        return views.forCustomerOfPractitioner(practitioner.id(), customerId);
     }
 }

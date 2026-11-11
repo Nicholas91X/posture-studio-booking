@@ -1,6 +1,6 @@
 # Stato del progetto
 
-Ultimo aggiornamento: 2026-11-11 (**passo 10 in corso**: pezzi 1–5 fatti, D-066–D-073; prossimo: pezzo 6, cosa si vede)
+Ultimo aggiornamento: 2026-11-11 (**passo 10**: pezzi 1–6 fatti, D-066–D-074; prossimo: la chiusura del passo)
 
 ## Dove siamo
 
@@ -67,7 +67,9 @@ Fatto nel passo 4: struttura del repository, progetto Spring Boot 4.1.1 su Java 
 
 **Pezzo 4 fatto** (guida 39, D-072): la prenotazione dal pannello usa da sola un credito del cliente con la regola di D-071 (altrimenti "in studio"), sotto il lucchetto sul cliente che c'era già; `paidWith` nella risposta del pannello; la conferma al cliente dice del credito usato; una seduta pagata con un credito non riceve link di pagamento. **Errore trovato negli script delle prove**: dal pezzo 1 lanciavano `cmd /c mvnw.cmd`, che da Python qui non trova il programma, quindi Maven non partiva e l'errore sembrava un test fallito. Corretto (percorso completo, controllo di `Tests run:`, output salvato) e **rifatte tutte le difese del passo: 20 su 20** come previsto (D-072). 965 test verdi (`mvnw clean test`). 
 
-**Pezzo 5 fatto** (guida 40, D-073): le concessioni dal pannello. `POST /api/panel/credit-grants` (omaggio per email, servizio proprio in vendita, data scelta o quella delle sedute singole, mai nel passato), `/credit-lots/{id}/extensions` (solo in avanti, anche su un lotto scaduto), `/credit-lots/{id}/adjustments` (±N, mai sotto zero), `GET /credit-lots/{id}`; firmate dall'account che agisce, con la nota obbligatoria; lotto proprio con il lucchetto; email al cliente per ognuna, senza la nota. Quattro difese tolte a turno con lo script corretto. 988 test verdi (`mvnw clean test`). **Prossimo: pezzo 6**, cosa si vede (crediti del cliente, "i miei clienti" del professionista, riservatezza).
+**Pezzo 5 fatto** (guida 40, D-073): le concessioni dal pannello. `POST /api/panel/credit-grants` (omaggio per email, servizio proprio in vendita, data scelta o quella delle sedute singole, mai nel passato), `/credit-lots/{id}/extensions` (solo in avanti, anche su un lotto scaduto), `/credit-lots/{id}/adjustments` (±N, mai sotto zero), `GET /credit-lots/{id}`; firmate dall'account che agisce, con la nota obbligatoria; lotto proprio con il lucchetto; email al cliente per ognuna, senza la nota. Quattro difese tolte a turno con lo script corretto. 988 test verdi (`mvnw clean test`). 
+
+**Pezzo 6 fatto** (guida 41, D-074): cosa si vede. Il cliente: `GET /api/customer/credits` (i suoi lotti con saldo, ultimo giorno e stato `USABLE`/`USED_UP`/`EXPIRED` deciso dal backend) e `/{id}` (la storia, senza le note). Il professionista: `GET /api/panel/customers` ("i miei clienti" di D-066, costruita da `booking` con domande su insiemi), `/api/panel/customers/{id}/credits` (solo i propri lotti), `/api/panel/credit-lots/{id}` (con la storia e le note). Riservatezza provata (Anna non vede i lotti di Marco del cliente comune, né i clienti solo di Marco). Quattro difese tolte a turno con lo script corretto; una della guida sostituita perché nessun test poteva vederla (il giorno di Roma alle 10 coincide con quello UTC). 998 test verdi (`mvnw clean test`). **Pezzi 1–6 fatti. Prossimo: la chiusura del passo 10** (verifica dei criteri del brief, `passi/10-crediti.md`, PR verso `main`).
 
 **Porta del database** (trovato nella prova del 2026-11-10): se un altro progetto usa già la 5432 (sul computer di Nicholas `auto2g-db`), il container PostgreSQL di questo progetto resta `Created` e il backend si collega al database sbagliato (*password authentication failed*). Soluzione: `POSTGRES_PORT=5433` nel `.env`, che vale sia per Compose sia per il backend.
 

@@ -395,6 +395,22 @@ public class BookingService {
         return rowsFor(practitionerId, waiting, now);
     }
 
+    // "My customers" (D-066, guide 41, part 4): with at least one booking with this practitioner, in any state, or
+    // at least one lot of credits with them. Built here, because booking already depends on credit and customer;
+    // one question each on a set of ids (D-029). Never the customers of the other practitioner only
+    @Transactional(readOnly = true)
+    public List<PanelCustomerView> customersForPanel(long practitionerId) {
+        Set<Long> ids = new HashSet<>(bookings.findCustomerIdsOf(practitionerId));
+        ids.addAll(credits.customerIdsOf(practitionerId));
+        return customers.contactsOf(ids).entrySet().stream()
+                .map(entry -> new PanelCustomerView(entry.getKey(), entry.getValue().firstName(),
+                        entry.getValue().lastName(), entry.getValue().email()))
+                .sorted(Comparator.comparing(PanelCustomerView::lastName, String.CASE_INSENSITIVE_ORDER)
+                        .thenComparing(PanelCustomerView::firstName, String.CASE_INSENSITIVE_ORDER)
+                        .thenComparingLong(PanelCustomerView::id))
+                .toList();
+    }
+
     @Transactional(readOnly = true)
     public List<CustomerBookingView> listForCustomer(long customerId) {
         Instant now = clock.instant();

@@ -97,6 +97,13 @@ public class CreditService {
         return true;
     }
 
+    // The customers with at least one lot with this practitioner (D-066): booking joins them with the customers of
+    // its bookings, for "my customers" of the panel (guide 41, part 4)
+    @Transactional(readOnly = true)
+    public java.util.Set<Long> customerIdsOf(long practitionerId) {
+        return java.util.Set.copyOf(lots.findCustomerIdsOf(practitionerId));
+    }
+
     // The lots of these payments, by payment id (guide 37, part 9): one question for a whole list (D-029).
     // A payment with no lot (still pending, expired) is simply not in the map
     @Transactional(readOnly = true)

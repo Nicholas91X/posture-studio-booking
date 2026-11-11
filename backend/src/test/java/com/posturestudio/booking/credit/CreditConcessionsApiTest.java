@@ -248,7 +248,7 @@ class CreditConcessionsApiTest {
         long lot = annasLot("2026-12-31", 3);
 
         assertThat(mvc.get().uri("/api/panel/credit-lots/" + lot).with(sessions.practitioner(anna)))
-                .hasStatusOk().bodyJson().extractingPath("$.balance").isEqualTo(3);
+                .hasStatusOk().bodyJson().extractingPath("$.lot.balance").isEqualTo(3);
     }
 
     // ***** helpers *****
