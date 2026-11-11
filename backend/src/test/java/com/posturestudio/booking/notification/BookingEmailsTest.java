@@ -93,6 +93,19 @@ class BookingEmailsTest {
 
     // ***** paid with a credit (guide 38, part 8): never a word about a card *****
 
+    // guide 39, part 5: a credit of the customer was spent, maybe by someone else from the panel: say it
+    @Test
+    void aConfirmationWithACreditSaysACreditWasUsed() {
+        OutgoingEmail email = emails.emailsFor(new BookingConfirmed(1, 2, 3, 4, THURSDAY_930, PaidWith.CREDIT), facts)
+                .getFirst();
+
+        assertThat(email.text()).contains("Per questa seduta è stato usato uno dei tuoi crediti.");
+        assertThat(emails.emailsFor(new BookingConfirmed(1, 2, 3, 4, THURSDAY_930, PaidWith.IN_STUDIO), facts)
+                .getFirst().text()).doesNotContain("crediti");
+        assertThat(emails.emailsFor(new BookingConfirmed(1, 2, 3, 4, THURSDAY_930, PaidWith.CARD), facts)
+                .getFirst().text()).doesNotContain("crediti");
+    }
+
     @Test
     void aRequestWithACreditSaysTheCreditIsCommitted() {
         List<OutgoingEmail> sent = emails.emailsFor(

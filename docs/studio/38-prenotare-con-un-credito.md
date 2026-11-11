@@ -212,6 +212,8 @@ Costruito come raccomandato nella parte 10 (D-071), su indicazione di Nicholas d
 - tolto il lucchetto sul **lotto**, il test di concorrenza resta verde, quattro volte su quattro: **il lucchetto sul cliente basta** per le richieste;
 - tolti **entrambi**, fallisce: due richieste vedono lo stesso credito, e il trigger del saldo ferma la seconda.
 
+*Aggiornamento del 2026-11-11, pezzo 4: l'osservazione qui sotto è risolta. Lo script non lanciava Maven ("mvnw.cmd non è riconosciuto"), e leggeva l'errore come un test fallito; vale per tutte le difese del passo, rifatte con lo script corretto (20 su 20, D-072, guida 39 parte 8).*
+
 **Un'osservazione aperta, scritta com'è.** Dentro lo script che toglie le difese a turno, la **prima** esecuzione con il solo lucchetto sul lotto tolto era fallita. Lo script non salvava l'output, quindi non so perché. Ripetuta a mano, e poi tre volte di fila, è sempre passata, e il codice intatto è passato tre volte su tre. Il ragionamento dice che il risultato non dipende dai tempi (la seconda richiesta aspetta comunque il lucchetto sul cliente), quindi il sospetto è qualcosa dell'ambiente di quella esecuzione, ma è un sospetto, non una prova. Lezione per i prossimi script: **salvare sempre l'output** di ogni esecuzione, anche di quelle che sembrano andare come previsto.
 
 **Le difese tolte a turno**, ognuna presa dal suo test:

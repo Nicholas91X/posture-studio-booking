@@ -71,9 +71,9 @@ class BookingEmails {
                     la tua prenotazione è confermata:
 
                     %s
-
+                    %s
                     Le tue prenotazioni: %s
-                    """.formatted(details(facts, confirmed.startsAt()), appUrl)));
+                    """.formatted(details(facts, confirmed.startsAt()), creditUsed(confirmed.paidWith()), appUrl)));
             case BookingRejected rejected -> List.of(toCustomer(facts, "Prenotazione non confermata", rejected.startsAt(), """
                     la tua richiesta di prenotazione non è stata accettata:
 
@@ -158,6 +158,15 @@ class BookingEmails {
                             L'importo è bloccato sulla carta, non addebitato: si addebita solo se la richiesta
                             viene approvata. Altrimenti il blocco si annulla e non paghi niente.""";
                 }, appUrl));
+    }
+
+    // A credit of the customer paid this session: say it, it is theirs, and from the panel it was spent by someone
+    // else (guide 39, part 5). With a blank line after it; nothing at all otherwise
+    private static String creditUsed(PaidWith paidWith) {
+        return switch (paidWith) {
+            case CREDIT -> "\nPer questa seduta è stato usato uno dei tuoi crediti.\n";
+            case CARD, IN_STUDIO -> "";
+        };
     }
 
     // what the customer did not lose when a request goes nowhere: a released hold, or a credit back. A switch

@@ -308,7 +308,9 @@ public class BookingService {
 
     // ***** PRACTITIONER *****
 
-    // Booked from the panel for a customer, paid in the studio and confirmed at once (guide 22).
+    // Booked from the panel for a customer and confirmed at once (guide 22): with a credit of the customer when one
+    // covers the session, the same rule as the customer's request (D-024, D-071, guide 39), otherwise paid in the
+    // studio (D-040).
     // Working bands and absences apply; grid, notice, horizon, limit and approval do not (guide 22, part 2).
     // Customer found or created by email in this same transaction: a failed booking leaves no new customer
     @Transactional
@@ -330,13 +332,13 @@ public class BookingService {
         // the same last steps as a customer's request: stale holds closed, overlap left to the constraint
         bookings.expireStaleHolds(practitionerId, slot.start(), slot.end(), now,
                 BookingStatus.PENDING_PAYMENT, BookingStatus.EXPIRED);
+        // the usable lot that ends first, locked: under the lock on the customer taken above (lock order of D-069)
+        var lot = credits.lockUsableLot(customerId, practitionerId, service.id(), slot.start());
         Booking booking = Booking.bookedFromPanel(customerId, practitionerId, service.id(), slot,
-                service.priceCents(), now);
-        try {
-            bookings.saveAndFlush(booking);
-        } catch (DataIntegrityViolationException | PessimisticLockingFailureException e) {
-            throw translateOverlap(e, practitionerId, slot);
-        }
+                service.priceCents(), now, lot.isPresent() ? PaidWith.CREDIT : PaidWith.IN_STUDIO);
+        insert(booking, practitionerId, slot);
+        // used at once: no request that a rejection could give back; only a cancellation in time will (step 11)
+        lot.ifPresent(lotId -> credits.commit(lotId, booking.getId()));
         events.publishEvent(BookingConfirmed.of(booking));
         return PanelBookingView.from(booking);
     }

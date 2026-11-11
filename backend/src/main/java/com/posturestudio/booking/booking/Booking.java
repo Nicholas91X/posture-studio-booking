@@ -77,13 +77,18 @@ class Booking {
         return booking;
     }
 
-    // Booked by the practitioner for their customer, to be paid in the studio (D-024, D-040): born CONFIRMED,
-    // decided now by the practitioner. Not a transition: the state machine is about steps, not birth.
-    // The only way to create a confirmed booking; no hold, no approval
+    // Booked by the practitioner for their customer (D-024): born CONFIRMED, decided now by the practitioner.
+    // Not a transition: the state machine is about steps, not birth. No hold, no approval.
+    // Paid with a credit of the customer when there is one (D-024, guide 39), committed by BookingService right
+    // after the insert; otherwise to be paid in the studio (D-040). Nothing else from the panel
     static Booking bookedFromPanel(long customerId, long practitionerId, long serviceId, TimeRange slot,
-                                   long priceCents, Instant now) {
+                                   long priceCents, Instant now, PaidWith paidWith) {
         Objects.requireNonNull(slot, "slot must not be null");
         Objects.requireNonNull(now, "now must not be null");
+        if (paidWith != PaidWith.IN_STUDIO && paidWith != PaidWith.CREDIT) {
+            throw new IllegalArgumentException("A booking from the panel is paid in the studio or with a credit, not "
+                    + paidWith);
+        }
         Booking booking = new Booking();
         booking.customerId = customerId;
         booking.practitionerId = practitionerId;
@@ -92,7 +97,7 @@ class Booking {
         booking.endsAt = slot.end();
         booking.status = BookingStatus.CONFIRMED;
         booking.bookedBy = BookedBy.PRACTITIONER;
-        booking.paidWith = PaidWith.IN_STUDIO;
+        booking.paidWith = paidWith;
         booking.priceCents = Checks.requirePositive(priceCents, "priceCents");
         booking.decidedAt = now;
         booking.createdAt = now;

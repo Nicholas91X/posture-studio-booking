@@ -68,7 +68,7 @@ public class BookingPanelApiTest {
                 .bodyJson().isStrictlyEqualTo("""
                         {"id": %d, "customerId": %d, "serviceId": %d,
                          "startsAt": "2026-11-09T09:00:00+01:00", "endsAt": "2026-11-09T10:00:00+01:00",
-                         "status": "CONFIRMED", "approvalDeadline": "2026-11-07T10:00:00+01:00"}
+                         "status": "CONFIRMED", "paidWith": "CARD", "approvalDeadline": "2026-11-07T10:00:00+01:00"}
                         """.formatted(waiting, customerOf(waiting), serviceOf(waiting)));
     }
 
@@ -118,6 +118,8 @@ public class BookingPanelApiTest {
         int id = JsonPath.read(result.getResponse().getContentAsString(), "$.id");
         assertThat(result).hasHeader("Location", "/api/panel/bookings/" + id);
         assertThat(result).bodyJson().extractingPath("$.status").isEqualTo("CONFIRMED");
+        // the practitioner sees at once how it is paid (guide 39, part 5)
+        assertThat(result).bodyJson().extractingPath("$.paidWith").isEqualTo("IN_STUDIO");
         assertThat(mvc.get().uri("/api/panel/bookings/" + id).with(sessions.practitioner(anna)))
                 .hasStatusOk()
                 .bodyJson().extractingPath("$.startsAt").isEqualTo("2026-11-10T09:00:00+01:00");

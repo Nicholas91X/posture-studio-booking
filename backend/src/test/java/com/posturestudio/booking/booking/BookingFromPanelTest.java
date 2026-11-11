@@ -67,6 +67,59 @@ public class BookingFromPanelTest {
         data.weekdays(anna, "2026-11-02");
     }
 
+    // ***** with a credit of the customer (D-024, guide 39) *****
+
+    @Test
+    void aCustomerWithACreditIsBookedWithIt() {
+        long mario = data.customer(MARIO.email());
+        long later = data.creditLot(anna, seduta, mario, "2027-01-31", 5);
+        long sooner = data.creditLot(anna, seduta, mario, "2026-12-31", 5);
+
+        PanelBookingView booked = book("2026-11-09T09:00+01:00", MARIO);
+
+        assertThat(booked.status()).isEqualTo(BookingStatus.CONFIRMED);
+        assertThat(booked.paidWith()).isEqualTo(PaidWith.CREDIT);
+        entityManager.flush();
+        // used at once, on the lot that ends first (D-010)
+        assertThat(data.movementsOf(booked.id())).containsExactly("BOOKING -1 " + sooner);
+        assertThat(data.balance(later)).isEqualTo(5);
+        assertThat(events.stream(BookingConfirmed.class)).singleElement()
+                .extracting(BookingConfirmed::paidWith).isEqualTo(PaidWith.CREDIT);
+    }
+
+    // the panel has no horizon: a session after the last valid day goes in the studio (D-071, guide 39, part 2)
+    @Test
+    void aCreditThatEndsBeforeTheSessionIsNotUsedFromThePanelEither() {
+        long mario = data.customer(MARIO.email());
+        long lot = data.creditLot(anna, seduta, mario, "2026-11-08", 5);
+
+        assertThat(book("2026-11-09T09:00+01:00", MARIO).paidWith()).isEqualTo(PaidWith.IN_STUDIO);
+        entityManager.flush();
+        assertThat(data.balance(lot)).isEqualTo(5);
+    }
+
+    @Test
+    void aCreditOfAnotherServiceIsNotUsedFromThePanel() {
+        long mario = data.customer(MARIO.email());
+        long lot = data.creditLot(anna, data.service(anna, 60), mario, "2026-12-31", 5);
+
+        assertThat(book("2026-11-09T09:00+01:00", MARIO).paidWith()).isEqualTo(PaidWith.IN_STUDIO);
+        entityManager.flush();
+        assertThat(data.balance(lot)).isEqualTo(5);
+    }
+
+    // the last credit: the first booking uses it, the second is to be paid in the studio
+    @Test
+    void afterTheLastCreditTheNextBookingIsPaidInTheStudio() {
+        long mario = data.customer(MARIO.email());
+        long lot = data.creditLot(anna, seduta, mario, "2026-12-31", 1);
+
+        assertThat(book("2026-11-09T09:00+01:00", MARIO).paidWith()).isEqualTo(PaidWith.CREDIT);
+        assertThat(book("2026-11-09T10:00+01:00", MARIO).paidWith()).isEqualTo(PaidWith.IN_STUDIO);
+        entityManager.flush();
+        assertThat(data.balance(lot)).isZero();
+    }
+
     // ***** the booking *****
 
     @Test
@@ -78,6 +131,8 @@ public class BookingFromPanelTest {
         Map<String, Object> row = jdbc.queryForMap(
                 "select booked_by, paid_with, hold_expires_at, decided_at from booking where id = ?", booked.id());
         assertThat(row).containsEntry("booked_by", "PRACTITIONER").containsEntry("paid_with", "IN_STUDIO");
+        // a new customer has no credits (guide 39, part 2)
+        assertThat(booked.paidWith()).isEqualTo(PaidWith.IN_STUDIO);
         assertThat(row.get("hold_expires_at")).isNull();
         assertThat(row.get("decided_at")).isNotNull();
         String email = jdbc.queryForObject(
