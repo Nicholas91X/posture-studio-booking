@@ -27,6 +27,12 @@ public class FakeStripeGateway implements StripeGateway {
                        Instant expiresAt, URI successUrl, URI cancelUrl, String idempotencyKey, URI returnedUrl) {
     }
 
+    // a page for a package (guide 37): which package, how much, until when
+    public record PackageCall(String account, long packageOfferId, long amountCents, String description,
+                              String customerEmail, Instant expiresAt, URI successUrl, URI cancelUrl,
+                              String idempotencyKey, URI returnedUrl) {
+    }
+
     // a release asked: on which account, which PaymentIntent, with which key
     public record Cancel(String account, String paymentIntentId, String idempotencyKey) {
     }
@@ -36,6 +42,7 @@ public class FakeStripeGateway implements StripeGateway {
     }
 
     private final List<Call> calls = new CopyOnWriteArrayList<>();
+    private final List<PackageCall> packageCalls = new CopyOnWriteArrayList<>();
     private final List<Cancel> cancels = new CopyOnWriteArrayList<>();
     private final List<Capture> captures = new CopyOnWriteArrayList<>();
     // the PaymentIntents captured so far: on Stripe a capture stays a capture (forgetCalls() keeps them)
@@ -80,9 +87,15 @@ public class FakeStripeGateway implements StripeGateway {
         // unique even across tests that commit in the same database
         String id = "cs_test_fake_" + UUID.randomUUID().toString().replace("-", "");
         URI url = URI.create("https://checkout.stripe.test/c/pay/" + id);
-        calls.add(new Call(account.name(), session.bookingId(), session.amountCents(), session.description(),
-                session.customerEmail(), session.expiresAt(), session.successUrl(), session.cancelUrl(),
-                idempotencyKey, url));
+        switch (session) {
+            case BookingCheckout booking -> calls.add(new Call(account.name(), booking.bookingId(),
+                    booking.amountCents(), booking.description(), booking.customerEmail(), booking.expiresAt(),
+                    booking.successUrl(), booking.cancelUrl(), idempotencyKey, url));
+            case PackageCheckout purchase -> packageCalls.add(new PackageCall(account.name(),
+                    purchase.packageOfferId(), purchase.amountCents(), purchase.description(),
+                    purchase.customerEmail(), purchase.expiresAt(), purchase.successUrl(), purchase.cancelUrl(),
+                    idempotencyKey, url));
+        }
         return new CheckoutSession(id, url);
     }
 
@@ -187,6 +200,7 @@ public class FakeStripeGateway implements StripeGateway {
     // stays, as it would on the real one (the reconciliation, guide 33, part 6)
     public void forgetCalls() {
         calls.clear();
+        packageCalls.clear();
         cancels.clear();
         captures.clear();
         down = false;
@@ -231,6 +245,10 @@ public class FakeStripeGateway implements StripeGateway {
 
     public List<Call> calls() {
         return List.copyOf(calls);
+    }
+
+    public List<PackageCall> packageCalls() {
+        return List.copyOf(packageCalls);
     }
 
     @TestConfiguration(proxyBeanMethods = false)

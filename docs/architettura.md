@@ -152,8 +152,11 @@ Nessun passaggio su Stripe.
 
 ### Acquisto di un pacchetto
 
-1. Il cliente sceglie il pacchetto. Il backend crea un pagamento "in attesa" e la sessione Stripe Checkout.
-2. Al webhook `checkout.session.completed`: crea il lotto di crediti con la scadenza del pacchetto e il movimento +N.
+1. Il cliente sceglie un pacchetto in vendita (`POST /api/customer/package-purchases`). Se il professionista non ha un conto di incasso, la richiesta è rifiutata prima di chiamare Stripe (D-057).
+2. Nella stessa transazione il backend crea la sessione Stripe Checkout con **incasso immediato** (D-031) sul conto del professionista, che dura **un'ora**, e registra il pagamento "in attesa" con la **fotografia** di quello che il cliente vede: prezzo, sedute, validità (D-069). Se Stripe non risponde, non resta niente.
+3. Il cliente paga e torna alla pagina dei suoi crediti, che chiede lo stato degli acquisti (D-007).
+4. Al webhook `checkout.session.completed` con `payment_status = paid`: il pagamento diventa "riuscito" e nasce il lotto dalla fotografia (anche se nel frattempo il pacchetto è cambiato o è stato disattivato), con il movimento +N e l'ultimo giorno valido contato dal giorno del pagamento a Roma. **Una volta sola**: evento già visto, pagamento letto con il lucchetto, un lotto per pagamento nel database (D-070).
+5. Dopo il commit, il cliente riceve l'email "Acquisto confermato".
 
 ### Cancellazione
 
@@ -173,7 +176,7 @@ Cosa si usa, con le decisioni da cui viene:
 - **Tempi d'attesa verso Stripe** (D-061): 2 secondi per collegarsi, 5 per leggere, un nuovo tentativo; ogni errore di Stripe diventa un 503 e annulla la transazione.
 - **Manual capture** (D-031, D-063): per le sedute la sessione blocca l'importo senza incassarlo. All'**approvazione** il backend legge il PaymentIntent e, se è ancora da incassare, incassa; poi conferma (D-064). Al **rifiuto**, al **ritiro** e alla **scadenza della risposta** annulla il blocco; se Stripe non risponde, un lavoro programmato riprova con pause crescenti, poi si arrende (D-064). Il blocco dura in genere 7 giorni. I pacchetti (passo 10) si incassano subito.
 - **Webhook** (D-062, D-063): un indirizzo per conto, `/api/webhooks/stripe/{conto}`, fuori dal CSRF e protetto dalla firma. **Sugli endpoint di Stripe si abilitano quattro eventi**, formato completo, versione dell'API `2026-10-28.endive`:
-  - `checkout.session.completed` → pagamento bloccato, prenotazione in attesa di approvazione. Con l'incasso manuale la sessione dice `payment_status = unpaid`: conta `status = complete`. (Al passo 10, per un pacchetto: il lotto di crediti.)
+  - `checkout.session.completed` → pagamento bloccato, prenotazione in attesa di approvazione. Con l'incasso manuale la sessione dice `payment_status = unpaid`: conta `status = complete`. Per un **pacchetto** (incasso immediato) deve dire `paid`: il pagamento è riuscito e nasce il lotto di crediti (D-070).
   - `checkout.session.expired` → pagamento scaduto; la prenotazione la chiude il lavoro programmato entro un minuto.
   - `payment_intent.succeeded` → riconciliazione: se il nostro commit dopo l'incasso era fallito, il pagamento risulta incassato e la prenotazione confermata, senza incassare di nuovo.
   - `payment_intent.canceled` → il blocco sciolto da Stripe dopo 7 giorni, o un nostro annullamento che Stripe non aveva confermato.

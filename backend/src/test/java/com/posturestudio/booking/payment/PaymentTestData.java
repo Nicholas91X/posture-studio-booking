@@ -113,6 +113,19 @@ final class PaymentTestData {
                 """, Long.class, practitionerId, serviceId);
     }
 
+    // A purchase of a package (V15): the photo of what the customer saw, 5 sessions for 120 euros, 90 days, on
+    // "alpha". createdAt decides until when its page can be paid (an hour, guide 37, part 3)
+    long packagePayment(long customerId, long packageOfferId, String status, String checkoutSessionId,
+                        String createdAt) {
+        return jdbc.queryForObject("""
+                insert into payment (purpose, package_offer_id, customer_id, package_credits, package_validity_days,
+                                     account, amount_cents, status, stripe_checkout_session_id, checkout_url, created_at)
+                values ('PACKAGE', ?, ?, 5, 90, 'alpha', 12000, ?, ?, 'https://checkout.stripe.test/c/pay/' || ?,
+                        ?::timestamptz)
+                returning id
+                """, Long.class, packageOfferId, customerId, status, checkoutSessionId, checkoutSessionId, createdAt);
+    }
+
     void assign(long practitionerId, String account) {
         jdbc.update("insert into practitioner_payment_account (practitioner_id, account, assigned_at) values (?, ?, now())",
                 practitionerId, account);

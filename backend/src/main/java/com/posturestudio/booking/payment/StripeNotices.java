@@ -1,5 +1,7 @@
 package com.posturestudio.booking.payment;
 
+import java.time.Instant;
+
 import org.springframework.stereotype.Component;
 
 import com.stripe.model.Event;
@@ -32,7 +34,8 @@ class StripeNotices {
             case SESSION_COMPLETED -> {
                 JsonNode session = objectOf(event);
                 yield new StripeNotice.SessionCompleted(event.getId(), text(session, "id"), text(session, "status"),
-                        text(session, "payment_intent"));
+                        text(session, "payment_status"), text(session, "payment_intent"),
+                        Instant.ofEpochSecond(event.getCreated()));
             }
             case SESSION_EXPIRED -> new StripeNotice.SessionExpired(event.getId(), text(objectOf(event), "id"));
             case PAYMENT_INTENT_SUCCEEDED ->

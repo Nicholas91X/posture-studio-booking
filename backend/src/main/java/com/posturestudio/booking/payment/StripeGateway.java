@@ -70,11 +70,42 @@ interface StripeGateway {
     boolean cancelPaymentIntent(PaymentAccount account, String paymentIntentId, String idempotencyKey);
 
     // Records nested in an interface are implicitly public, and so must be their compact constructors.
-    // A Checkout session for one booking, amount held and not captured (D-031)
-    record NewCheckoutSession(long bookingId, long amountCents, String description, String customerEmail,
-                              Instant expiresAt, URI successUrl, URI cancelUrl) {
+    // The two kinds of Checkout session (guide 37, part 6). sealed with a record each, not an enum: the cases
+    // carry different data (a booking id, a package id) and differ in how they pay (held, captured at once).
+    // The gateway builds the common part once and switches on the kind, with no default: a third kind does not
+    // compile until someone decides what it sends to Stripe
+    sealed interface NewCheckoutSession {
 
-        public NewCheckoutSession {
+        long amountCents();
+
+        String description();
+
+        String customerEmail();
+
+        Instant expiresAt();
+
+        URI successUrl();
+
+        URI cancelUrl();
+    }
+
+    // A session for one booking: the amount held, not captured (D-031)
+    record BookingCheckout(long bookingId, long amountCents, String description, String customerEmail,
+                           Instant expiresAt, URI successUrl, URI cancelUrl) implements NewCheckoutSession {
+
+        public BookingCheckout {
+            Objects.requireNonNull(description, "description must not be null");
+            Objects.requireNonNull(expiresAt, "expiresAt must not be null");
+            Objects.requireNonNull(successUrl, "successUrl must not be null");
+            Objects.requireNonNull(cancelUrl, "cancelUrl must not be null");
+        }
+    }
+
+    // A session for a package: captured at once (D-031), nothing to approve (guide 37)
+    record PackageCheckout(long packageOfferId, long amountCents, String description, String customerEmail,
+                           Instant expiresAt, URI successUrl, URI cancelUrl) implements NewCheckoutSession {
+
+        public PackageCheckout {
             Objects.requireNonNull(description, "description must not be null");
             Objects.requireNonNull(expiresAt, "expiresAt must not be null");
             Objects.requireNonNull(successUrl, "successUrl must not be null");

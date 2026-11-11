@@ -66,10 +66,9 @@ class StripeClientGateway implements StripeGateway {
 
     @Override
     public CheckoutSession createCheckoutSession(PaymentAccount account, NewCheckoutSession session, String idempotencyKey) {
-        String bookingId = Long.toString(session.bookingId());
-        SessionCreateParams params = SessionCreateParams.builder()
+        SessionCreateParams.Builder params = SessionCreateParams.builder()
                 .setMode(SessionCreateParams.Mode.PAYMENT)
-                // the amount of the booking (D-011), not today's price; no product to create first on Stripe
+                // the photographed amount (D-011), not today's price; no product to create first on Stripe
                 .addLineItem(SessionCreateParams.LineItem.builder()
                         .setQuantity(1L)
                         .setPriceData(SessionCreateParams.LineItem.PriceData.builder()
@@ -80,29 +79,50 @@ class StripeClientGateway implements StripeGateway {
                                         .build())
                                 .build())
                         .build())
-                // held, not captured (D-031); booking_id on the PaymentIntent too, for its events (piece 4)
-                .setPaymentIntentData(SessionCreateParams.PaymentIntentData.builder()
-                        .setCaptureMethod(SessionCreateParams.PaymentIntentData.CaptureMethod.MANUAL)
-                        .putMetadata("booking_id", bookingId)
-                        .build())
                 // cards only, Apple Pay and Google Pay included (they are cards for Stripe)
                 .addAllowedPaymentMethodType(SessionCreateParams.AllowedPaymentMethodType.CARD)
-                .putMetadata("booking_id", bookingId)
-                .setClientReferenceId(bookingId)
-                // seconds, rounded down: the page never outlives the hold of the slot (guide 31, part 5)
+                // seconds, rounded down: the page never outlives what it was made for (guide 31, part 5)
                 .setExpiresAt(session.expiresAt().getEpochSecond())
                 .setCustomerEmail(session.customerEmail())
                 .setLocale(SessionCreateParams.Locale.IT)
-                .setSubmitType(SessionCreateParams.SubmitType.BOOK)
                 .setSuccessUrl(session.successUrl().toString())
-                .setCancelUrl(session.cancelUrl().toString())
-                .build();
+                .setCancelUrl(session.cancelUrl().toString());
+        // what differs (guide 37, part 6). No default: NewCheckoutSession is sealed
+        String what = switch (session) {
+            case BookingCheckout booking -> {
+                String bookingId = Long.toString(booking.bookingId());
+                params
+                        // held, not captured (D-031); booking_id on the PaymentIntent too, for its events
+                        .setPaymentIntentData(SessionCreateParams.PaymentIntentData.builder()
+                                .setCaptureMethod(SessionCreateParams.PaymentIntentData.CaptureMethod.MANUAL)
+                                .putMetadata("booking_id", bookingId)
+                                .build())
+                        .putMetadata("booking_id", bookingId)
+                        .setClientReferenceId(bookingId)
+                        .setSubmitType(SessionCreateParams.SubmitType.BOOK);
+                yield "booking " + bookingId;
+            }
+            case PackageCheckout purchase -> {
+                String packageOfferId = Long.toString(purchase.packageOfferId());
+                params
+                        // captured at once (D-031): written out, not left to Stripe's default
+                        .setPaymentIntentData(SessionCreateParams.PaymentIntentData.builder()
+                                .setCaptureMethod(SessionCreateParams.PaymentIntentData.CaptureMethod.AUTOMATIC)
+                                .putMetadata("purpose", "package")
+                                .putMetadata("package_offer_id", packageOfferId)
+                                .build())
+                        .putMetadata("purpose", "package")
+                        .putMetadata("package_offer_id", packageOfferId)
+                        .setSubmitType(SessionCreateParams.SubmitType.PAY);
+                yield "package " + packageOfferId;
+            }
+        };
         RequestOptions options = RequestOptions.builder().setIdempotencyKey(idempotencyKey).build();
         try {
-            Session created = clientOf(account).v1().checkout().sessions().create(params, options);
+            Session created = clientOf(account).v1().checkout().sessions().create(params.build(), options);
             return new CheckoutSession(created.getId(), URI.create(created.getUrl()));
         } catch (StripeException e) {
-            throw unavailable("create a Checkout session for booking " + bookingId, account, e);
+            throw unavailable("create a Checkout session for " + what, account, e);
         }
     }
 

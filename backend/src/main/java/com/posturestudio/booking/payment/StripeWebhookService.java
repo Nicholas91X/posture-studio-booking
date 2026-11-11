@@ -10,6 +10,11 @@ import org.springframework.transaction.annotation.Transactional;
 import com.posturestudio.booking.booking.BookingService;
 import com.posturestudio.booking.booking.CardHolds;
 import com.posturestudio.booking.booking.PaymentOutcome;
+import com.posturestudio.booking.catalog.CatalogService;
+import com.posturestudio.booking.catalog.PackageOwner;
+import com.posturestudio.booking.credit.CreditService;
+import com.posturestudio.booking.credit.PackageLot;
+import com.posturestudio.booking.credit.PackagePurchase;
 
 /**
  * What a verified Stripe event does (D-062, D-063, guides 32 and 33). One transaction per event, with the "seen"
@@ -32,16 +37,21 @@ class StripeWebhookService {
     private final BookingService bookings;
     private final StripeGateway stripe;
     private final StripeCardHolds cards;
+    private final CatalogService catalog;
+    private final CreditService credits;
     private final Clock clock;
 
     StripeWebhookService(SeenStripeEvents seen, PaymentRepository payments, PaymentAccounts accounts,
-                         BookingService bookings, StripeGateway stripe, StripeCardHolds cards, Clock clock) {
+                         BookingService bookings, StripeGateway stripe, StripeCardHolds cards, CatalogService catalog,
+                         CreditService credits, Clock clock) {
         this.seen = seen;
         this.payments = payments;
         this.accounts = accounts;
         this.bookings = bookings;
         this.stripe = stripe;
         this.cards = cards;
+        this.catalog = catalog;
+        this.credits = credits;
         this.clock = clock;
     }
 
@@ -76,6 +86,17 @@ class StripeWebhookService {
         if (payment == null) {
             return;
         }
+        // The purpose decides the path (guide 37, part 7). A switch STATEMENT on an enum is not checked for
+        // exhaustiveness by the compiler (only a switch expression, or one with patterns, is): a third purpose
+        // would fall through in silence, so the two cases are written out and nothing else is expected
+        switch (payment.getPurpose()) {
+            case BOOKING -> sessionPaid(payment, completed);
+            case PACKAGE -> packagePaid(payment, completed);
+        }
+    }
+
+    // A session paid: the amount is held (D-031)
+    private void sessionPaid(Payment payment, StripeNotice.SessionCompleted completed) {
         // FIRST the payment, then the booking (guide 32, 5.2): a second event for the same session stops here.
         // If it went on, the booking (already PENDING_APPROVAL) would answer NotWanted, and a valid hold would
         // be released
@@ -95,6 +116,31 @@ class StripeWebhookService {
             }
             case LINK -> linkPaid(payment);
         }
+    }
+
+    // A package paid (guide 37, part 7): captured at once, so the money is the studio's already. The lot is born
+    // from the PHOTO in the payment (D-069), never from the package on sale, which may have changed or been
+    // deactivated since: the customer paid what they saw. Once only: the payment moves PENDING -> SUCCEEDED on
+    // its locked row, so a second event for the same session stops here; the same event twice was already
+    // stopped by SeenStripeEvents; and credit_lot_payment_uq refuses a second lot if a bug got past both
+    private void packagePaid(Payment payment, StripeNotice.SessionCompleted completed) {
+        if (!"paid".equals(completed.paymentStatus())) {
+            // with cards only it does not happen; complete and not paid must never create credits
+            log.warn("Stripe event {}: package payment {} completed but not paid ({}): no credits",
+                    completed.eventId(), payment.getId(), completed.paymentStatus());
+            return;
+        }
+        if (!payment.paid(completed.paymentIntentId())) {
+            log.info("Stripe event {}: package payment {} already paid, nothing to do", completed.eventId(),
+                    payment.getId());
+            return;
+        }
+        PackageOwner owner = catalog.packageOwnerOf(payment.getPackageOfferId());
+        PackageLot lot = credits.lotFromPackage(new PackagePurchase(payment.getId(), payment.getCustomerId(),
+                owner.practitionerId(), owner.serviceId(), payment.getPackageOfferId(), payment.getAmountCents(),
+                payment.getPackageCredits(), payment.getPackageValidityDays(), completed.occurredAt()));
+        log.info("Package payment {} paid: lot {} with {} credits, valid until {}", payment.getId(), lot.lotId(),
+                lot.credits(), lot.validUntil());
     }
 
     // A payment link paid (guide 34, part 6). The session is locked by linkPaymentArrived until our commit: two
