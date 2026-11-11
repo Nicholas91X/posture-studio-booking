@@ -184,6 +184,7 @@ Il brief vuole un evento di dominio. `credit` pubblica `CreditEvent.PackagePurch
 
 - **Al cliente**: "Acquisto confermato", le sedute, il servizio, il professionista, l'ultimo giorno valido scritto in italiano ("fino a lunedì 8 febbraio 2027 compreso"). La ricevuta del pagamento la manda Stripe (se attiva nella dashboard).
 - **Al professionista**: niente, per ora. Non deve fare niente (non c'è da approvare), e vedrà i crediti dei suoi clienti nel pannello (pezzo 6). Una notifica si aggiunge facilmente se lo studio la vuole: è una domanda di prodotto, la segnalo.
+  - *Aggiornamento del 2026-11-11*: Nicholas la vuole ("comodo e utile"). Stesso schema della richiesta da approvare (D-054): una **push** "Pacchetto venduto" con sedute e ultimo giorno valido (niente cliente, niente trattamento: si legge a schermo bloccato), valida un giorno, e l'**email** al professionista solo come riserva, anch'essa senza il nome del cliente (D-032).
 
 I testi in una funzione pura (`CreditEmails`), come `BookingEmails`: oggetto senza nomi né trattamento, data in italiano a Roma.
 

@@ -21,13 +21,14 @@ class CreditEmailsTest {
 
     private final CreditEmails emails = new CreditEmails("http://localhost:3000");
 
+    private static final CreditEvent.PackagePurchased PURCHASED =
+            new CreditEvent.PackagePurchased(7, 1, 2, 3, 5, LocalDate.of(2027, 2, 8));
+
     @Test
-    void aPackagePurchasedIsConfirmedToTheCustomerOnly() {
-        var purchased = new CreditEvent.PackagePurchased(7, 1, 2, 3, 5, LocalDate.of(2027, 2, 8));
+    void aPackagePurchasedIsConfirmedToTheCustomer() {
+        var sent = emails.emailsFor(PURCHASED, FACTS);
 
-        var sent = emails.emailsFor(purchased, FACTS);
-
-        assertThat(sent).singleElement().satisfies(email -> {
+        assertThat(sent).filteredOn(email -> email.recipient() == Recipient.CUSTOMER).singleElement().satisfies(email -> {
             assertThat(email.recipient()).isEqualTo(Recipient.CUSTOMER);
             assertThat(email.to()).isEqualTo("maria@example.com");
             // no name, no treatment in the subject: it shows on a locked phone
@@ -39,6 +40,24 @@ class CreditEmailsTest {
                     .contains("fino a lunedì 8 febbraio 2027 compreso")
                     .contains("http://localhost:3000")
                     .contains("Questa è un'email automatica");
+        });
+    }
+
+    // the notice of the sale (Nicholas, 2026-11-11): the fallback of the push, so never the name of the customer
+    @Test
+    void thePractitionerIsToldOfTheSaleWithoutTheNameOfTheCustomer() {
+        var sent = emails.emailsFor(PURCHASED, FACTS);
+
+        assertThat(sent).hasSize(2);
+        assertThat(sent).filteredOn(email -> email.recipient() == Recipient.PRACTITIONER).singleElement().satisfies(email -> {
+            assertThat(email.to()).isEqualTo("anna@example.com");
+            assertThat(email.subject()).isEqualTo("Pacchetto venduto");
+            assertThat(email.text())
+                    .startsWith("Ciao Anna,")
+                    .contains("5 sedute di Seduta posturale")
+                    .contains("valide fino a lunedì 8 febbraio 2027 compreso")
+                    .contains("non devi fare niente")
+                    .doesNotContain("Maria").doesNotContain("Bianchi");
         });
     }
 }

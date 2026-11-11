@@ -16,6 +16,8 @@ import com.posturestudio.booking.booking.BookingEvent.BookingConfirmed;
 import com.posturestudio.booking.booking.BookingEvent.BookingRejected;
 import com.posturestudio.booking.booking.BookingEvent.BookingWithdrawn;
 import com.posturestudio.booking.booking.BookingEvent.LatePaymentReleased;
+import com.posturestudio.booking.credit.CreditEvent;
+import com.posturestudio.booking.credit.CreditEvent.PackagePurchased;
 import com.posturestudio.booking.notification.PushMessage.PushPayload;
 import com.posturestudio.booking.shared.StudioTime;
 
@@ -29,6 +31,10 @@ import com.posturestudio.booking.shared.StudioTime;
 class PushMessages {
 
     private static final DateTimeFormatter WHEN = DateTimeFormatter.ofPattern("EEEE d MMMM, H:mm", Locale.ITALIAN);
+    private static final DateTimeFormatter DAY = DateTimeFormatter.ofPattern("EEEE d MMMM yyyy", Locale.ITALIAN);
+
+    // news, not a request with a deadline: a phone off for a day still gets it, after that it is old
+    static final Duration SOLD_PACKAGE_TTL = Duration.ofDays(1);
 
     private final String appUrl;
 
@@ -51,6 +57,18 @@ class PushMessages {
             case BookingWithdrawn withdrawn -> Optional.empty();
             // the customer is told by email; nothing for the practitioner to do (guide 32, part 9)
             case LatePaymentReleased late -> Optional.empty();
+        };
+    }
+
+    // A package sold (guide 37, part 10, asked by Nicholas on 2026-11-11): useful to know, nothing to do. On a
+    // locked screen: how many sessions and until when, never who bought them nor which treatment
+    Optional<PushMessage> pushFor(CreditEvent event) {
+        return switch (event) {
+            case PackagePurchased purchased -> Optional.of(new PushMessage(
+                    new PushPayload("Pacchetto venduto",
+                            purchased.credits() + " sedute · valide fino a " + DAY.format(purchased.validUntil()),
+                            appUrl, "lot-" + purchased.lotId()),
+                    SOLD_PACKAGE_TTL));
         };
     }
 

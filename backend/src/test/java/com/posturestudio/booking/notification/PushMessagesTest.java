@@ -12,6 +12,7 @@ import com.posturestudio.booking.booking.BookingEvent.ApprovalRequested;
 import com.posturestudio.booking.booking.BookingEvent.BookingConfirmed;
 import com.posturestudio.booking.booking.BookingEvent.BookingRejected;
 import com.posturestudio.booking.booking.BookingEvent.BookingWithdrawn;
+import com.posturestudio.booking.credit.CreditEvent.PackagePurchased;
 import com.posturestudio.booking.notification.PushMessage.PushPayload;
 
 // Which events have a push, and its text (guide 28, parts 8 and 10): a pure function, no Spring.
@@ -23,6 +24,17 @@ class PushMessagesTest {
     private static final Instant NOW = Instant.parse("2026-11-06T09:00:00Z");
 
     private final PushMessages pushes = new PushMessages("https://studio.example");
+
+    // a package sold (guide 37, part 10): how many and until when, never who nor which treatment; for a day
+    @Test
+    void aSoldPackageHasAPushWithoutWhoNorWhat() {
+        PushMessage push = pushes.pushFor(new PackagePurchased(7, 2, 3, 4, 5, java.time.LocalDate.of(2027, 2, 8)))
+                .orElseThrow();
+
+        assertThat(push.payload()).isEqualTo(new PushPayload("Pacchetto venduto",
+                "5 sedute · valide fino a lunedì 8 febbraio 2027", "https://studio.example", "lot-7"));
+        assertThat(push.timeToLive()).isEqualTo(Duration.ofDays(1));
+    }
 
     @Test
     void aRequestToApproveHasAPushWithDateTimeAndDeadline() {

@@ -1,12 +1,19 @@
 package com.posturestudio.booking.notification;
 
+import static com.posturestudio.booking.notification.PushEncryptionTest.AUTH;
+import static com.posturestudio.booking.notification.PushEncryptionTest.BROWSER_PRIVATE;
+import static com.posturestudio.booking.notification.PushEncryptionTest.BROWSER_PUBLIC;
+import static com.posturestudio.booking.notification.PushEncryptionTest.bytes;
+import static java.nio.charset.StandardCharsets.UTF_8;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.awaitility.Awaitility.await;
 
 import java.time.Duration;
 import java.time.Instant;
 
+import org.junit.jupiter.api.AfterAll;
 import org.junit.jupiter.api.AfterEach;
+import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -30,6 +37,10 @@ import com.posturestudio.booking.credit.PackagePurchase;
 class CreditNotificationsTest {
 
     private static final String MARIA = "credit-notif-maria@example.com";
+    private static final String ANNA = "credit-notif-anna@example.com";
+
+    // the devices of Anna: a push service on localhost (guide 28, part 11)
+    private static FakePushService pushService;
     private static final Duration PATIENCE = Duration.ofSeconds(5);
 
     @Autowired
@@ -50,12 +61,22 @@ class CreditNotificationsTest {
     private long offer;
     private long payment;
 
+    @BeforeAll
+    static void startThePushService() throws Exception {
+        pushService = new FakePushService();
+    }
+
+    @AfterAll
+    static void stopThePushService() {
+        pushService.close();
+    }
+
     @BeforeEach
     void mariaPaidAPackageOfAnna() {
         mail.clear();
+        pushService.clear();
         long annasUser = jdbc.queryForObject(
-                "insert into app_user (role, email) values ('PRACTITIONER', 'credit-notif-anna@example.com') returning id",
-                Long.class);
+                "insert into app_user (role, email) values ('PRACTITIONER', ?) returning id", Long.class, ANNA);
         anna = jdbc.queryForObject(
                 "insert into practitioner (user_id, first_name, last_name) values (?, 'Anna', 'Rossi') returning id",
                 Long.class, annasUser);
@@ -90,6 +111,7 @@ class CreditNotificationsTest {
             sql.update("delete from payment where id = ?", payment);
             sql.update("delete from package_offer where id = ?", offer);
             sql.update("delete from service where id = ?", service);
+            sql.update("delete from push_subscription where practitioner_id = ?", anna);
             sql.update("delete from practitioner where id = ?", anna);
             sql.update("delete from customer where id = ?", maria);
             sql.update("delete from app_user where email like 'credit-notif-%'");
@@ -108,7 +130,38 @@ class CreditNotificationsTest {
                 .contains("fino a giovedì 4 febbraio 2027 compreso");
         // in a virtual thread of the notification executor, never in the thread that committed (D-053)
         assertThat(sent.virtual()).isTrue();
-        assertThat(mail.sent()).hasSize(1);
+    }
+
+    // no device: the notice of the sale reaches Anna by email, the fallback of the push
+    @Test
+    void withoutADeviceThePractitionerIsToldByEmail() {
+        new TransactionTemplate(transactionManager).executeWithoutResult(status -> credits.lotFromPackage(purchase()));
+
+        await().atMost(PATIENCE).until(() -> !mail.sentTo(ANNA).isEmpty());
+        assertThat(mail.sentTo(ANNA).getFirst().subject()).isEqualTo("Pacchetto venduto");
+        assertThat(mail.sentTo(MARIA)).hasSize(1);
+        assertThat(pushService.received()).isEmpty();
+    }
+
+    // a device took the push: no email to Anna; the confirmation to Maria does not depend on it. Decrypted as
+    // the browser of Anna would: on a locked screen, nobody named and no treatment
+    @Test
+    void aDeviceThatTakesThePushReplacesTheEmailToThePractitioner() {
+        jdbc.update("insert into push_subscription (practitioner_id, endpoint, p256dh, auth) values (?, ?, ?, ?)",
+                anna, pushService.endpoint("phone"), BROWSER_PUBLIC, AUTH);
+
+        new TransactionTemplate(transactionManager).executeWithoutResult(status -> credits.lotFromPackage(purchase()));
+
+        // the push and the decision about the email of Anna come before the email of Maria in the same task
+        await().atMost(PATIENCE).until(() -> !mail.sentTo(MARIA).isEmpty());
+        assertThat(mail.sentTo(ANNA)).isEmpty();
+        FakePushService.Received push = pushService.received().getFirst();
+        assertThat(push.headers().get("ttl")).isEqualTo("86400");
+        String payload = new String(FakeBrowser.decrypt(push.body(), bytes(BROWSER_PRIVATE), bytes(BROWSER_PUBLIC),
+                bytes(AUTH)), UTF_8);
+        assertThat(payload).startsWith("""
+                {"title":"Pacchetto venduto","body":"5 sedute · valide fino a giovedì 4 febbraio 2027",""")
+                .doesNotContain("Maria").doesNotContain("Seduta posturale");
     }
 
     // a webhook whose transaction fails announces nothing: no email for a lot that does not exist

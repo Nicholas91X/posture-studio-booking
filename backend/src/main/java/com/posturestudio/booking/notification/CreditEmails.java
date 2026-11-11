@@ -34,25 +34,45 @@ class CreditEmails {
     }
 
     // No default: CreditEvent is sealed, so a new event stops this compiling until its emails are decided.
-    // Only to the customer for now: the practitioner has nothing to do, and sees the credits in the panel
+    // The customer gets the confirmation; the practitioner the notice of the sale (Nicholas, 2026-11-11), which
+    // is the fallback of the push and so, as every email to the practitioner, never names the customer (D-032)
     List<OutgoingEmail> emailsFor(CreditEvent event, BookingFacts facts) {
         return switch (event) {
-            case PackagePurchased purchased -> List.of(new OutgoingEmail(Recipient.CUSTOMER, facts.customer().email(),
-                    "Acquisto confermato", """
-                    Gentile %s,
-
-                    il tuo acquisto è confermato:
-
-                        %d sedute di %s con %s %s
-
-                    Puoi usarle per prenotare fino a %s compreso.
-
-                    La ricevuta del pagamento ti arriva da Stripe.
-
-                    Per prenotare: %s
-                    """.formatted(facts.customer().firstName(), purchased.credits(), facts.serviceName(),
-                    facts.practitioner().firstName(), facts.practitioner().lastName(),
-                    DAY.format(purchased.validUntil()), appUrl) + FOOTER));
+            case PackagePurchased purchased -> List.of(confirmation(purchased, facts), sold(purchased, facts));
         };
+    }
+
+    private OutgoingEmail sold(PackagePurchased purchased, BookingFacts facts) {
+        return new OutgoingEmail(Recipient.PRACTITIONER, facts.practitioner().email(), "Pacchetto venduto", """
+                Ciao %s,
+
+                un cliente ha comprato un tuo pacchetto:
+
+                    %d sedute di %s
+                    valide fino a %s compreso
+
+                Il pagamento è già incassato: non devi fare niente.
+
+                Il pannello: %s
+                """.formatted(facts.practitioner().firstName(), purchased.credits(), facts.serviceName(),
+                DAY.format(purchased.validUntil()), appUrl) + FOOTER);
+    }
+
+    private OutgoingEmail confirmation(PackagePurchased purchased, BookingFacts facts) {
+        return new OutgoingEmail(Recipient.CUSTOMER, facts.customer().email(), "Acquisto confermato", """
+                Gentile %s,
+
+                il tuo acquisto è confermato:
+
+                    %d sedute di %s con %s %s
+
+                Puoi usarle per prenotare fino a %s compreso.
+
+                La ricevuta del pagamento ti arriva da Stripe.
+
+                Per prenotare: %s
+                """.formatted(facts.customer().firstName(), purchased.credits(), facts.serviceName(),
+                facts.practitioner().firstName(), facts.practitioner().lastName(),
+                DAY.format(purchased.validUntil()), appUrl) + FOOTER);
     }
 }
