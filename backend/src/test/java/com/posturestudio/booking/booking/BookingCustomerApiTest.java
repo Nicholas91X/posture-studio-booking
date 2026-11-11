@@ -80,7 +80,7 @@ public class BookingCustomerApiTest {
         assertThat(result).bodyJson().isStrictlyEqualTo("""
                 {"id": %d, "practitionerId": %d, "serviceId": %d,
                  "startsAt": "2026-11-09T09:00:00+01:00", "endsAt": "2026-11-09T10:00:00+01:00",
-                 "status": "PENDING_PAYMENT", "priceCents": 3000, "holdExpiresAt": "2026-11-06T10:32:00+01:00",
+                 "status": "PENDING_PAYMENT", "paidWith": "CARD", "priceCents": 3000, "holdExpiresAt": "2026-11-06T10:32:00+01:00",
                  "approvalDeadline": null, "paymentUrl": "%s"}
                 """.formatted(id, anna, seduta, paymentUrl));
     }

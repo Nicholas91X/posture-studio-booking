@@ -1,8 +1,10 @@
 package com.posturestudio.booking.credit;
 
 import java.time.Clock;
+import java.time.Instant;
 import java.util.Collection;
 import java.util.Map;
+import java.util.Optional;
 import java.util.function.Function;
 import java.util.stream.Collectors;
 
@@ -13,7 +15,7 @@ import org.springframework.transaction.annotation.Transactional;
 
 /**
  * The only door of the credit module (D-002): records in, records out, never the entities.
- * Dependencies come into this module (payment -> credit, later booking -> credit), never go out of it.
+ * Dependencies come into this module (payment -> credit, booking -> credit), never go out of it.
  */
 @Service
 public class CreditService {
@@ -46,6 +48,53 @@ public class CreditService {
         events.publishEvent(new CreditEvent.PackagePurchased(lot.getId(), purchase.customerId(),
                 purchase.practitionerId(), purchase.serviceId(), purchase.credits(), validUntil.lastDay()));
         return new PackageLot(purchase.paymentId(), lot.getId(), purchase.credits(), validUntil.lastDay());
+    }
+
+    // ***** BOOKING WITH A CREDIT (step 10, piece 3, guide 38) *****
+
+    // A quick look, without locks (guide 38, part 4): has this customer a credit for this session? It decides
+    // nothing, it only lets the request answer 409 early when there is neither a credit nor a card account
+    @Transactional(readOnly = true)
+    public boolean hasUsableCredit(long customerId, long practitionerId, long serviceId, Instant sessionStart) {
+        return !lots.findUsableIds(customerId, practitionerId, serviceId, ValidUntil.dayOf(sessionStart)).isEmpty();
+    }
+
+    // The choice that counts, under the locks (guide 38, parts 5 and 6): the usable lot that ends first, LOCKED,
+    // its balance read again after the lock. Usable for a session = its last valid day covers the day of the
+    // session (guide 38, part 2: ValidUntil.covers(sessionStart)), not only today. The caller already holds the
+    // lock on the customer (D-045), which is enough for two requests of the same customer; the lock on the lot
+    // is the rule of D-069 for every debit, and it also covers a correction of the practitioner, which does not
+    // go through the customer. Lock order: customer, then lot. MANDATORY: the lock lives until the caller commits
+    @Transactional(propagation = Propagation.MANDATORY)
+    public Optional<Long> lockUsableLot(long customerId, long practitionerId, long serviceId, Instant sessionStart) {
+        for (long lotId : lots.findUsableIds(customerId, practitionerId, serviceId, ValidUntil.dayOf(sessionStart))) {
+            lots.findLockedById(lotId);
+            // read again after the lock: a correction may have taken the last credit while we waited
+            if (movements.balanceOf(lotId) > 0) {
+                return Optional.of(lotId);
+            }
+        }
+        return Optional.empty();
+    }
+
+    // The credit is committed to the booking: -1 on the lot locked by lockUsableLot. The trigger of the balance
+    // refuses it anyway if the lot were empty (D-069)
+    @Transactional(propagation = Propagation.MANDATORY)
+    public void commit(long lotId, long bookingId) {
+        movements.save(CreditMovement.booking(lotId, bookingId, clock.instant()));
+    }
+
+    // The booking let its credit go (rejected, unanswered, withdrawn: D-030): +1 on THE SAME lot, which keeps its
+    // last valid day (D-010). Once only: false when the booking took no credit or already gave it back; the
+    // unique index of V15 refuses a second one anyway. The caller holds the lock on the booking (D-046)
+    @Transactional(propagation = Propagation.MANDATORY)
+    public boolean release(long bookingId) {
+        Optional<CreditMovement> taken = movements.findByBookingIdAndReason(bookingId, MovementReason.BOOKING);
+        if (taken.isEmpty() || movements.existsByBookingIdAndAmountGreaterThan(bookingId, 0)) {
+            return false;
+        }
+        movements.save(CreditMovement.bookingRelease(taken.get().getCreditLotId(), bookingId, clock.instant()));
+        return true;
     }
 
     // The lots of these payments, by payment id (guide 37, part 9): one question for a whole list (D-029).

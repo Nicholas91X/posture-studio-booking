@@ -35,7 +35,7 @@ import com.posturestudio.booking.shared.NotFoundException;
 // Today is Friday 6 November 2026, 10:00 in Rome. Anna works Monday to Friday 9-13 and 14-19,
 // hourly starts, sessions of 60 minutes. Same context as the other booking tests
 @DataJpaTest
-@Import({TestcontainersConfiguration.class, FixedClockConfiguration.class, BookingService.class,
+@Import({TestcontainersConfiguration.class, FixedClockConfiguration.class, BookingService.class, com.posturestudio.booking.credit.CreditService.class,
         BookingOccupiedTime.class, ScheduleService.class, CatalogService.class, PractitionerService.class,
         AccountService.class, CustomerService.class, BookingTestDoubles.class})
 @RecordApplicationEvents

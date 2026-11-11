@@ -15,4 +15,10 @@ interface CreditMovementRepository extends Repository<CreditMovement, Long> {
     long balanceOf(long lotId);
 
     List<CreditMovement> findByCreditLotIdOrderById(long lotId);
+
+    // the credit a booking took: at most one (credit_movement_one_debit_per_booking_uq)
+    java.util.Optional<CreditMovement> findByBookingIdAndReason(long bookingId, MovementReason reason);
+
+    // whether a booking already gave a credit back: at most once (credit_movement_one_return_per_booking_uq)
+    boolean existsByBookingIdAndAmountGreaterThan(long bookingId, int amount);
 }

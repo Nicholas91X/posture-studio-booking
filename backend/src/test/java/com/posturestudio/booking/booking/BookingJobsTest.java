@@ -31,7 +31,7 @@ import com.posturestudio.booking.schedule.ScheduleService;
 // The jobs are called directly: this proves what they do, not that Spring calls them every minute.
 // The clock starts on Friday 6 November 2026, 10:00 in Rome; Anna answers within 12 hours (default)
 @DataJpaTest
-@Import({TestcontainersConfiguration.class, MovableClock.Configuration.class, BookingService.class,
+@Import({TestcontainersConfiguration.class, MovableClock.Configuration.class, BookingService.class, com.posturestudio.booking.credit.CreditService.class,
         BookingOccupiedTime.class, ScheduleService.class, CatalogService.class, PractitionerService.class,
         AccountService.class, CustomerService.class, BookingTestDoubles.class, BookingJobs.class})
 @RecordApplicationEvents

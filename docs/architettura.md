@@ -144,9 +144,9 @@ Lo stesso meccanismo vale per i professionisti: la loro email ha il ruolo `PRACT
 
 ### Prenotazione con credito
 
-1. Il cliente sceglie un orario. Il backend vede che ha crediti validi per quel professionista e servizio.
-2. In un'unica transazione: crea la prenotazione in attesa di approvazione e registra un movimento −1 sul lotto che scade prima (il credito è **impegnato**).
-3. Approvazione come per la carta. Approvata: confermata. Rifiutata, scaduta o ritirata: movimento +1 sullo stesso lotto, che mantiene la sua scadenza.
+1. Il cliente sceglie un orario, con la stessa richiesta di sempre. Il backend vede che ha un credito per quel professionista e servizio **il cui ultimo giorno valido copre il giorno della seduta** (D-071); il cliente non sceglie: se il credito c'è si usa, altrimenti si paga con la carta. Il limite di prenotazioni future vale anche qui.
+2. In un'unica transazione, con il lucchetto sul cliente e sul lotto: crea la prenotazione in attesa di approvazione e registra un movimento −1 sul lotto che scade prima (il credito è **impegnato**). Un professionista senza conto di incasso riceve comunque queste prenotazioni.
+3. Approvazione come per la carta, senza niente da incassare (in automatica, subito). Approvata: confermata. Rifiutata, scaduta o ritirata: movimento +1 sullo stesso lotto, che mantiene la sua scadenza. Le email parlano del credito, non della carta.
 
 Nessun passaggio su Stripe.
 

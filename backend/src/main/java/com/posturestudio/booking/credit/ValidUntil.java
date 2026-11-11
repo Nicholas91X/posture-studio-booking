@@ -33,7 +33,12 @@ public record ValidUntil(LocalDate lastDay) {
     // whether the credits can be used at this moment: its day in Rome is not after the last valid day
     public boolean covers(Instant moment) {
         Objects.requireNonNull(moment, "moment must not be null");
-        return !moment.atZone(StudioTime.ZONE).toLocalDate().isAfter(lastDay);
+        return !dayOf(moment).isAfter(lastDay);
+    }
+
+    // the day of a moment in Rome: what covers compares, and what a query compares valid_until with
+    public static LocalDate dayOf(Instant moment) {
+        return moment.atZone(StudioTime.ZONE).toLocalDate();
     }
 
     public boolean isAfter(ValidUntil other) {

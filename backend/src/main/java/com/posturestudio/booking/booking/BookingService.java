@@ -28,6 +28,7 @@ import com.posturestudio.booking.booking.BookingEvent.BookingWithdrawn;
 import com.posturestudio.booking.booking.BookingEvent.LatePaymentReleased;
 import com.posturestudio.booking.catalog.CatalogService;
 import com.posturestudio.booking.catalog.ServiceOnSale;
+import com.posturestudio.booking.credit.CreditService;
 import com.posturestudio.booking.customer.CustomerName;
 import com.posturestudio.booking.customer.CustomerService;
 import com.posturestudio.booking.practitioner.PractitionerService;
@@ -42,7 +43,7 @@ import com.posturestudio.booking.shared.TimeRange;
 /**
  * The only door of the booking module (D-002): returns records, never the entity.
  * Every customer method receives the id of the customer who acts and finds only what is theirs.
- * Dependencies: booking -> customer, catalog, practitioner, schedule. Nobody depends on booking:
+ * Dependencies: booking -> customer, catalog, practitioner, schedule, credit. Nobody depends on booking:
  * schedule reaches it only through OccupiedTime (D-044), payment through CardHolds and CardCheckout.
  *
  * Transactions run with the default isolation of PostgreSQL, READ COMMITTED: every statement sees the
@@ -67,12 +68,13 @@ public class BookingService {
     private final ScheduleService schedule;
     private final CardHolds cards;
     private final CardCheckout checkout;
+    private final CreditService credits;
     private final ApplicationEventPublisher events;
     private final Clock clock;
 
     BookingService(BookingRepository bookings, CatalogService catalog, CustomerService customers,
                    PractitionerService practitioners, ScheduleService schedule, CardHolds cards,
-                   CardCheckout checkout, ApplicationEventPublisher events, Clock clock) {
+                   CardCheckout checkout, CreditService credits, ApplicationEventPublisher events, Clock clock) {
         this.bookings = bookings;
         this.catalog = catalog;
         this.customers = customers;
@@ -80,15 +82,17 @@ public class BookingService {
         this.schedule = schedule;
         this.cards = cards;
         this.checkout = checkout;
+        this.credits = credits;
         this.events = events;
         this.clock = clock;
     }
 
     // ***** CUSTOMER *****
 
-    // A customer asks for a slot (guide 19, part 2 for the order). One transaction, one reading of the clock.
-    // Outcome: PENDING_PAYMENT, held for 32 minutes (D-008, D-061), with the page where the customer pays
-    // (guide 31), until paymentAuthorized
+    // A customer asks for a slot (guide 19, part 2 for the order; guide 38, part 4 for the credit). One
+    // transaction, one reading of the clock. Outcome, with a usable credit: PENDING_APPROVAL with the credit
+    // committed, nothing to pay (or CONFIRMED in AUTOMATIC mode). Without: PENDING_PAYMENT, held for 32 minutes
+    // (D-008, D-061), with the page where the customer pays (guide 31), until paymentAuthorized
     @Transactional
     public CustomerBookingView request(long customerId, NewBooking request) {
         Instant now = clock.instant();
@@ -98,11 +102,12 @@ public class BookingService {
         // 1. the request names something on sale (404): no lock needed for that
         ServiceOnSale service = catalog.serviceOnSale(practitionerId, request.serviceId());
 
-        // 1b. nobody can pay this practitioner by card (no payment account): refused before any lock or
-        // write, so no slot is ever held for a booking nobody can pay (guide 30, part 6)
-        if (!checkout.available(practitionerId)) {
-            throw new BusinessRuleException(ErrorCode.CARD_PAYMENTS_UNAVAILABLE,
-                    "Practitioner " + practitionerId + " cannot take card payments yet");
+        // 1b. neither a credit nor a card account: nobody can pay this booking, refused before any lock or write,
+        // so no slot is ever held for it (guide 30, part 6). A quick look without locks: it decides nothing,
+        // step 5 decides. A practitioner with no account still takes the bookings of a customer with a credit
+        if (!checkout.available(practitionerId)
+                && !credits.hasUsableCredit(customerId, practitionerId, service.id(), start)) {
+            throw cardPaymentsUnavailable(practitionerId);
         }
 
         // 2. from here on, the requests of this customer go one at a time (guide 19, part 4):
@@ -128,21 +133,58 @@ public class BookingService {
         bookings.expireStaleHolds(practitionerId, slot.start(), slot.end(), now,
                 BookingStatus.PENDING_PAYMENT, BookingStatus.EXPIRED);
 
-        // 6. the insert, flushed here and not at commit, so that a violation can be translated
-        Booking booking = Booking.requestedByCustomer(customerId, practitionerId, service.id(), slot,
-                service.priceCents(), now);
-        try {
-            bookings.saveAndFlush(booking);
-        } catch (DataIntegrityViolationException | PessimisticLockingFailureException e) {
-            throw translateOverlap(e, practitionerId, slot);
+        // 6. credit or card, decided here, under the lock on the customer (guide 38, parts 4 to 6): the usable lot
+        // that ends first, itself locked. The limit above holds for credits too: it protects the calendar
+        var lot = credits.lockUsableLot(customerId, practitionerId, service.id(), slot.start());
+        if (lot.isPresent()) {
+            return requestWithCredit(customerId, practitionerId, service, slot, lot.get(), settings, now);
+        }
+        // the credit of step 1b is gone in the meantime (rare), and nobody can pay by card
+        if (!checkout.available(practitionerId)) {
+            throw cardPaymentsUnavailable(practitionerId);
         }
 
-        // 7. the Stripe page, inside this transaction (guide 31, parts 3 and 4): if Stripe fails, the booking
+        // 7. the insert, flushed here and not at commit, so that a violation can be translated
+        Booking booking = Booking.requestedByCustomer(customerId, practitionerId, service.id(), slot,
+                service.priceCents(), now);
+        insert(booking, practitionerId, slot);
+
+        // 8. the Stripe page, inside this transaction (guide 31, parts 3 and 4): if Stripe fails, the booking
         // is rolled back with everything else; if our commit fails after Stripe answered, a session nobody
         // knows expires by itself. The page expires with the hold, never after it
         URI page = checkout.start(new CardCheckout.CheckoutRequest(booking.getId(), practitionerId, customerId,
                 service.id(), booking.getPriceCents(), booking.getHoldExpiresAt()));
         return CustomerBookingView.from(booking, page);
+    }
+
+    // Paid with a credit (guide 38): born PENDING_APPROVAL, the credit committed (-1) after the insert, then the
+    // same path as after a payment (D-030): AUTOMATIC confirms at once, MANUAL asks the practitioner. Nothing to
+    // capture, so the confirmation of AUTOMATIC cannot be refused
+    private CustomerBookingView requestWithCredit(long customerId, long practitionerId, ServiceOnSale service,
+                                                  TimeRange slot, long lotId, PractitionerSettings settings,
+                                                  Instant now) {
+        Booking booking = Booking.requestedWithCredit(customerId, practitionerId, service.id(), slot,
+                service.priceCents(), now, Duration.ofHours(settings.approvalWindowHours()));
+        insert(booking, practitionerId, slot);
+        credits.commit(lotId, booking.getId());
+        switch (settings.bookingApproval()) {
+            case AUTOMATIC -> confirmPaid(booking, now);
+            case MANUAL -> events.publishEvent(ApprovalRequested.of(booking));
+        }
+        return CustomerBookingView.from(booking);
+    }
+
+    private void insert(Booking booking, long practitionerId, TimeRange slot) {
+        try {
+            bookings.saveAndFlush(booking);
+        } catch (DataIntegrityViolationException | PessimisticLockingFailureException e) {
+            throw translateOverlap(e, practitionerId, slot);
+        }
+    }
+
+    private static BusinessRuleException cardPaymentsUnavailable(long practitionerId) {
+        return new BusinessRuleException(ErrorCode.CARD_PAYMENTS_UNAVAILABLE,
+                "Practitioner " + practitionerId + " cannot take card payments yet");
     }
 
     @Transactional(readOnly = true)
@@ -159,7 +201,7 @@ public class BookingService {
         Booking booking = bookings.findLockedByIdAndCustomerId(bookingId, customerId)
                 .orElseThrow(() -> notFound(bookingId));
         booking.withdraw(now);
-        cards.cancel(booking.getId());
+        releasePayment(booking);
         events.publishEvent(BookingWithdrawn.of(booking));
         return CustomerBookingView.from(booking);
     }
@@ -195,7 +237,7 @@ public class BookingService {
                 // a capture refused right after the payment (a hold released by hand on Stripe): the request goes
                 // to the practitioner as in manual mode, who decides. No exception: the webhook would make Stripe
                 // retry for three days, and the answer would never change (guide 33, part 4)
-                if (!captureAndConfirm(booking, now)) {
+                if (!confirmPaid(booking, now)) {
                     events.publishEvent(ApprovalRequested.of(booking));
                 }
             }
@@ -312,7 +354,7 @@ public class BookingService {
         Booking booking = lockedForPractitioner(practitionerId, bookingId);
         requireBeforeDeadline(booking, now);
         // the request stays PENDING_APPROVAL: the practitioner may reject it, or let it expire (guide 33, part 5)
-        if (!captureAndConfirm(booking, now)) {
+        if (!confirmPaid(booking, now)) {
             throw new BusinessRuleException(ErrorCode.CARD_CAPTURE_FAILED,
                     "The amount held for booking " + bookingId + " can no longer be captured");
         }
@@ -325,7 +367,7 @@ public class BookingService {
         Booking booking = lockedForPractitioner(practitionerId, bookingId);
         requireBeforeDeadline(booking, now);
         booking.reject(now);
-        cards.cancel(booking.getId());
+        releasePayment(booking);
         events.publishEvent(BookingRejected.of(booking));
         return PanelBookingView.from(booking);
     }
@@ -386,7 +428,7 @@ public class BookingService {
             return;
         }
         booking.expireApproval();
-        cards.cancel(booking.getId());
+        releasePayment(booking);
         events.publishEvent(ApprovalExpired.of(booking));
     }
 
@@ -464,16 +506,36 @@ public class BookingService {
     // Check, capture, and only then change (guide 33, part 3, D-063): a forbidden step never reaches Stripe, and a
     // refused capture leaves the booking exactly as it was, so the caller decides without throwing the
     // transaction away. false: Stripe refused the capture for good. Stripe not answering throws: all rolls back
-    private boolean captureAndConfirm(Booking booking, Instant now) {
+    // How it is paid decides (guide 38, part 7): a card is captured now, a credit was committed at the request.
+    // A switch EXPRESSION on the enum: the compiler demands every value, so a new way of paying does not compile
+    // until someone decides what an approval does with it
+    private boolean confirmPaid(Booking booking, Instant now) {
         booking.checkMove(BookingStatus.CONFIRMED);
-        return switch (cards.capture(booking.getId(), booking.getPriceCents())) {
-            case CardHolds.CaptureResult.Captured captured -> {
-                booking.approve(now);
-                events.publishEvent(BookingConfirmed.of(booking));
-                yield true;
-            }
-            case CardHolds.CaptureResult.Refused refused -> false;
+        boolean paid = switch (booking.getPaidWith()) {
+            case CARD -> cards.capture(booking.getId(), booking.getPriceCents())
+                    instanceof CardHolds.CaptureResult.Captured;
+            case CREDIT -> true;
+            // born CONFIRMED from the panel: it never waits for an approval, so this is a bug
+            case IN_STUDIO -> throw new IllegalStateException("Booking " + booking.getId()
+                    + " is paid in the studio and cannot be waiting for an approval");
         };
+        if (paid) {
+            booking.approve(now);
+            events.publishEvent(BookingConfirmed.of(booking));
+        }
+        return paid;
+    }
+
+    // Rejected, unanswered or withdrawn (D-030): the hold on the card is released, or the credit goes back to its
+    // lot (guide 38, part 7). Neither throws: the release of a card is retried by the job if Stripe does not
+    // answer (D-064), the credit is written in this same transaction
+    private void releasePayment(Booking booking) {
+        switch (booking.getPaidWith()) {
+            case CARD -> cards.cancel(booking.getId());
+            case CREDIT -> credits.release(booking.getId());
+            case IN_STUDIO -> throw new IllegalStateException("Booking " + booking.getId()
+                    + " is paid in the studio and cannot be waiting for an approval");
+        }
     }
 
     // The request is already void after the deadline (D-030): the job of piece 4 closes it within a minute.

@@ -15,6 +15,7 @@ import com.posturestudio.booking.booking.BookingEvent.BookingConfirmed;
 import com.posturestudio.booking.booking.BookingEvent.BookingRejected;
 import com.posturestudio.booking.booking.BookingEvent.BookingWithdrawn;
 import com.posturestudio.booking.booking.BookingEvent.LatePaymentReleased;
+import com.posturestudio.booking.booking.PaidWith;
 import com.posturestudio.booking.notification.OutgoingEmail.Recipient;
 import com.posturestudio.booking.shared.StudioTime;
 
@@ -41,6 +42,11 @@ class BookingEmails {
     private static final String NOTHING_CHARGED = """
             Non ti è stato addebitato niente: il blocco sulla carta è stato annullato.
             La banca può impiegare qualche giorno a mostrarlo nell'estratto conto.""";
+
+    // a request paid with a credit that went nowhere: the credit is back on its lot, with its last valid day
+    // (guide 38, part 8)
+    private static final String CREDIT_BACK = """
+            Il credito che avevi usato è di nuovo disponibile, con la sua scadenza.""";
 
     private static final String FOOTER = """
 
@@ -76,7 +82,7 @@ class BookingEmails {
                     %s
 
                     Per scegliere un altro orario: %s
-                    """.formatted(details(facts, rejected.startsAt()), NOTHING_CHARGED, appUrl)));
+                    """.formatted(details(facts, rejected.startsAt()), nothingLost(rejected.paidWith()), appUrl)));
             case ApprovalExpired expired -> List.of(toCustomer(facts, "Prenotazione non confermata", expired.startsAt(), """
                     la tua richiesta di prenotazione non ha ricevuto risposta in tempo, ed è stata annullata:
 
@@ -85,7 +91,7 @@ class BookingEmails {
                     %s
 
                     Per scegliere un altro orario: %s
-                    """.formatted(details(facts, expired.startsAt()), NOTHING_CHARGED, appUrl)));
+                    """.formatted(details(facts, expired.startsAt()), nothingLost(expired.paidWith()), appUrl)));
             case BookingWithdrawn withdrawn -> List.of(toCustomer(facts, "Richiesta ritirata", withdrawn.startsAt(), """
                     hai ritirato la tua richiesta di prenotazione:
 
@@ -94,7 +100,7 @@ class BookingEmails {
                     %s
 
                     Le tue prenotazioni: %s
-                    """.formatted(details(facts, withdrawn.startsAt()), NOTHING_CHARGED, appUrl)));
+                    """.formatted(details(facts, withdrawn.startsAt()), nothingLost(withdrawn.paidWith()), appUrl)));
             case LatePaymentReleased late -> List.of(toCustomer(facts, "Pagamento arrivato in ritardo", late.startsAt(), """
                     il tuo pagamento è arrivato dopo la scadenza del tempo per pagare, e l'orario non era più
                     riservato a te:
@@ -119,11 +125,14 @@ class BookingEmails {
                     %s
 
                 Rispondi entro %s. Dopo, la richiesta scade da sola
-                e il blocco sulla carta del cliente si annulla.
+                e %s.
 
                 Per approvare o rifiutare, apri il pannello: %s
                 """.formatted(facts.practitioner().firstName(), facts.serviceName(), when(requested.startsAt()),
-                when(requested.approvalDeadline()), appUrl);
+                when(requested.approvalDeadline()), switch (requested.paidWith()) {
+                    case CREDIT -> "il credito torna al cliente";
+                    case CARD, IN_STUDIO -> "il blocco sulla carta del cliente si annulla";
+                }, appUrl);
         return new OutgoingEmail(Recipient.PRACTITIONER, facts.practitioner().email(),
                 subject("Nuova richiesta da approvare", requested.startsAt()), text + FOOTER);
     }
@@ -137,11 +146,27 @@ class BookingEmails {
 
                 Riceverai una risposta entro %s.
 
-                L'importo è bloccato sulla carta, non addebitato: si addebita solo se la richiesta
-                viene approvata. Altrimenti il blocco si annulla e non paghi niente.
+                %s
 
                 Finché aspetti la risposta puoi ritirare la richiesta, senza costi: %s
-                """.formatted(details(facts, requested.startsAt()), when(requested.approvalDeadline()), appUrl));
+                """.formatted(details(facts, requested.startsAt()), when(requested.approvalDeadline()),
+                switch (requested.paidWith()) {
+                    case CREDIT -> """
+                            Hai usato un credito: è impegnato per questa richiesta. Se la richiesta
+                            non viene approvata, torna disponibile.""";
+                    case CARD, IN_STUDIO -> """
+                            L'importo è bloccato sulla carta, non addebitato: si addebita solo se la richiesta
+                            viene approvata. Altrimenti il blocco si annulla e non paghi niente.""";
+                }, appUrl));
+    }
+
+    // what the customer did not lose when a request goes nowhere: a released hold, or a credit back. A switch
+    // expression: a new way of paying does not compile until someone writes what the customer is told
+    private static String nothingLost(PaidWith paidWith) {
+        return switch (paidWith) {
+            case CREDIT -> CREDIT_BACK;
+            case CARD, IN_STUDIO -> NOTHING_CHARGED;
+        };
     }
 
     private static OutgoingEmail toCustomer(BookingFacts facts, String subject, Instant startsAt, String body) {

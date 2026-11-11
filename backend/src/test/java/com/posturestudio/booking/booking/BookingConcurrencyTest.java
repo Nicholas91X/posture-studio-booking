@@ -47,7 +47,7 @@ import com.posturestudio.booking.shared.ErrorCode;
 // Without the pause the first could commit before the second even starts, and the test would prove
 // nothing about simultaneous requests. Today is Friday 6 November 2026, 10:00 in Rome
 @DataJpaTest
-@Import({TestcontainersConfiguration.class, FixedClockConfiguration.class, BookingService.class,
+@Import({TestcontainersConfiguration.class, FixedClockConfiguration.class, BookingService.class, com.posturestudio.booking.credit.CreditService.class,
         BookingOccupiedTime.class, ScheduleService.class, CatalogService.class, PractitionerService.class,
         AccountService.class, CustomerService.class, BookingTestDoubles.class})
 @Transactional(propagation = Propagation.NOT_SUPPORTED)
