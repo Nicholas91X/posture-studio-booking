@@ -1,6 +1,6 @@
 # Stato del progetto
 
-Ultimo aggiornamento: 2026-11-11 (**passo 10**: pezzi 1–6 fatti, D-066–D-074; prossimo: la chiusura del passo)
+Ultimo aggiornamento: 2026-11-11 (**passo 10 chiuso**, D-066–D-074, unito in `main`; prossimo: passo 11, cancellazioni)
 
 ## Dove siamo
 
@@ -69,7 +69,9 @@ Fatto nel passo 4: struttura del repository, progetto Spring Boot 4.1.1 su Java 
 
 **Pezzo 5 fatto** (guida 40, D-073): le concessioni dal pannello. `POST /api/panel/credit-grants` (omaggio per email, servizio proprio in vendita, data scelta o quella delle sedute singole, mai nel passato), `/credit-lots/{id}/extensions` (solo in avanti, anche su un lotto scaduto), `/credit-lots/{id}/adjustments` (±N, mai sotto zero), `GET /credit-lots/{id}`; firmate dall'account che agisce, con la nota obbligatoria; lotto proprio con il lucchetto; email al cliente per ognuna, senza la nota. Quattro difese tolte a turno con lo script corretto. 988 test verdi (`mvnw clean test`). 
 
-**Pezzo 6 fatto** (guida 41, D-074): cosa si vede. Il cliente: `GET /api/customer/credits` (i suoi lotti con saldo, ultimo giorno e stato `USABLE`/`USED_UP`/`EXPIRED` deciso dal backend) e `/{id}` (la storia, senza le note). Il professionista: `GET /api/panel/customers` ("i miei clienti" di D-066, costruita da `booking` con domande su insiemi), `/api/panel/customers/{id}/credits` (solo i propri lotti), `/api/panel/credit-lots/{id}` (con la storia e le note). Riservatezza provata (Anna non vede i lotti di Marco del cliente comune, né i clienti solo di Marco). Quattro difese tolte a turno con lo script corretto; una della guida sostituita perché nessun test poteva vederla (il giorno di Roma alle 10 coincide con quello UTC). 998 test verdi (`mvnw clean test`). **Pezzi 1–6 fatti. Prossimo: la chiusura del passo 10** (verifica dei criteri del brief, `passi/10-crediti.md`, PR verso `main`).
+**Pezzo 6 fatto** (guida 41, D-074): cosa si vede. Il cliente: `GET /api/customer/credits` (i suoi lotti con saldo, ultimo giorno e stato `USABLE`/`USED_UP`/`EXPIRED` deciso dal backend) e `/{id}` (la storia, senza le note). Il professionista: `GET /api/panel/customers` ("i miei clienti" di D-066, costruita da `booking` con domande su insiemi), `/api/panel/customers/{id}/credits` (solo i propri lotti), `/api/panel/credit-lots/{id}` (con la storia e le note). Riservatezza provata (Anna non vede i lotti di Marco del cliente comune, né i clienti solo di Marco). Quattro difese tolte a turno con lo script corretto; una della guida sostituita perché nessun test poteva vederla (il giorno di Roma alle 10 coincide con quello UTC). 998 test verdi (`mvnw clean test`). **Pezzi 1–6 fatti.**
+
+**Passo 10 chiuso** (2026-11-11, `passi/10-crediti.md`, con i criteri di "fatto" del brief verificati uno per uno e le risposte modello alle domande da colloquio). 998 test verdi (`mvnw clean test`). Unito in `main` con un merge di `feat/step-10-credits`, su indicazione di Nicholas al posto della PR. **Da confermare con lo studio**: un credito si usa solo se la seduta cade entro il suo ultimo giorno valido (D-071). **Prossimo: passo 11, cancellazioni** (prima: il punto aperto "cancellazione da parte dello studio").
 
 **Porta del database** (trovato nella prova del 2026-11-10): se un altro progetto usa già la 5432 (sul computer di Nicholas `auto2g-db`), il container PostgreSQL di questo progetto resta `Created` e il backend si collega al database sbagliato (*password authentication failed*). Soluzione: `POSTGRES_PORT=5433` nel `.env`, che vale sia per Compose sia per il backend.
 
@@ -103,7 +105,7 @@ Avvio di database e Mailpit in locale, dalla radice: `docker compose -f infra/do
 | 7 | Prenotazione: blocco dell'orario, approvazione (D-030), vincolo di non sovrapposizione, lavori programmati, eventi di dominio | Claude, su richiesta di Nicholas | ✅ fatto → `passi/07-prenotazione.md` |
 | 8 | Accesso: codice via email, sessioni, ruoli (Spring Security); notifiche email e push lato backend (D-032, D-039) | Claude, su richiesta di Nicholas | ✅ fatto → `passi/08-accesso.md` (correzione D-056) |
 | 9 | Pagamenti: Stripe Checkout con *manual capture* (D-031) e webhook | Claude, su richiesta di Nicholas | ✅ fatto → `passi/09-pagamenti.md` |
-| 10 | Crediti e pacchetti: lotti, movimenti, acquisto, prenotazione con credito | Nicholas, o Claude su sua richiesta | |
+| 10 | Crediti e pacchetti: lotti, movimenti, acquisto, prenotazione con credito | Claude, su richiesta di Nicholas | ✅ fatto → `passi/10-crediti.md` |
 | 11 | Cancellazioni | Nicholas, o Claude su sua richiesta | |
 | 12 | Frontend cliente: prenotazione e "le mie sedute" | Claude | |
 | 13 | Frontend pannello professionisti, installabile come app con notifiche push (D-032) | Claude | |
