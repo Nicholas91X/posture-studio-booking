@@ -418,13 +418,52 @@ public class BookingService {
 
     @Transactional
     public PanelBookingView reject(long practitionerId, long bookingId) {
+        Booking booking = lockedForPractitioner(practitionerId, bookingId);
+        rejectLocked(booking, clock.instant());
+        return PanelBookingView.from(booking);
+    }
+
+    // The studio cancels one of its future sessions (D-075, guide 44), whatever the notice: the customer loses
+    // nothing. A confirmed session becomes CANCELLED_BY_STUDIO and gives back what was paid, with the minimum
+    // validity always (CancelledBy.STUDIO, D-076); a request in wait is REJECTED, by the same code as /reject
+    // (D-078). The open payment link of a session to be paid in the studio is closed after the commit, as for the
+    // customer (PaymentLinkClosing). cancelledBy: the account that acts, for the trace (V16)
+    @Transactional
+    public PanelCancellationView cancelByStudio(long practitionerId, long cancelledBy, long bookingId) {
         Instant now = clock.instant();
         Booking booking = lockedForPractitioner(practitionerId, bookingId);
+        // the second click sees the result of the first: what /cancel produces is one of these two (guide 44, part 4)
+        if (booking.getStatus() == BookingStatus.CANCELLED_BY_STUDIO || booking.getStatus() == BookingStatus.REJECTED) {
+            return cancellationView(booking);
+        }
+        if (booking.getStatus() == BookingStatus.PENDING_APPROVAL) {
+            rejectLocked(booking, now);
+            return cancellationView(booking);
+        }
+        if (booking.getStatus() == BookingStatus.CONFIRMED && booking.hasStartedAt(now)) {
+            throw new BusinessRuleException(ErrorCode.BOOKING_ALREADY_STARTED,
+                    "Booking " + bookingId + " started at " + booking.getStartsAt());
+        }
+        // any other state (paying, cancelled by the customer meanwhile, over): 409 from the state machine
+        booking.cancelByStudio(now, cancelledBy);
+        ReturnedCredit returned = giveBack(booking, CancelledBy.STUDIO);
+        events.publishEvent(BookingCancelled.of(booking, returned == null ? null : returned.validUntil()));
+        return new PanelCancellationView(PanelBookingView.from(booking), returned);
+    }
+
+    // A rejection on a booking the caller has locked: within the deadline (D-030), the hold released or the credit
+    // back to its lot, the email. The one place of it, for /reject and for /cancel of a request in wait
+    private void rejectLocked(Booking booking, Instant now) {
         requireBeforeDeadline(booking, now);
         booking.reject(now);
         releasePayment(booking);
         events.publishEvent(BookingRejected.of(booking));
-        return PanelBookingView.from(booking);
+    }
+
+    // what the panel sees of a cancellation: the session and what came back, read from the ledger (one question)
+    private PanelCancellationView cancellationView(Booking booking) {
+        return new PanelCancellationView(PanelBookingView.from(booking),
+                credits.returnedTo(List.of(booking.getId())).get(booking.getId()));
     }
 
     // ***** LISTS (guide 23) *****

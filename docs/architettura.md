@@ -183,7 +183,15 @@ Il cliente riceve un'email per ognuna, senza la nota del professionista.
 4. Dopo il commit: email al cliente con quello che gli resta; push "Seduta cancellata" al professionista (email di riserva); per una seduta "in studio", il modulo `payment` fa scadere su Stripe il link di pagamento aperto. Se il cliente lo paga lo stesso, il webhook annulla il blocco (D-065).
 5. Il secondo clic riceve la stessa risposta, senza effetti nuovi; un solo credito per cancellazione lo garantiscono il lucchetto sulla seduta e un indice del registro.
 
-La cancellazione **da parte dello studio** (pezzo 3, D-075) e le sedute svolte o non presentate (pezzo 5) arrivano con i pezzi successivi.
+### Cancellazione da parte dello studio (D-075, D-080)
+
+1. Il professionista cancella una sua seduta futura (`POST /api/panel/bookings/{id}/cancel`), confermata o in attesa.
+2. **Confermata**: stato `CANCELLED_BY_STUDIO`, **a prescindere dal preavviso**. Credito: torna, con la validità minima sempre garantita (anche a un credito già allungato); carta: lotto nuovo da 1; in studio: niente, e il link aperto si fa scadere dopo il commit.
+3. **In attesa**: il rifiuto di sempre (`REJECTED`), con la stessa scadenza della risposta e la stessa email.
+4. Il cliente riceve l'email "lo studio ha dovuto cancellare la tua seduta" con quello che gli resta. La risposta al pannello dice quale credito è tornato.
+5. **Nessun rimborso dal sistema** (D-015): se il cliente vuole i soldi, il professionista azzera il credito con una correzione e poi rimborsa da Stripe (`docs/procedure-studio.md`).
+
+Le sedute svolte o non presentate (pezzo 5) arrivano con un pezzo successivo.
 
 ## Stripe
 

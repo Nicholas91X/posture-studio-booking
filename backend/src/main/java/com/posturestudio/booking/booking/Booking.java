@@ -226,6 +226,15 @@ class Booking {
         return status;
     }
 
+    // The studio cancels a confirmed session (D-075, guide 44): whatever the notice, so always CANCELLED_BY_STUDIO.
+    // The state machine refuses any state but CONFIRMED; the caller has refused a session already started
+    void cancelByStudio(Instant now, long cancelledBy) {
+        Objects.requireNonNull(now, "now must not be null");
+        moveTo(BookingStatus.CANCELLED_BY_STUDIO);
+        this.cancelledAt = now;
+        this.cancelledBy = cancelledBy;
+    }
+
     // nobody answered in time: void, like a rejection (D-030). Done by the job of guide 21
     void expireApproval() {
         moveTo(BookingStatus.APPROVAL_EXPIRED);

@@ -100,6 +100,19 @@ class BookingCancellationLinkTest {
         assertThat(sessionRow()).containsEntry("status", "CANCELLED_IN_TIME").containsEntry("paid_with", "IN_STUDIO");
     }
 
+    // the studio cancels it (guide 44): the same listener closes the page, whoever cancelled
+    @Test
+    void aCancellationOfTheStudioClosesTheOpenLinkToo() {
+        String page = link();
+
+        assertThat(mvc.post().uri("/api/panel/bookings/" + booking + "/cancel").with(sessions.practitioner(anna))
+                .exchange()).hasStatusOk();
+
+        assertThat(stripe.expiredSessions()).containsExactly(page);
+        assertThat(paymentStatus(page)).isEqualTo("EXPIRED");
+        assertThat(sessionRow()).containsEntry("status", "CANCELLED_BY_STUDIO");
+    }
+
     // a compensation that fails changes nothing for the customer: the page expires by itself (guide 43, 5.2)
     @Test
     void withStripeDownTheCancellationSucceedsAndTheLinkStaysToExpireByItself() {
