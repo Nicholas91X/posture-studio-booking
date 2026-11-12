@@ -1,6 +1,6 @@
 # Stato del progetto
 
-Ultimo aggiornamento: 2026-11-12 (**passo 11 chiuso**, D-075–D-082, branch `feat/step-11-cancellations`; da decidere con Nicholas: PR o merge in `main`; prossimo: passo 12, frontend del cliente)
+Ultimo aggiornamento: 2026-11-12 (**passo 11 chiuso**, D-075–D-082, unito in `main` con un merge (scelta di Nicholas, come al passo 10); prossimo: passo 12, frontend del cliente)
 
 ## Dove siamo
 
@@ -85,7 +85,7 @@ Fatto nel passo 4: struttura del repository, progetto Spring Boot 4.1.1 su Java 
 
 **Pezzo 5 fatto** (guida 46, D-082; la finestra di 7 giorni scelta da Nicholas): dopo la seduta. Un lavoro ogni minuto porta a `COMPLETED`, con un solo `update`, le sedute `CONFIRMED` finite; `/no-show` e `/attended` nel pannello, idempotenti, con chi e quando, dall'inizio della seduta fino a 7 giorni dopo la fine (409 `BOOKING_NOT_STARTED`, `ATTENDANCE_WINDOW_CLOSED`), nessun effetto sui crediti; `GET /api/customer/bookings?period=upcoming|past` (senza parametro la lista di prima). Cinque difese tolte a turno, tutte prese (la guardia del lavoro anche dal `check` della V16 per una seduta cancellata). 1120 test verdi (`mvnw clean test`).
 
-**Passo 11 chiuso** (2026-11-12, `passi/11-cancellazioni.md`, con i criteri del brief verificati uno per uno e le risposte modello alle domande da colloquio). 1120 test verdi (`mvnw clean test`). **Da decidere con Nicholas**: PR verso `main` (come chiede il brief) o merge come al passo 10. **Prossimo: passo 12, frontend del cliente** (prima: il contratto OpenAPI, nota qui sotto).
+**Passo 11 chiuso** (2026-11-12, `passi/11-cancellazioni.md`, con i criteri del brief verificati uno per uno e le risposte modello alle domande da colloquio). 1120 test verdi (`mvnw clean test`). Unito in `main` con un merge, senza PR (scelta di Nicholas, come al passo 10). **Prossimo: passo 12, frontend del cliente** (prima: il contratto OpenAPI, nota qui sotto).
 
 **Porta del database** (trovato nella prova del 2026-11-10): se un altro progetto usa già la 5432 (sul computer di Nicholas `auto2g-db`), il container PostgreSQL di questo progetto resta `Created` e il backend si collega al database sbagliato (*password authentication failed*). Soluzione: `POSTGRES_PORT=5433` nel `.env`, che vale sia per Compose sia per il backend.
 

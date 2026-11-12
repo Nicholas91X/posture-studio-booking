@@ -1,6 +1,6 @@
 # Passo 11 — Cancellazioni
 
-> **Stato: chiuso** (2026-11-12). Pezzi 1–5 fatti, 1120 test verdi (`mvnw clean test`). Branch `feat/step-11-cancellations`; l'unione in `main` è da decidere con Nicholas (PR, come chiede il brief, o merge come al passo 10).
+> **Stato: chiuso** (2026-11-12). Pezzi 1–5 fatti, 1120 test verdi (`mvnw clean test`). Branch `feat/step-11-cancellations`, unito in `main` con un merge (Nicholas ha preferito il merge alla PR del brief, come al passo 10).
 
 ## Obiettivo
 Il cliente cancella una seduta confermata: in tempo riceve il credito, tardi lo perde. Lo studio può cancellare una seduta, e il cliente non perde niente. Le sedute passate diventano "svolte" o "non presentato". Un professionista con sedute future non si disattiva.
@@ -27,7 +27,7 @@ Decisioni preliminari: D-071 confermata dallo studio; D-075 (cancellazione da pa
 | Disattivazione bloccata con sedute future; avviso dei crediti; lotti non utilizzabili per il cliente | ✅ con la gara contro una prenotazione nuova, nei due ordini, con commit veri | `PractitionerDeactivationApiTest`, `PractitionerDeactivationRaceTest` |
 | `COMPLETED` automatico e `NO_SHOW` dal pannello | ✅ con la finestra di 7 giorni al secondo | `BookingAfterSessionTest` |
 | Procedura di rimborso manuale scritta per lo studio | ✅ prima la correzione, poi il rimborso | `docs/procedure-studio.md` |
-| `modello-dati.md` e `architettura.md` aggiornati; test verdi; PR verso `main` | ✅ / ✅ / **da decidere** | `modello-dati.md` (V16), `architettura.md` (cancellazioni, disattivazione, dopo la seduta) |
+| `modello-dati.md` e `architettura.md` aggiornati; test verdi; PR verso `main` | ✅ / ✅ / ✅ con un merge, scelta di Nicholas | `modello-dati.md` (V16), `architettura.md` (cancellazioni, disattivazione, dopo la seduta) |
 | Chiusura come da CLAUDE.md, con riepilogo | ✅ | questo documento, `stato.md` |
 
 ## Cosa è stato costruito
