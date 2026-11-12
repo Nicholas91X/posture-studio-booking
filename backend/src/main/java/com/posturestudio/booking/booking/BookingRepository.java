@@ -108,6 +108,17 @@ interface BookingRepository extends JpaRepository<Booking, Long> {
 
     Optional<Booking> findByIdAndPractitionerId(Long id, Long practitionerId);
 
+    // The sessions of a practitioner that hold the time and are not over (D-077, guide 45, part 2): the same rule
+    // as holdsTimeAt, with "not over" instead of "now". They stop a deactivation, and the admin cancels them
+    @Query("""
+            select b from Booking b
+            where b.practitionerId = :practitionerId and b.endsAt > :now and b.status in :holding
+              and (b.status <> :pending or b.holdExpiresAt > :now)
+            order by b.startsAt
+            """)
+    List<Booking> findUnfinishedHolding(long practitionerId, Instant now, Collection<BookingStatus> holding,
+                                        BookingStatus pending);
+
     // ***** for transitions: select ... for update (guide 20, 3.4) *****
     // Whoever arrives second waits, then reads the new status: a transition that calls Stripe starts only
     // when it is surely ours. The lazy expiry and the jobs (bulk updates) wait on the same row lock

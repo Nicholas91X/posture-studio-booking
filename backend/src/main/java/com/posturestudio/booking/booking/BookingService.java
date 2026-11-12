@@ -100,6 +100,11 @@ public class BookingService {
     public CustomerBookingView request(long customerId, NewBooking request) {
         Instant now = clock.instant();
         long practitionerId = request.practitionerId();
+
+        // 0. FIRST the lock against a deactivation in flight (guide 45, part 4), THEN everything that asks whether
+        // the practitioner is active (the service on sale, step 1): asked after the wait, it sees the deactivation
+        practitioners.lockForBooking(practitionerId);
+
         Instant start = request.startsAt().toInstant();
 
         // 1. the request names something on sale (404): no lock needed for that
@@ -368,6 +373,9 @@ public class BookingService {
     @Transactional
     public PanelBookingView bookFromPanel(long practitionerId, NewPanelBooking request) {
         Instant now = clock.instant();
+        // the lock against a deactivation in flight, first (guide 45, part 4); the practitioner acting here is signed
+        // in, but a deactivation may be committing in this very moment
+        practitioners.lockForBooking(practitionerId);
         // an own active service, or 404
         ServiceOnSale service = catalog.serviceOnSale(practitionerId, request.serviceId());
         long customerId = customers.findOrCreate(request.customer());
@@ -464,6 +472,20 @@ public class BookingService {
     private PanelCancellationView cancellationView(Booking booking) {
         return new PanelCancellationView(PanelBookingView.from(booking),
                 credits.returnedTo(List.of(booking.getId())).get(booking.getId()));
+    }
+
+    // ***** ADMIN (D-077, guide 45, part 5) *****
+
+    // the sessions that stop the deactivation of this practitioner: what the admin must cancel first. No names of
+    // customers: the admin needs to know what to cancel, not who
+    @Transactional(readOnly = true)
+    public List<AdminBookingView> unfinishedForAdmin(long practitionerId) {
+        practitioners.requireExists(practitionerId);
+        return unfinished(practitionerId, clock.instant()).stream().map(AdminBookingView::from).toList();
+    }
+
+    List<Booking> unfinished(long practitionerId, Instant now) {
+        return bookings.findUnfinishedHolding(practitionerId, now, BookingStatus.HOLDS_TIME, BookingStatus.PENDING_PAYMENT);
     }
 
     // ***** LISTS (guide 23) *****

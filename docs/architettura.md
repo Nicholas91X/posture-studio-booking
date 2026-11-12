@@ -191,6 +191,14 @@ Il cliente riceve un'email per ognuna, senza la nota del professionista.
 4. Il cliente riceve l'email "lo studio ha dovuto cancellare la tua seduta" con quello che gli resta. La risposta al pannello dice quale credito è tornato.
 5. **Nessun rimborso dal sistema** (D-015): se il cliente vuole i soldi, il professionista azzera il credito con una correzione e poi rimborsa da Stripe (`docs/procedure-studio.md`).
 
+### Disattivazione di un professionista (D-077, D-081)
+
+1. L'admin chiede `POST /api/admin/practitioners/{id}/deactivate`. Il backend blocca la riga del professionista (`FOR UPDATE`) e conta le sue sedute che occupano l'orario e non sono finite.
+2. **Ce ne sono**: 409. L'admin le vede (`GET /api/admin/practitioners/{id}/bookings`, senza i nomi dei clienti) e le cancella lui, se il professionista non può: è la cancellazione da parte dello studio, firmata dall'admin.
+3. **Non ce ne sono**: l'account si disattiva (D-052), e la risposta elenca come avviso i crediti ancora validi dei suoi clienti, con nome ed email. Il sistema non li sposta.
+4. Il cliente vede quei crediti come `PRACTITIONER_UNAVAILABLE`; se il professionista torna attivo, tornano utilizzabili da soli.
+5. **La gara con una prenotazione nuova**: ogni prenotazione prende `FOR KEY SHARE` sulla stessa riga come primo passo, prima di chiedere se il professionista è attivo. Una delle due aspetta l'altra, e poi vede quello che l'altra ha confermato.
+
 Le sedute svolte o non presentate (pezzo 5) arrivano con un pezzo successivo.
 
 ## Stripe

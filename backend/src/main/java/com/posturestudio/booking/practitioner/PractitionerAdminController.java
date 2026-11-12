@@ -25,9 +25,11 @@ import jakarta.validation.Valid;
 class PractitionerAdminController {
 
     private final PractitionerService practitioners;
+    private final PractitionerDeactivation deactivation;
 
-    PractitionerAdminController(PractitionerService practitioners) {
+    PractitionerAdminController(PractitionerService practitioners, PractitionerDeactivation deactivation) {
         this.practitioners = practitioners;
+        this.deactivation = deactivation;
     }
 
     @GetMapping
@@ -52,10 +54,11 @@ class PractitionerAdminController {
         return practitioners.rename(id, names);
     }
 
-    // domain actions, as for services and packages: idempotent, 200 with the state after the action
+    // domain actions, as for services and packages: idempotent, 200 with the state after the action.
+    // 409 with sessions to come (D-077); the answer warns of the credits still valid of their customers
     @PostMapping("/{id}/deactivate")
-    AdminPractitionerView deactivate(@PathVariable long id) {
-        return practitioners.deactivate(id);
+    PractitionerDeactivationView deactivate(@PathVariable long id) {
+        return deactivation.deactivate(id);
     }
 
     @PostMapping("/{id}/activate")

@@ -31,6 +31,8 @@ public enum ErrorCode {
 
     BOOKING_ALREADY_STARTED,
 
+    PRACTITIONER_HAS_FUTURE_BOOKINGS,
+
     // the practitioner answers after approval_deadline: the request is already void, the job closes it (D-030)
     APPROVAL_DEADLINE_PASSED,
 
