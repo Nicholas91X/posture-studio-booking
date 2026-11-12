@@ -16,6 +16,9 @@ import com.posturestudio.booking.auth.SmsRequests.PhoneOnly;
 
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.validation.Valid;
+import io.swagger.v3.oas.annotations.media.Content;
+import io.swagger.v3.oas.annotations.media.Schema;
+import io.swagger.v3.oas.annotations.responses.ApiResponse;
 
 /**
  * The phone of the signed-in account (guide 29, part 3): customers and practitioners, never the admin, who
@@ -43,6 +46,7 @@ class AccountPhoneController {
     }
 
     // a code to the number to add; 202, the SMS leaves in another thread
+    @ApiResponse(responseCode = "202", description = "The SMS with the code is on its way")
     @PostMapping("/code")
     ResponseEntity<?> requestCode(@Valid @RequestBody PhoneOnly body, HttpServletRequest http) {
         if (!codes.smsAvailable()) {
@@ -52,6 +56,7 @@ class AccountPhoneController {
         return ResponseEntity.accepted().build();
     }
 
+    @ApiResponse(responseCode = "200", description = "Verified", content = @Content(schema = @Schema(implementation = AccountPhoneView.class)))
     @PostMapping
     ResponseEntity<?> confirm(@Valid @RequestBody PhoneAndCode body) {
         return switch (codes.confirmPhone(currentUser.id(), body.phone(), body.code())) {
@@ -64,6 +69,7 @@ class AccountPhoneController {
     }
 
     // no more SMS sign-in for this account; the email stays. 204 also when there was no number
+    @ApiResponse(responseCode = "204", description = "Removed, or there was none")
     @DeleteMapping
     ResponseEntity<Void> remove() {
         codes.removePhone(currentUser.id());

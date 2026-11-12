@@ -56,13 +56,36 @@ public class PublicApiTest {
     }
 
     @Test
-    void practitionerExposesOnlyIdAndName() throws Exception {
+    void practitionerExposesNameAndWhatTheCustomerMustKnowBeforeBooking() throws Exception {
         String body = mvc.get().uri("/api/public/practitioners").exchange().getResponse().getContentAsString();
 
-        // the exact set of fields: a new one must be a decision, not an accident
+        // the exact set of fields: a new one must be a decision, not an accident (D-029, D-084)
         Map<String, Object> first = JsonPath.read(body, "$[0]");
-        assertThat(first.keySet()).containsExactlyInAnyOrder("id", "firstName", "lastName");
+        assertThat(first.keySet()).containsExactlyInAnyOrder("id", "firstName", "lastName", "onlineBooking",
+                "bookingApproval", "approvalWindowHours", "cancellationNoticeHours");
         assertThat(first).containsEntry("firstName", "Luca").containsEntry("lastName", "Bianchi");
+    }
+
+    // D-084: bookable online = a payment account assigned (D-057); the settings as the practitioner set them (D-030)
+    @Test
+    void practitionerSaysWhetherItCanBePaidOnlineAndHowItConfirms() {
+        jdbc.update("insert into practitioner_payment_account (practitioner_id, account, assigned_at) values (?, 'alpha', now())",
+                rossi);
+        jdbc.update("""
+                update practitioner set booking_approval = 'AUTOMATIC', approval_window_hours = 6,
+                       cancellation_notice_hours = 48 where id = ?
+                """, rossi);
+
+        MvcTestResult result = mvc.get().uri("/api/public/practitioners").exchange();
+
+        // Bianchi first (last name), without an account and with the defaults of the database
+        assertThat(result).bodyJson().extractingPath("$[0].onlineBooking").isEqualTo(false);
+        assertThat(result).bodyJson().extractingPath("$[0].bookingApproval").isEqualTo("MANUAL");
+        assertThat(result).bodyJson().extractingPath("$[0].cancellationNoticeHours").isEqualTo(24);
+        assertThat(result).bodyJson().extractingPath("$[1].onlineBooking").isEqualTo(true);
+        assertThat(result).bodyJson().extractingPath("$[1].bookingApproval").isEqualTo("AUTOMATIC");
+        assertThat(result).bodyJson().extractingPath("$[1].approvalWindowHours").isEqualTo(6);
+        assertThat(result).bodyJson().extractingPath("$[1].cancellationNoticeHours").isEqualTo(48);
     }
 
     // ***** CATALOG *****
@@ -135,6 +158,16 @@ public class PublicApiTest {
         // it must not fall into our generic 500
         assertThat(mvc.get().uri("/api/public/practitioners/abc/catalog"))
                 .hasStatus(HttpStatus.BAD_REQUEST)
+                .hasContentType("application/problem+json");
+    }
+
+    // ***** THE CONTRACT *****
+
+    // D-083: off by default, as in production, so the path has no handler; and never a 401/403 that would hint at it
+    @Test
+    void theOpenApiContractDoesNotExistByDefault() {
+        assertThat(mvc.get().uri("/v3/api-docs"))
+                .hasStatus(HttpStatus.NOT_FOUND)
                 .hasContentType("application/problem+json");
     }
 

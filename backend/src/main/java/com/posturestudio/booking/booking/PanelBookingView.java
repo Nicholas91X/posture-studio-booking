@@ -5,6 +5,8 @@ import java.time.OffsetDateTime;
 
 import com.posturestudio.booking.shared.StudioTime;
 
+import io.swagger.v3.oas.annotations.media.Schema;
+
 /**
  * A booking as its practitioner sees it after an answer, times in Rome (D-035).
  * The minimum for now: the customer's name and the overlap flags arrive with the lists of piece 6.
@@ -12,7 +14,7 @@ import com.posturestudio.booking.shared.StudioTime;
  */
 public record PanelBookingView(long id, long customerId, long serviceId, OffsetDateTime startsAt,
                                OffsetDateTime endsAt, BookingStatus status, PaidWith paidWith,
-                               OffsetDateTime approvalDeadline) {
+                               @Schema(nullable = true) OffsetDateTime approvalDeadline) {
 
     static PanelBookingView from(Booking booking) {
         return new PanelBookingView(booking.getId(), booking.getCustomerId(), booking.getServiceId(),

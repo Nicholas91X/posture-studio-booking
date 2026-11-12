@@ -7,6 +7,8 @@ import java.time.OffsetDateTime;
 import com.posturestudio.booking.credit.ReturnedCredit;
 import com.posturestudio.booking.shared.StudioTime;
 
+import io.swagger.v3.oas.annotations.media.Schema;
+
 /**
  * A booking as its customer sees it, times in Rome (D-035). holdExpiresAt is what the payment page
  * counts down to while the status is PENDING_PAYMENT; approvalDeadline is how long the customer may
@@ -21,9 +23,9 @@ import com.posturestudio.booking.shared.StudioTime;
  */
 public record CustomerBookingView(long id, long practitionerId, long serviceId, OffsetDateTime startsAt,
                                   OffsetDateTime endsAt, BookingStatus status, PaidWith paidWith, long priceCents,
-                                  OffsetDateTime holdExpiresAt, OffsetDateTime approvalDeadline, URI paymentUrl,
-                                  OffsetDateTime freeCancellationUntil, OffsetDateTime cancelledAt,
-                                  ReturnedCredit returnedCredit) {
+                                  @Schema(nullable = true) OffsetDateTime holdExpiresAt, @Schema(nullable = true) OffsetDateTime approvalDeadline, @Schema(nullable = true) URI paymentUrl,
+                                  OffsetDateTime freeCancellationUntil, @Schema(nullable = true) OffsetDateTime cancelledAt,
+                                  @Schema(nullable = true) ReturnedCredit returnedCredit) {
 
     static CustomerBookingView from(Booking booking) {
         return from(booking, null, null);

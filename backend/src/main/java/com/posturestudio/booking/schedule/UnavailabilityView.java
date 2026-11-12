@@ -4,11 +4,13 @@ import java.time.OffsetDateTime;
 
 import com.posturestudio.booking.shared.StudioTime;
 
+import io.swagger.v3.oas.annotations.media.Schema;
+
 /**
  * An absence as the practitioner sees it in the panel, with the reason.
  * Never used by public APIs: the reason is for the practitioner only.
  */
-public record UnavailabilityView(long id, OffsetDateTime startsAt, OffsetDateTime endsAt, String reason) {
+public record UnavailabilityView(long id, OffsetDateTime startsAt, OffsetDateTime endsAt, @Schema(nullable = true) String reason) {
 
     static UnavailabilityView from(Unavailability unavailability) {
         return new UnavailabilityView(unavailability.getId(),

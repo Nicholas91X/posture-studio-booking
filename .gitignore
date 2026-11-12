@@ -31,3 +31,9 @@ next-env.d.ts
 # --- OS ---
 .DS_Store
 Thumbs.db
+
+# --- Frontend: the end-to-end tests ---
+.next-e2e/
+test-results/
+playwright-report/
+*.tsbuildinfo

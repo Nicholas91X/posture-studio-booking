@@ -16,6 +16,9 @@ import com.posturestudio.booking.auth.CodeCheck.Wrong;
 import com.posturestudio.booking.auth.SmsRequests.PhoneAndCode;
 
 import jakarta.servlet.http.HttpServletRequest;
+import io.swagger.v3.oas.annotations.media.Content;
+import io.swagger.v3.oas.annotations.media.Schema;
+import io.swagger.v3.oas.annotations.responses.ApiResponse;
 
 /**
  * The session as a resource (guide 25): POST opens it with the code, GET says who is in, DELETE closes it.
@@ -37,6 +40,8 @@ class SessionController {
         this.currentUser = currentUser;
     }
 
+    // the contract (D-083): the body of a 200; the errors are the ProblemDetail of every operation
+    @ApiResponse(responseCode = "200", description = "Signed in", content = @Content(schema = @Schema(implementation = SessionView.class)))
     @PostMapping
     // @jakarta.validation.Valid written in full: Valid alone is CodeCheck.Valid in this class
     ResponseEntity<?> signIn(@jakarta.validation.Valid @RequestBody SignInRequest body, HttpServletRequest request) {
@@ -44,6 +49,7 @@ class SessionController {
     }
 
     // the same by SMS (guide 29, 8.1): the same answers, from the latest SMS code of the number
+    @ApiResponse(responseCode = "200", description = "Signed in", content = @Content(schema = @Schema(implementation = SessionView.class)))
     @PostMapping("/sms")
     ResponseEntity<?> signInBySms(@jakarta.validation.Valid @RequestBody PhoneAndCode body, HttpServletRequest request) {
         return answer(codes.verifySms(body.phone(), body.code()), request);
@@ -71,6 +77,7 @@ class SessionController {
         return new SessionView(currentUser.role());
     }
 
+    @ApiResponse(responseCode = "204", description = "Signed out")
     @DeleteMapping
     ResponseEntity<Void> signOut(HttpServletRequest request) {
         sessions.signOut(request);

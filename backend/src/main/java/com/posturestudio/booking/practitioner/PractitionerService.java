@@ -45,15 +45,15 @@ public class PractitionerService {
 
     // ***** PUBLIC *****
 
-    // Two queries whatever the number of practitioners: all of them, then one question to auth
+    // Two queries whatever the number of practitioners: all of them, then one question to auth. Package-private:
+    // the public list with what payment knows is PublicPractitioners (D-084)
     @Transactional(readOnly = true)
-    public List<PublicPractitioner> listActive() {
+    List<Practitioner> activeInOrder() {
         List<Practitioner> all = repository.findAllByOrderByLastNameAscFirstNameAsc();
         Set<Long> activeUsers = accounts.activeAmong(all.stream().map(Practitioner::getUserId).toList());
         // filter keeps the order of the query
         return all.stream()
                 .filter(practitioner -> activeUsers.contains(practitioner.getUserId()))
-                .map(PublicPractitioner::from)
                 .toList();
     }
 
