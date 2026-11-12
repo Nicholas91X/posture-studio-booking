@@ -105,6 +105,9 @@ Un'unica applicazione, divisa in package per area. Ogni modulo espone verso gli 
   - **Pubblica**: scelta del professionista e del servizio, calendario, accesso con codice, pagamento, "le mie sedute" e crediti.
   - **Pannello** (solo professionisti): agenda, richieste da approvare, servizi e prezzi, pacchetti, orari, indisponibilità, impostazioni. Installabile sul telefono come app (*PWA*), con un *service worker* che riceve le notifiche push (D-032).
 - Nessuna regola di business: il frontend chiede al backend e mostra quello che riceve.
+- Il server di Next costruisce solo il guscio delle pagine; i dati li legge il browser da `/api`, della stessa origine (D-085). In sviluppo Next riscrive `/api/*` verso il backend, come Caddy in produzione: cookie di sessione e CSRF funzionano uguali.
+- Un solo client delle API (`frontend/src/api/client.ts`), con i tipi generati dal contratto OpenAPI (`frontend/openapi.json`, D-083), il gettone CSRF e gli errori come un tipo unico; un solo dizionario codice → frase (`errors.ts`).
+- Le pagine di ritorno da Stripe rileggono lo stato dal backend per un minuto al massimo (D-007, D-085).
 - Mobile prima di tutto: la maggior parte dei clienti prenoterà dal telefono.
 
 ## Accesso e sessioni
