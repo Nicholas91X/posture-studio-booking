@@ -14,7 +14,7 @@ Il codice l'ha scritto Claude (D-005, percorso). Al posto delle guide di studio,
 - [x] **Prenotazione con credito, ritiro, cancellazione in tempo e tardiva con la frase giusta prima della conferma** — test end-to-end 3, 4, 5.
 - [x] **Crediti e acquisto di un pacchetto** — pagina dei crediti e storia di un lotto (test end-to-end 8); l'acquisto apre Stripe e torna a `/crediti?acquisto=...`, da provare a mano con la stessa procedura.
 - [x] **Nessun errore tecnico mostrato al cliente; codice sconosciuto gestito** — un solo dizionario (`errors.ts`), test end-to-end 6 (orario preso nel frattempo) e 7 (codice inventato e `detail` tecnico: compare solo la frase generica).
-- [x] **Test end-to-end verdi; pagine usabili da telefono** — 8 su 8 su un Pixel 7 simulato; il test 8 visita ogni pagina, controlla che niente sia più largo dello schermo e salva le schermate (guardate una per una).
+- [x] **Test end-to-end verdi; pagine usabili da telefono** — 9 su 9 su un Pixel 7 simulato (il nono aggiunto dopo il merge, errore 9); l'ultimo visita ogni pagina, controlla che niente sia più largo dello schermo e salva le schermate (guardate una per una).
 - [x] **stato.md aggiornato** (avvio del frontend, note per i passi 13 e 14); **PR verso main**: PR #9, unita con un merge.
 - [x] **Riepilogo per la chat di pianificazione**.
 
@@ -57,7 +57,7 @@ Il codice l'ha scritto Claude (D-005, percorso). Al posto delle guide di studio,
 
 ### Prove
 
-`frontend/e2e/`: `start-backend.mjs` (backend sulla 8081 con il database `posture_studio_e2e` ricreato a ogni giro, admin dei test, nessun conto Stripe), `support.ts` (codici da Mailpit, attori che chiamano le API con sessione e CSRF), `customer.spec.ts` (8 test), `playwright.config.ts` (Pixel 7, frontend sulla 3001 in `.next-e2e`).
+`frontend/e2e/`: `start-backend.mjs` (backend sulla 8081 con il database `posture_studio_e2e` ricreato a ogni giro, admin dei test, nessun conto Stripe), `support.ts` (codici da Mailpit, attori che chiamano le API con sessione e CSRF), `customer.spec.ts` (9 test), `playwright.config.ts` (Pixel 7, frontend sulla 3001 in `.next-e2e`).
 
 ## Prova manuale con Stripe (da fare)
 
@@ -100,6 +100,7 @@ Come le prove dei passi 9 e 10 (guida 32, parte 13.1; guida 37, parte 12.1), ma 
 6. **Il codice di accesso "non arrivava".** Due cause sovrapposte: l'email dell'omaggio può arrivare **dopo** quella del codice (parte in un altro thread dopo il commit), e l'orologio del container di Mailpit è indietro di circa due secondi rispetto al computer, quindi il test scartava l'email giusta come "più vecchia". Corretto cercando per oggetto e confrontando l'id dell'ultima email prima e dopo la richiesta, mai l'ora.
 7. **`mvnw.cmd` non trovato** dallo script dei test end-to-end: lo stesso problema del passo 10 (D-072); corretto con il percorso completo.
 8. **Riletto dalle schermate**: una seduta cancellata in tempo, riaperta più tardi, non diceva più quale credito era tornato; sul telefono il riepilogo compariva sotto gli orari, fuori dallo schermo. Corretti entrambi.
+9. **L'admin entrato nel sito dei clienti non poteva più uscire** (trovato da Nicholas il 2026-11-12, dopo il merge, provando con il suo `ADMIN_EMAIL`). "Esci" stava solo nel profilo, e il profilo a un admin o a un professionista mostra soltanto l'avviso "questa sezione è per i clienti". I test entravano solo come clienti, quindi non lo vedevano. Corretto con "Esci" dentro l'avviso; aggiunto il test end-to-end "l'admin sul sito dei clienti… può uscire" (ora 9 test).
 
 ## Domande da colloquio
 

@@ -92,6 +92,20 @@ test("un cliente nuovo accede con il codice, dà nome e cognome, torna dove era 
   await expect(page).toHaveURL(/\/accedi\?torna=%2Fcrediti/);
 });
 
+// found by Nicholas on 2026-11-12: the admin on the customer's site had no way out, "Esci" was only in the profile
+test("l'admin sul sito dei clienti legge che non è la sua sezione, e può uscire", async ({ page }) => {
+  await page.goto("/profilo");
+  await signInThroughThePages(page, "admin@e2e.local");
+
+  await expect(page).toHaveURL(`${FRONTEND_URL}/profilo`);
+  await expect(page.getByText("Questa sezione è per i clienti")).toBeVisible();
+  await page.getByRole("button", { name: "Esci" }).click();
+  await expect(page).toHaveURL(`${FRONTEND_URL}/`);
+
+  await page.goto("/profilo");
+  await expect(page).toHaveURL(/\/accedi\?torna=%2Fprofilo/);
+});
+
 test("il sito dice prima che con Anna non si paga online, e mostra i crediti di Maria", async () => {
   const { page } = maria;
   await page.goto("/");
