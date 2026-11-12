@@ -89,6 +89,7 @@ Come le prove dei passi 9 e 10 (guida 32, parte 13.1; guida 37, parte 12.1), ma 
 - **D-083** — contratto OpenAPI: springdoc 3.2.0, acceso solo in sviluppo, copia nel repository, tre correzioni.
 - **D-084** — il professionista pubblico dice se è prenotabile online, come conferma e il preavviso (completa D-030).
 - **D-085** — il frontend: dati letti dal browser, una sola origine, un client, un dizionario, il ritorno da Stripe che rilegge, test end-to-end isolati.
+- **D-086** (dopo il merge, 2026-11-12) — l'identità visiva dal sito dello studio: crema e sabbia, pulsanti a pillola marrone, Playfair Display per i titoli servito da noi, il segno del logo nell'intestazione e come icona; solo `tokens.css`, `globals.css`, `brand.ts`, `layout.tsx` e `AppShell`.
 
 ## Errori fatti e come sono stati corretti
 

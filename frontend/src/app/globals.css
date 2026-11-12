@@ -13,7 +13,9 @@ html {
 
 body {
   margin: 0;
-  background: var(--color-bg);
+  min-height: 100vh;
+  /* a little more light at the top, as the cream of the site fading into its sand */
+  background: linear-gradient(180deg, var(--color-bg-top) 0, var(--color-bg) 20rem) no-repeat var(--color-bg);
   color: var(--color-text);
   font-family: var(--font-body);
   font-size: 1rem;
@@ -21,7 +23,7 @@ body {
 }
 
 a {
-  color: var(--color-primary);
+  color: var(--color-link);
 }
 
 h1,
@@ -31,12 +33,21 @@ h3 {
   margin: 0 0 0.5rem;
 }
 
+/* the serif of the site's headings, for the two upper levels only: the third stays the body face, as a label */
+h1,
+h2 {
+  font-family: var(--font-display);
+  font-weight: 500;
+  color: var(--color-heading);
+  letter-spacing: -0.01em;
+}
+
 h1 {
-  font-size: 1.5rem;
+  font-size: 1.85rem;
 }
 
 h2 {
-  font-size: 1.15rem;
+  font-size: 1.3rem;
 }
 
 h3 {
@@ -73,9 +84,22 @@ p {
 }
 
 .brand {
-  font-weight: 700;
-  color: var(--color-text);
+  display: inline-flex;
+  align-items: center;
+  gap: 0.6rem;
+  font-family: var(--font-display);
+  font-weight: 600;
+  font-size: 1.05rem;
+  letter-spacing: 0.01em;
+  color: var(--color-heading);
   text-decoration: none;
+  white-space: nowrap;
+}
+
+.brand img {
+  display: block;
+  width: 36px;
+  height: 36px;
 }
 
 .top-nav {
@@ -205,8 +229,8 @@ main {
   align-items: center;
   justify-content: center;
   min-height: var(--tap);
-  padding: 0.5rem 1.1rem;
-  border-radius: var(--radius-small);
+  padding: 0.5rem 1.4rem;
+  border-radius: var(--radius-pill); /* the pills of the site's "Prenota" */
   border: 1px solid var(--color-primary);
   background: var(--color-primary);
   color: var(--color-on-primary);
@@ -231,7 +255,7 @@ main {
 }
 
 .button-secondary:hover {
-  background: var(--color-info-bg);
+  background: var(--color-surface-muted);
 }
 
 .button-danger {
@@ -254,7 +278,7 @@ main {
   border: none;
   padding: 0;
   min-height: var(--tap);
-  color: var(--color-primary);
+  color: var(--color-link);
   font: inherit;
   text-decoration: underline;
   cursor: pointer;
@@ -364,7 +388,7 @@ label {
 .tab {
   min-height: 40px;
   border: none;
-  border-radius: 6px;
+  border-radius: 9px;
   background: transparent;
   color: var(--color-text-muted);
   font: inherit;

@@ -1,5 +1,6 @@
 "use client";
 
+import Image from "next/image";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import type { ReactNode } from "react";
@@ -32,7 +33,8 @@ export function AppShell({ children }: { children: ReactNode }) {
       <header className="app-header">
         <div className="app-header-inner">
           <Link href="/" className="brand">
-            {brand.name}
+            <Image src="/logo-mark.png" alt="" width={36} height={36} priority />
+            <span>{brand.name}</span>
           </Link>
           <nav className="top-nav" aria-label="Sezioni">
             {links}
