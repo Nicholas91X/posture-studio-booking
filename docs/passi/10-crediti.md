@@ -30,7 +30,7 @@ Decisioni preliminari: D-066 (i clienti di un professionista), D-067 (concession
 | `modello-dati.md` e `architettura.md` aggiornati; test verdi | ✅ V15 | `modello-dati.md`, `architettura.md` |
 | Branch e unione in `main` | ✅ merge (al posto della PR, su indicazione di Nicholas) | `main` |
 
-**Da confermare con lo studio**: un credito si usa solo se la seduta cade entro il suo ultimo giorno valido (D-071). Se lo studio preferisce "basta che il credito valga il giorno della richiesta", si cambia un argomento.
+~~**Da confermare con lo studio**~~ **Confermato dallo studio il 2026-11-12** (brief del passo 11): un credito si usa solo se la seduta cade entro il suo ultimo giorno valido (D-071). Se lo studio avesse preferito "basta che il credito valga il giorno della richiesta", sarebbe cambiato un argomento.
 
 **Lasciato al passo 14** (criterio scritto in `stato.md`): in produzione l'applicazione si collega con un utente non superuser, senza `UPDATE`, `DELETE` e `TRUNCATE` su `credit_movement`. I trigger fermano gli errori, ma un superuser li può spegnere.
 
@@ -97,7 +97,7 @@ Decisioni preliminari: D-066 (i clienti di un professionista), D-067 (concession
 **Moduli senza cicli.** `booking` dipende da `credit`; `payment` da `credit`, `catalog` e `customer`; `credit` da `catalog`, `customer` e `practitioner`; nessuno dipende da `payment` o da `notification`. "I miei clienti" ha bisogno di quattro moduli e la costruisce `booking`, l'unico che può chiedere a tutti, con domande su insiemi di id.
 
 ## Decisioni
-D-066 (i clienti di un professionista), D-067 (concessioni), D-068 (nessun `LATE_PAYMENT`), D-069 (il registro: trigger, scadenza come data, un lotto per pagamento, proroga in avanti), D-070 (acquisto: un'ora, incasso immediato, lotto dalla fotografia), D-071 (prenotare con un credito; **regola da confermare con lo studio**), D-072 (dal pannello), D-073 (concessioni dal pannello), D-074 (cosa si vede). Note di stato su D-008, D-024, D-031. Eccezione sulle date in CLAUDE.md (`credit_lot.valid_until`).
+D-066 (i clienti di un professionista), D-067 (concessioni), D-068 (nessun `LATE_PAYMENT`), D-069 (il registro: trigger, scadenza come data, un lotto per pagamento, proroga in avanti), D-070 (acquisto: un'ora, incasso immediato, lotto dalla fotografia), D-071 (prenotare con un credito; regola confermata dallo studio il 2026-11-12), D-072 (dal pannello), D-073 (concessioni dal pannello), D-074 (cosa si vede). Note di stato su D-008, D-024, D-031. Eccezione sulle date in CLAUDE.md (`credit_lot.valid_until`).
 
 ## Errori fatti e come sono stati corretti
 

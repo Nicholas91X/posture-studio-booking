@@ -49,14 +49,22 @@ Risposte dello studio del 2026-11-02 e del 2026-11-06.
 - Un pacchetto è **legato a un solo professionista** e a un servizio.
 - Si paga per intero all'acquisto. Le sedute diventano crediti da usare per prenotare.
 - I crediti scadono alla fine della validità del pacchetto.
+- Un credito si usa per una seduta che cade **entro il suo ultimo giorno valido** (D-071, confermato dallo studio il 2026-11-12).
 
 ### Cancellazioni
 - **Entro il preavviso** (default 24 ore prima della seduta): il cliente riceve un **credito**, mai un rimborso in denaro.
   - Se la seduta era stata pagata con un credito di un pacchetto, il credito torna a quel pacchetto e mantiene la sua scadenza.
   - Se la seduta era stata pagata con carta, nasce un credito nuovo valido 90 giorni.
   - Se la seduta era da pagare in studio (prenotazione dal pannello, D-024): nessun credito, perché non è stato pagato niente.
+- **Validità minima del credito restituito** (D-076): un credito che torna vale almeno 90 giorni (la validità delle sedute singole) dal giorno della cancellazione. Se il suo pacchetto scade prima, il credito passa in un credito nuovo con la nuova scadenza. **Una volta sola per credito**: un credito già allungato da una cancellazione torna senza allungarsi di nuovo.
 - **Oltre il preavviso**: la seduta è persa.
-- Mancata presentazione: come una cancellazione oltre il preavviso.
+- Mancata presentazione: come una cancellazione oltre il preavviso. Le sedute passate risultano **svolte**, o **non presentato** se il professionista lo segna.
+- **Cancellazione da parte dello studio** (D-075): il cliente non perde niente, **a prescindere dal preavviso**. Pagata con un credito: il credito torna (con la validità minima); pagata con carta: un credito nuovo; da pagare in studio: niente. Una richiesta ancora in attesa si annulla come un rifiuto. Il cliente riceve un'email che dice che ha cancellato lo studio e cosa gli resta. **Il sistema non rimborsa** (D-015): se il cliente vuole i soldi, il professionista rimborsa a mano da Stripe e azzera il credito (`procedure-studio.md`).
+
+### Professionista che lascia (D-077)
+- Ogni professionista risponde per sé dei crediti dei propri clienti: il sistema non li sposta all'altro.
+- Un professionista con sedute future non si disattiva: prima si cancellano (cancellazione da parte dello studio).
+- Alla disattivazione l'amministratore vede l'elenco dei crediti ancora validi dei suoi clienti; il cliente li vede come non utilizzabili.
 
 ### Accesso dei clienti
 - Senza password: il cliente inserisce la propria email e riceve un codice di 6 cifre.
@@ -97,7 +105,7 @@ Ogni professionista ha le proprie.
 Da decidere prima del passo indicato.
 
 1. ~~**Un conto Stripe o due?**~~ — **Chiuso** (2026-11-10, D-057): conti di incasso configurabili, uno per professionista o uno comune, assegnati dall'admin e modificabili in produzione; niente Stripe Connect. Con un conto comune i soldi di una partita IVA finiscono sul conto dell'altra: **da verificare con il commercialista**. Storia: se i due professionisti fatturano separatamente, ognuno deve incassare sul proprio conto e il sistema deve gestire due account Stripe. Da chiedere allo studio. Nota (2026-10-29): entrambi sono forfettari, quindi due partite IVA distinte: quasi certamente servono **due conti**. Da confermare.
-2. **Se è lo studio a cancellare una seduta**, il cliente riceve sempre il credito, a prescindere dal preavviso. Proposta da confermare.
+2. ~~**Se è lo studio a cancellare una seduta**~~ — **Chiuso** (2026-11-12, D-075): uno stato proprio; a prescindere dal preavviso, credito restituito (pagata con credito), lotto nuovo da 1 (carta), niente (in studio); email al cliente; nessun rimborso dal sistema, a mano da Stripe con la correzione del credito. Storia: se è lo studio a cancellare una seduta, il cliente riceve sempre il credito, a prescindere dal preavviso. Proposta da confermare.
 3. ~~**Ogni quanto possono iniziare le sedute?**~~ — **Chiuso** (2026-11-06, D-033): scatto 30 o 60, default 60, griglia dall'inizio della fascia, fasce all'ora piena o alla mezz'ora. Storia: chiuso in parte (2026-11-02): griglia fissa, ogni ora, per entrambi; nessuna pausa; la seduta sta tutta dentro la fascia. Il valore 60 è un dato (`practitioner.slot_step_minutes`, modificabile dal pannello dal passo 5; nello schema il default è ancora 30). Visita di valutazione (2026-11-06): può iniziare anche alla mezz'ora, e dopo una valutazione la seduta successiva può iniziare alla mezz'ora. Risposta (2026-11-06): **sì**, anche una seduta da un'ora può iniziare alla mezz'ora. Proposta di Nicholas: ogni professionista sceglie dalle impostazioni se permettere l'inizio alla mezz'ora (sì: griglia di 30 minuti; no: griglia di un'ora). Da scegliere: un interruttore nuovo o lo `slot_step_minutes` già esistente limitato a 30 e 60. Da decidere noi nella guida del passo 6: a cosa si aggancia la griglia (orologio o inizio della fascia) e quali valori sono ammessi (oggi qualsiasi numero > 0).
 4. ~~**Aliquota IVA corretta**~~ — **Chiuso** (2026-10-29): entrambi i professionisti sono forfettari, l'IVA non si applica (D-022).
 5. **Servizio per l'invio delle email** (prima della messa online, passo 14; spostato il 2026-11-09: in sviluppo le email vanno a Mailpit, D-050): orientamento verso **Brevo** (proposto da Nicholas), da confermare verificando i limiti del piano gratuito. Stima del volume: con 2 professionisti e ~16 prenotazioni al giorno, al massimo una trentina di email al giorno (codice di accesso + conferma). Per ridurre i codici di accesso: sessioni lunghe che si rinnovano a ogni visita (decisione del passo 8), non password (D-014 resta valida).
