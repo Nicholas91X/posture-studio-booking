@@ -151,8 +151,8 @@ public class BookingSchemaTest {
     }
 
     @ParameterizedTest
-    // CANCELLED_LATE exists in the data model, but arrives with step 11 (D-042)
-    @ValueSource(strings = {"CANCELLED_LATE", "PAID", ""})
+    // CANCELLED: the states of step 11 say who and when (CANCELLED_IN_TIME, CANCELLED_LATE, CANCELLED_BY_STUDIO)
+    @ValueSource(strings = {"CANCELLED", "PAID", ""})
     void unknownStatusIsRejected(String status) {
         assertViolates("booking_status_ck",
                 () -> data.booking(anna, annasService, customer, MONDAY_9, MONDAY_10, status));
@@ -193,9 +193,10 @@ public class BookingSchemaTest {
     void aBookingWithACreditNeverWaitsForAPayment() {
         assertViolates("booking_credit_no_hold_ck", () -> jdbc.update("""
                 insert into booking (customer_id, practitioner_id, service_id, starts_at, ends_at, status,
-                                     booked_by, paid_with, price_cents, hold_expires_at)
-                values (?, ?, ?, ?, ?, 'PENDING_PAYMENT', 'CUSTOMER', 'CREDIT', 3000, ?)
-                """, customer, anna, annasService, at(MONDAY_9), at(MONDAY_10), at(BookingTestData.LATER)));
+                                     booked_by, paid_with, price_cents, hold_expires_at, free_cancellation_until)
+                values (?, ?, ?, ?, ?, 'PENDING_PAYMENT', 'CUSTOMER', 'CREDIT', 3000, ?, ?)
+                """, customer, anna, annasService, at(MONDAY_9), at(MONDAY_10), at(BookingTestData.LATER),
+                BookingTestData.noticeBefore(MONDAY_9)));
     }
 
     @Test
@@ -242,12 +243,12 @@ public class BookingSchemaTest {
     private long insertWith(String status, String bookedBy, String paidWith, long priceCents, String deadline) {
         return jdbc.queryForObject("""
                 insert into booking (customer_id, practitioner_id, service_id, starts_at, ends_at, status,
-                                     booked_by, paid_with, price_cents, approval_deadline)
-                values (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                                     booked_by, paid_with, price_cents, approval_deadline, free_cancellation_until)
+                values (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                 returning id
                 """, Long.class,
                 customer, anna, annasService, at(MONDAY_9), at(MONDAY_10), status, bookedBy, paidWith, priceCents,
-                at(deadline));
+                at(deadline), BookingTestData.noticeBefore(MONDAY_9));
     }
 
     private void assertViolates(String constraintName, Runnable statement) {

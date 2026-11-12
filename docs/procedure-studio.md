@@ -25,4 +25,4 @@ Cose che il sistema non fa da solo, apposta, e che il professionista fa a mano. 
 
 **Commissioni.** Su un rimborso Stripe di norma non restituisce la commissione del pagamento (da riverificare sulla dashboard del conto prima della messa online, passo 14): il costo resta allo studio. È il motivo per cui il sistema offre il credito e non il rimborso.
 
-> Ordine dei passi: proposta di Claude (D-075), da confermare con Nicholas. Il brief del passo 11 diceva "rimborsa, poi azzera".
+> Ordine dei passi: proposto da Claude e confermato da Nicholas il 2026-11-12 (D-075).

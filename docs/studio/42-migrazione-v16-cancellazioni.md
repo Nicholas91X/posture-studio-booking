@@ -354,6 +354,31 @@ Fuori da questa guida, già registrato per i pezzi dopo: la regola "≥ o >" del
 
 **Una cosa che il brief non nomina e che D-067 aveva promesso al passo 11**: il credito **concesso** dal professionista su una cancellazione **tardiva**. D-073 diceva: "userà lo stesso omaggio, legato alla prenotazione". Due strade: l'omaggio di oggi (`GRANT`), senza legame con la prenotazione, con la nota che dice quale seduta; oppure un omaggio legato alla prenotazione (una colonna in più, e quindi la trappola della parte 7.2). Raccomandazione: **l'omaggio di oggi, senza schema nuovo**; il legame non serve a nessuna regola, e la nota è obbligatoria. Da confermare.
 
+**Scelte di Nicholas** (2026-11-12): "segui le raccomandazioni", per tutte e nove e per le quattro domande aperte (il giro della carta, la validità minima garantita quando cancella lo studio, prima la correzione poi il rimborso, l'omaggio di oggi per la cancellazione tardiva). Registrate in D-075, D-076 e D-078.
+
+---
+
+## Parte 13 — Com'è andata (implementazione)
+
+**File**: `V16__cancellations_and_attendance.sql`; in Java `BookingStatus` (cinque valori, le frecce), `Booking` (`freeCancellationUntil`, fotografato da `photographNotice` in tutte e tre le nascite), `BookingService` (passa il preavviso del professionista, anche dal pannello, che prima non leggeva le impostazioni), `LotSource.CANCELLATION`, `MovementReason.CANCELLATION_RESTORE`, `CreditEntry.Kind` e lo `switch` di `CreditViews`. Le fabbriche dei movimenti e dei lotti di cancellazione arrivano con il pezzo 2, che le usa.
+
+**Differenze dalla bozza della parte 10**, tutte difese in più:
+- `booking_free_cancellation_ck`: il preavviso fotografato è sempre **prima** dell'inizio. Il preavviso minimo è un'ora (V1), quindi è sempre vero, salvo un bug o un `update` a mano;
+- `booking_cancellation_trace_ck` scritto come uguaglianza: `cancelled_by` c'è **se e solo se** lo stato è una cancellazione (la bozza diceva solo "se"). Così un `cancelled_by` su una seduta confermata è un errore;
+- `booking_attendance_trace_ck`: chi e quando insieme, e un segno solo su `COMPLETED` o `NO_SHOW` (una seduta futura non si segna).
+
+**Il compilatore ha fatto il suo lavoro.** Aggiunto `CANCELLATION_RESTORE` all'`enum`, lo `switch` sulle note della storia (`CreditViews`) non compilava più finché non ha avuto il suo `case`. Aggiunti i cinque stati, `canMoveTo` idem (parte 2).
+
+**Un dettaglio Java trovato nei test.** `BookingStatusTest` descrive il diagramma con una `Map`: con dodici stati `Map.of(...)` non compila più, perché ha versioni solo fino a **10 coppie**. Oltre si usa `Map.ofEntries(Map.entry(k, v), ...)`. Il test ora controlla 144 coppie (12 × 12) e 13 frecce, e le frecce del passo 7 sono rimaste quelle.
+
+**I dati dei test.** Sette `insert` SQL di prenotazioni (in `BookingTestData`, `CreditTestData`, `PaymentTestData`, `BookingSchemaTest`) non dicevano `free_cancellation_until` e il `not null` li rifiutava: ora lo scrivono come l'applicazione, 24 ore prima dell'inizio. Due test vecchi pretendevano il rifiuto di `CANCELLATION` e `CANCELLATION_RESTORE` ("arrivano con il passo 11"): ora provano valori davvero sconosciuti.
+
+**Un errore trovato dalla suite completa, e un vincolo che ha fatto il suo lavoro.** I test toccati erano tutti verdi, ma la suite completa ha dato 2 errori su 1036, in `PaymentLinkApiTest`: un aiuto del test sposta l'inizio di una seduta con un `update` (per provare "una seduta che inizia tra meno di 32 minuti") e lasciava `free_cancellation_until` al vecchio orario, cioè **dopo** il nuovo inizio. `booking_free_cancellation_ck` l'ha rifiutato. Nell'applicazione non succede (`starts_at` è `updatable = false`); il test ora sposta anche la fotografia. Due lezioni: lanciare **sempre** la suite completa, non solo i test che si pensa di aver toccato; e un vincolo che lega due colonne ferma anche chi ne cambia una sola, compreso chi scrive SQL a mano.
+
+**La tecnica nuova**: `V16BackfillTest`, un container suo senza Spring, Flyway con `target("15")`, due prenotazioni scritte come al passo 10 (professionisti con preavviso 48 e 24), poi `target("16")`: ognuna ha il preavviso del suo professionista, e la colonna è `not null`.
+
+**Provato** togliendo le difese a turno (D-078): sette su sette, ognuna fallita per il motivo giusto (controllato nel registro di Maven, non solo "è fallito qualcosa").
+
 ---
 
 ## Domande da colloquio

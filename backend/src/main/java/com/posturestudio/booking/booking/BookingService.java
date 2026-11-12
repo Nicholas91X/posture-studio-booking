@@ -146,7 +146,7 @@ public class BookingService {
 
         // 7. the insert, flushed here and not at commit, so that a violation can be translated
         Booking booking = Booking.requestedByCustomer(customerId, practitionerId, service.id(), slot,
-                service.priceCents(), now);
+                service.priceCents(), now, cancellationNotice(settings));
         insert(booking, practitionerId, slot);
 
         // 8. the Stripe page, inside this transaction (guide 31, parts 3 and 4): if Stripe fails, the booking
@@ -164,7 +164,8 @@ public class BookingService {
                                                   TimeRange slot, long lotId, PractitionerSettings settings,
                                                   Instant now) {
         Booking booking = Booking.requestedWithCredit(customerId, practitionerId, service.id(), slot,
-                service.priceCents(), now, Duration.ofHours(settings.approvalWindowHours()));
+                service.priceCents(), now, Duration.ofHours(settings.approvalWindowHours()),
+                cancellationNotice(settings));
         insert(booking, practitionerId, slot);
         credits.commit(lotId, booking.getId());
         switch (settings.bookingApproval()) {
@@ -172,6 +173,11 @@ public class BookingService {
             case MANUAL -> events.publishEvent(ApprovalRequested.of(booking));
         }
         return CustomerBookingView.from(booking);
+    }
+
+    // the notice of the practitioner now, photographed into the booking (guide 42, part 6)
+    private static Duration cancellationNotice(PractitionerSettings settings) {
+        return Duration.ofHours(settings.cancellationNoticeHours());
     }
 
     private void insert(Booking booking, long practitionerId, TimeRange slot) {
@@ -335,7 +341,8 @@ public class BookingService {
         // the usable lot that ends first, locked: under the lock on the customer taken above (lock order of D-069)
         var lot = credits.lockUsableLot(customerId, practitionerId, service.id(), slot.start());
         Booking booking = Booking.bookedFromPanel(customerId, practitionerId, service.id(), slot,
-                service.priceCents(), now, lot.isPresent() ? PaidWith.CREDIT : PaidWith.IN_STUDIO);
+                service.priceCents(), now, lot.isPresent() ? PaidWith.CREDIT : PaidWith.IN_STUDIO,
+                cancellationNotice(practitioners.getSettings(practitionerId)));
         insert(booking, practitionerId, slot);
         // used at once: no request that a rejection could give back; only a cancellation in time will (step 11)
         lot.ifPresent(lotId -> credits.commit(lotId, booking.getId()));

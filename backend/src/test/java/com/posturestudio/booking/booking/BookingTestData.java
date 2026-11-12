@@ -77,12 +77,13 @@ final class BookingTestData {
                  String holdExpiresAt) {
         long id = jdbc.queryForObject("""
                 insert into booking (customer_id, practitioner_id, service_id, starts_at, ends_at, status,
-                                     booked_by, paid_with, price_cents, hold_expires_at, approval_deadline)
-                values (?, ?, ?, ?, ?, ?, 'CUSTOMER', 'CARD', 3000, ?, ?)
+                                     booked_by, paid_with, price_cents, hold_expires_at, approval_deadline,
+                                     free_cancellation_until)
+                values (?, ?, ?, ?, ?, ?, 'CUSTOMER', 'CARD', 3000, ?, ?, ?)
                 returning id
                 """, Long.class,
                 customerId, practitionerId, serviceId, at(startsAt), at(endsAt), status,
-                at(holdExpiresAt), status.equals("PENDING_APPROVAL") ? at(LATER) : null);
+                at(holdExpiresAt), status.equals("PENDING_APPROVAL") ? at(LATER) : null, noticeBefore(startsAt));
         if (status.equals("PENDING_APPROVAL")) {
             heldPayment(id);
         }
@@ -133,10 +134,16 @@ final class BookingTestData {
     long panelBooking(long practitionerId, long serviceId, long customerId, String startsAt, String endsAt) {
         return jdbc.queryForObject("""
                 insert into booking (customer_id, practitioner_id, service_id, starts_at, ends_at, status,
-                                     booked_by, paid_with, price_cents)
-                values (?, ?, ?, ?, ?, 'CONFIRMED', 'PRACTITIONER', 'IN_STUDIO', 3000)
+                                     booked_by, paid_with, price_cents, free_cancellation_until)
+                values (?, ?, ?, ?, ?, 'CONFIRMED', 'PRACTITIONER', 'IN_STUDIO', 3000, ?)
                 returning id
-                """, Long.class, customerId, practitionerId, serviceId, at(startsAt), at(endsAt));
+                """, Long.class, customerId, practitionerId, serviceId, at(startsAt), at(endsAt),
+                noticeBefore(startsAt));
+    }
+
+    // the default notice of 24 hours, photographed as the application does (V16, guide 42, part 6)
+    static OffsetDateTime noticeBefore(String startsAt) {
+        return at(startsAt).minusHours(24);
     }
 
     void absence(long practitionerId, String startsAt, String endsAt) {

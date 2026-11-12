@@ -224,10 +224,12 @@ public class PaymentLinkApiTest {
         return mvc.post().uri("/api/panel/bookings/" + bookingId + "/payment-link").with(sessions.practitioner(anna)).exchange();
     }
 
+    // moves the session: the notice photographed at birth moves with it (V16), always before the start
     private void startsAt(String start) {
         Instant startsAt = Instant.parse(start);
-        jdbc.update("update booking set starts_at = ?, ends_at = ? where id = ?", java.sql.Timestamp.from(startsAt),
-                java.sql.Timestamp.from(startsAt.plusSeconds(3600)), booking);
+        jdbc.update("update booking set starts_at = ?, ends_at = ?, free_cancellation_until = ? where id = ?",
+                java.sql.Timestamp.from(startsAt), java.sql.Timestamp.from(startsAt.plusSeconds(3600)),
+                java.sql.Timestamp.from(startsAt.minusSeconds(24 * 3600)), booking);
     }
 
     private static String textOf(String whatsapp) {

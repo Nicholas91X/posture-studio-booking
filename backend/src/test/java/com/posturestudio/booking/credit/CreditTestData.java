@@ -82,6 +82,18 @@ final class CreditTestData {
                 """, Long.class, customerId, practitionerId, serviceId, userOf(practitionerId));
     }
 
+    // a lot of 1 born from the cancellation of this booking (V16): source CANCELLATION, its LOT_CREATED carries
+    // the booking, so the index "one return per booking" sees it (guide 42, 7.1)
+    long cancellationLot(long customerId, long practitionerId, long serviceId, long bookingId) {
+        long lot = jdbc.queryForObject("""
+                insert into credit_lot (customer_id, practitioner_id, service_id, source, valid_until, created_at)
+                values (?, ?, ?, 'CANCELLATION', '2027-02-08', now())
+                returning id
+                """, Long.class, customerId, practitionerId, serviceId);
+        movement(lot, 1, "LOT_CREATED", bookingId, null, null);
+        return lot;
+    }
+
     // a gift lot with its LOT_CREATED movement of n credits
     long lotWith(long customerId, long practitionerId, long serviceId, int credits) {
         long lot = grantLot(customerId, practitionerId, serviceId);
@@ -110,10 +122,11 @@ final class CreditTestData {
         OffsetDateTime start = OffsetDateTime.parse("2026-11-20T09:00+01:00").plusHours(bookings++);
         return jdbc.queryForObject("""
                 insert into booking (customer_id, practitioner_id, service_id, starts_at, ends_at, status,
-                                     booked_by, paid_with, price_cents)
-                values (?, ?, ?, ?, ?, 'CONFIRMED', 'CUSTOMER', 'CREDIT', 3000)
+                                     booked_by, paid_with, price_cents, free_cancellation_until)
+                values (?, ?, ?, ?, ?, 'CONFIRMED', 'CUSTOMER', 'CREDIT', 3000, ?)
                 returning id
-                """, Long.class, customerId, practitionerId, serviceId, start, start.plusHours(1));
+                """, Long.class, customerId, practitionerId, serviceId, start, start.plusHours(1),
+                start.minusHours(24));
     }
 
     long balance(long lotId) {

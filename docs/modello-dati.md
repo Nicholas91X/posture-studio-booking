@@ -7,6 +7,7 @@ Modifiche dovute alle migrazioni:
 - **V2 (passo 5)**: `service` e `package_offer` come da progettazione, con `created_at`; foreign key composta per il servizio del pacchetto (D-025); indici su `practitioner_id`.
 - **V3 (passo 6)**: `working_schedule`, `working_hours` e `unavailability` come da progettazione (D-034), con `created_at`; fasce all'ora piena o alla mezz'ora e non sovrapposte (*exclusion constraint* su `timerange`, estensione `btree_gist`, D-036); cascata da una versione alle sue fasce; in `practitioner` scatto solo 30 o 60 con default 60, `min_booking_notice_hours` e `booking_horizon_days` (D-033, D-035).
 - **V8 (passo 8)**: `app_user.phone` in E.164, unico, scritto solo dopo la verifica, con `phone_verified_at` (D-055; i valori della V1 azzerati, mai scritti da nessun codice); in `login_code` il canale `SMS`, `purpose` (`SIGN_IN`, `VERIFY_PHONE`), `requested_by` (l'account che chiede una verifica) e `message_sent`.
+- **V16 (passo 11, pezzo 1)**: in `booking` i cinque stati del "dopo" (`CANCELLED_IN_TIME`, `CANCELLED_LATE`, `CANCELLED_BY_STUDIO`, `COMPLETED`, `NO_SHOW`), `cancelled_by`, `attendance_marked_by` e `attendance_marked_at`, `free_cancellation_until` (il preavviso fotografato, riempito per le righe esistenti); in `credit_lot` l'origine `CANCELLATION`; in `credit_movement` il motivo `CANCELLATION_RESTORE` e il `LOT_CREATED` con la prenotazione per i lotti da 1 nati da una cancellazione (D-078). Nessuna colonna nuova in `credit_lot`.
 - **V15 (passo 10, pezzo 1)**: `credit_lot`, `credit_movement` e `credit_lot_extension` (D-069), con i trigger che difendono il registro (a sola aggiunta, saldo mai negativo, scadenza cambiata solo con la sua traccia); `valid_until date` al posto di `expires_at`, niente `initial_credits`, collegamento al pagamento in `credit_lot.payment_id`; in `payment` i pacchetti (`purpose`, `package_offer_id`, `customer_id`, `package_credits`, `package_validity_days`, `booking_id` facoltativa); in `booking.paid_with` il valore `CREDIT`.
 - **V14 (passo 9, pezzo 5)**: `payment.source` (`REQUEST`, `LINK`): il pagamento di una richiesta o di un link di pagamento (D-065).
 - **V13 (dopo il pezzo 4)**: in `payment` `release_attempts` e `next_release_at`, per riprovare gli annullamenti falliti (D-064).
@@ -200,11 +201,15 @@ Il pacchetto "in vendita".
 | hold_expires_at | timestamptz | obbligatoria per `PENDING_PAYMENT` (un `check`); resta valorizzata dopo |
 | approval_deadline | timestamptz | obbligatoria per `PENDING_APPROVAL` (un `check`): richiesta + `approval_window_hours`, fotografata (D-030); resta valorizzata dopo |
 | decided_at | timestamptz | quando è stata approvata o rifiutata, dal professionista o in automatico (D-030, D-042) |
-| cancelled_at | timestamptz | quando il cliente ha rinunciato: ritiro (`WITHDRAWN`) dal passo 7, cancellazione dal passo 11 |
+| cancelled_at | timestamptz | quando: ritiro (`WITHDRAWN`) dal passo 7, cancellazione (del cliente o dello studio) dal passo 11 |
+| cancelled_by | bigint | → `app_user`: l'account che ha cancellato (cliente, professionista; domani forse l'admin, D-077). Presente **se e solo se** lo stato è una delle tre cancellazioni, sempre con `cancelled_at` (`booking_cancellation_trace_ck`, V16, D-078). Il ritiro ha solo `cancelled_at` |
+| free_cancellation_until | timestamptz | `starts_at` meno il preavviso di cancellazione del professionista, **fotografato alla nascita** della prenotazione (D-078): una modifica dell'impostazione non cambia le sedute già prenotate. Sempre prima di `starts_at`. V16; le righe esistenti riempite con il preavviso di quel giorno |
+| attendance_marked_by | bigint | → `app_user`: chi ha segnato l'ultima volta "non presentato" o la sua correzione; `null` per una seduta chiusa dal lavoro programmato. Con `attendance_marked_at`, insieme o nessuno dei due; obbligatorio per `NO_SHOW`, ammesso solo per `COMPLETED` e `NO_SHOW` (`booking_attendance_trace_ck`, V16) |
+| attendance_marked_at | timestamptz | quando |
 | version | bigint | per il blocco ottimistico di JPA, seconda difesa: le transizioni bloccano la riga con `select ... for update` (D-046) |
 | created_at | timestamptz | il momento della richiesta, scritto da Java con il `Clock` (non dal default, come nelle altre tabelle): la scadenza dell'approvazione si conta da qui (D-030, D-046) |
 
-Indici `(practitioner_id, starts_at)` e `(customer_id, starts_at)`. Il `check` di `status` contiene solo gli stati che il codice sa produrre: nella V4 i sette del passo 7 (da `PENDING_PAYMENT` a `WITHDRAWN` nella tabella qui sotto); gli altri arrivano con i passi 11 e successivi (D-042).
+Indici `(practitioner_id, starts_at)` e `(customer_id, starts_at)`. Il `check` di `status` contiene solo gli stati che il codice sa produrre (D-042): nella V4 i sette del passo 7, dalla V16 tutti i dodici della tabella qui sotto.
 
 **Stati:**
 
@@ -217,10 +222,13 @@ Indici `(practitioner_id, starts_at)` e `(customer_id, starts_at)`. Il `check` d
 | `REJECTED` | Rifiutata dal professionista: blocco annullato o credito restituito (D-030) | no |
 | `APPROVAL_EXPIRED` | Il professionista non ha risposto in tempo: come un rifiuto (D-030) | no |
 | `WITHDRAWN` | Ritirata dal cliente mentre era in attesa di approvazione: nessun addebito (D-030) | no |
-| `CANCELLED_IN_TIME` | Cancellata entro il preavviso, credito restituito | no |
-| `CANCELLED_LATE` | Cancellata oltre il preavviso, seduta persa | no |
-| `COMPLETED` | Seduta svolta | — |
-| `NO_SHOW` | Il cliente non si è presentato | — |
+| `CANCELLED_IN_TIME` | Cancellata dal cliente entro il preavviso (`free_cancellation_until`), credito restituito (D-076) | no |
+| `CANCELLED_LATE` | Cancellata dal cliente oltre il preavviso, seduta persa | no |
+| `CANCELLED_BY_STUDIO` | Cancellata dallo studio, a prescindere dal preavviso: il cliente non perde niente (D-075). Solo da `CONFIRMED`: una richiesta in attesa cancellata dallo studio è un `REJECTED` (D-078) | no |
+| `COMPLETED` | Seduta svolta: la porta qui un lavoro programmato, finita la seduta | no (nel passato) |
+| `NO_SHOW` | Il cliente non si è presentato, segnato dal professionista; si corregge in `COMPLETED` e viceversa | no (nel passato) |
+
+Frecce (`BookingStatus.canMoveTo`): `PENDING_PAYMENT` → `PENDING_APPROVAL`, `EXPIRED`; `PENDING_APPROVAL` → `CONFIRMED`, `REJECTED`, `APPROVAL_EXPIRED`, `WITHDRAWN`; `CONFIRMED` → `CANCELLED_IN_TIME`, `CANCELLED_LATE`, `CANCELLED_BY_STUDIO`, `COMPLETED`, `NO_SHOW`; `COMPLETED` ↔ `NO_SHOW`. Tutti gli altri stati sono finali.
 
 **Regola nel database**: due prenotazioni negli stati che occupano l'orario non possono sovrapporsi per lo stesso professionista. Si ottiene con un *exclusion constraint* parziale di PostgreSQL sull'intervallo `[starts_at, ends_at)` (`tstzrange`, `where` sui tre stati che occupano; richiede l'estensione `btree_gist`, D-042).
 
@@ -229,7 +237,7 @@ Indici `(practitioner_id, starts_at)` e `(customer_id, starts_at)`. Il `check` d
 Attenzione: una prenotazione `PENDING_PAYMENT` con blocco scaduto occupa ancora l'orario finché il lavoro programmato non la porta a `EXPIRED`. Per questo il lavoro gira ogni minuto, e il calcolo degli orari liberi considera libere anche quelle con `hold_expires_at` passato.
 
 ### `credit_lot`
-Un gruppo di crediti con la stessa origine e lo stesso ultimo giorno valido (V15, D-069). **Un pacchetto acquistato è un lotto.** Anche un omaggio (D-067) e, dal passo 11, una seduta pagata con carta cancellata in tempo (un lotto da 1). I crediti non sono qui: sono la somma dei movimenti.
+Un gruppo di crediti con la stessa origine e lo stesso ultimo giorno valido (V15, D-069). **Un pacchetto acquistato è un lotto.** Anche un omaggio (D-067) e, dalla V16, un credito nato da una cancellazione (un lotto da 1, origine `CANCELLATION`). I crediti non sono qui: sono la somma dei movimenti.
 
 | Colonna | Tipo | Note |
 |---|---|---|
@@ -237,7 +245,7 @@ Un gruppo di crediti con la stessa origine e lo stesso ultimo giorno valido (V15
 | customer_id | bigint | |
 | practitioner_id | bigint | |
 | service_id | bigint | per quale servizio valgono i crediti; dello stesso professionista (foreign key composta verso `service (id, practitioner_id)`, D-025) |
-| source | text | `PACKAGE` o `GRANT` (omaggio, D-067); `CANCELLATION` arriva al passo 11. `LATE_PAYMENT` non esiste (D-068) |
+| source | text | `PACKAGE`, `GRANT` (omaggio, D-067) o `CANCELLATION` (V16): un lotto da 1 nato da una cancellazione in tempo o dello studio, per una seduta pagata con carta o per un credito il cui lotto scadeva troppo presto (validità minima, D-076). Un lotto `CANCELLATION` è "già allungato": una cancellazione del cliente non lo allunga più (D-076, D-078). `LATE_PAYMENT` non esiste (D-068) |
 | payment_id | bigint | il pagamento che l'ha comprato; **unico** (un pagamento, un lotto: un avviso doppio non regala un pacchetto) e presente **se e solo se** `source = 'PACKAGE'` (`check`) |
 | package_offer_id | bigint | il pacchetto comprato, solo con `payment_id` |
 | price_cents | bigint | il prezzo pagato, fotografato dal pagamento, solo con `payment_id` (copia tra moduli, D-011) |
@@ -246,7 +254,7 @@ Un gruppo di crediti con la stessa origine e lo stesso ultimo giorno valido (V15
 | valid_until | date | l'**ultimo giorno valido**, un giorno di Europe/Rome: quel giorno si usa, il giorno dopo no. "Valido N giorni" = giorno dell'acquisto a Roma + N (`ValidUntil`). Cambia solo con una proroga, in avanti, con la sua riga in `credit_lot_extension` (trigger) |
 | created_at | timestamptz | scritto da Java con il `Clock` |
 
-Scostamenti dalla progettazione: niente `initial_credits` (lo dice il movimento `LOT_CREATED`, e due colonne per un fatto possono non essere d'accordo); `valid_until date` al posto di `expires_at timestamptz` (eccezione alla convenzione, come `working_schedule.valid_from`); il collegamento con il pagamento sta qui (`payment_id`), non in `payment.credit_lot_id`; `origin_booking_id` arriva al passo 11.
+Scostamenti dalla progettazione: niente `initial_credits` (lo dice il movimento `LOT_CREATED`, e due colonne per un fatto possono non essere d'accordo); `valid_until date` al posto di `expires_at timestamptz` (eccezione alla convenzione, come `working_schedule.valid_from`); il collegamento con il pagamento sta qui (`payment_id`), non in `payment.credit_lot_id`; `origin_booking_id` non esiste: la prenotazione da cui nasce un lotto `CANCELLATION` sta nel suo movimento `LOT_CREATED` (D-078). **Attenzione per ogni migrazione futura**: una colonna nuova di `credit_lot` va aggiunta anche all'elenco del trigger `credit_lot_only_extend`.
 
 Indici `(customer_id, practitioner_id, service_id, valid_until)` (la scelta del lotto) e `(practitioner_id)`. **Il database lo difende** (trigger): un lotto non si cancella né si svuota con `truncate`, e un `update` può cambiare solo `valid_until`, solo se esiste la riga della proroga con la vecchia e la nuova data.
 
@@ -258,13 +266,13 @@ Il registro (V15, D-009, D-069). Non si modifica e non si cancella mai una riga:
 | id | bigint | |
 | credit_lot_id | bigint | |
 | amount | int | mai zero; la forma dipende dal motivo (`check`) |
-| reason | text | `LOT_CREATED` (+N), `BOOKING` (−1), `BOOKING_RELEASE` (+1: rifiuto, risposta scaduta o ritiro, D-030), `ADJUSTMENT` (±N, correzione, D-067); `CANCELLATION_RESTORE` (+1) arriva al passo 11 |
-| booking_id | bigint | obbligatoria per `BOOKING` e `BOOKING_RELEASE`, assente per gli altri |
+| reason | text | `LOT_CREATED` (+N), `BOOKING` (−1), `BOOKING_RELEASE` (+1: rifiuto, risposta scaduta o ritiro, D-030), `ADJUSTMENT` (±N, correzione, D-067), `CANCELLATION_RESTORE` (+1 sullo stesso lotto per una cancellazione in tempo o dello studio, V16) |
+| booking_id | bigint | obbligatoria per `BOOKING`, `BOOKING_RELEASE` e `CANCELLATION_RESTORE`; in un `LOT_CREATED` solo con importo 1, per il lotto nato dalla cancellazione di quella prenotazione (V16); assente per `ADJUSTMENT` |
 | created_by | bigint | → `app_user`: chi ha fatto la correzione; presente se e solo se `ADJUSTMENT` |
 | note | text | perché, obbligatoria con `created_by`, mai vuota |
 | created_at | timestamptz | scritto da Java con il `Clock` |
 
-Indici unici parziali: un `LOT_CREATED` per lotto; un `BOOKING` per prenotazione; **una sola restituzione** (movimento positivo) per prenotazione. Indice su `credit_lot_id`.
+Indici unici parziali: un `LOT_CREATED` per lotto; un `BOOKING` per prenotazione; **una sola restituzione** (movimento positivo con una prenotazione) per prenotazione: dalla V16 copre anche il lotto nuovo nato da una cancellazione, quindi una cancellazione restituisce al massimo un credito, +1 o lotto nuovo (D-078). Indice su `credit_lot_id`.
 
 **Saldo** di un lotto = somma dei movimenti. La scadenza non scrive movimenti: un lotto scaduto tiene il suo saldo, ma non si usa. Un lotto è utilizzabile se saldo > 0 e il suo ultimo giorno valido non è passato. Quando si prenota con credito, si usa il lotto utilizzabile che scade prima.
 

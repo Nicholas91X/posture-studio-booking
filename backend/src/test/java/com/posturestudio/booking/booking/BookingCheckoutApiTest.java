@@ -99,6 +99,25 @@ public class BookingCheckoutApiTest {
 
     // D-057: the account is the one assigned when the payment is created
     @Test
+    void theNoticeOfCancellationIsPhotographedInTheRequest() throws Exception {
+        jdbc.update("update practitioner set cancellation_notice_hours = 48 where id = ?", anna);
+
+        MvcTestResult result = request();
+        long booking = ((Number) JsonPath.read(result.getResponse().getContentAsString(), "$.id")).longValue();
+        jdbc.update("update practitioner set cancellation_notice_hours = 72 where id = ?", anna);
+
+        assertThat(noticeIs(booking, 48)).isTrue();
+    }
+
+    // the notice of the practitioner photographed at birth (V16, guide 42, part 6): changing the setting
+    // afterwards moves nothing
+    private boolean noticeIs(long bookingId, int hours) {
+        return jdbc.queryForObject(
+                "select free_cancellation_until = starts_at - make_interval(hours => ?) from booking where id = ?",
+                Boolean.class, hours, bookingId);
+    }
+
+    @Test
     void thePaymentGoesToTheAccountAssignedNow() {
         jdbc.update("update practitioner_payment_account set account = 'beta' where practitioner_id = ?", anna);
 

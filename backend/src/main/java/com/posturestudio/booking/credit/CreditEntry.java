@@ -13,6 +13,6 @@ record CreditEntry(Kind kind, OffsetDateTime at, Integer amount, Long bookingId,
 
     // the reasons of the movements (same names) plus the extension
     enum Kind {
-        LOT_CREATED, BOOKING, BOOKING_RELEASE, ADJUSTMENT, EXTENSION
+        LOT_CREATED, BOOKING, BOOKING_RELEASE, ADJUSTMENT, CANCELLATION_RESTORE, EXTENSION
     }
 }

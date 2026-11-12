@@ -31,6 +31,24 @@ public class BookingTest {
         assertThat(booking.getCreatedAt()).isEqualTo(REQUESTED);
     }
 
+    // the notice photographed at birth (guide 42, part 6): until 24 hours before Monday 9:00 in Rome
+    @Test
+    void everyBirthPhotographsTheNotice() {
+        Instant sundayNine = Instant.parse("2026-11-08T08:00:00Z");
+
+        assertThat(requested().getFreeCancellationUntil()).isEqualTo(sundayNine);
+        assertThat(Booking.requestedWithCredit(1L, 2L, 3L, MONDAY_9, 3000, REQUESTED, Duration.ofHours(12),
+                Duration.ofHours(24)).getFreeCancellationUntil()).isEqualTo(sundayNine);
+        assertThat(Booking.bookedFromPanel(1L, 2L, 3L, MONDAY_9, 3000, REQUESTED, PaidWith.IN_STUDIO,
+                Duration.ofHours(48)).getFreeCancellationUntil()).isEqualTo(Instant.parse("2026-11-07T08:00:00Z"));
+    }
+
+    @Test
+    void aNoticeOfZeroIsAProgrammingError() {
+        Assertions.assertThrows(IllegalArgumentException.class,
+                () -> Booking.requestedByCustomer(1L, 2L, 3L, MONDAY_9, 3000, REQUESTED, Duration.ZERO));
+    }
+
     @Test
     void thePaymentStartsTheWaitWithADeadlineCountedFromTheRequest() {
         Booking booking = requested();
@@ -105,7 +123,7 @@ public class BookingTest {
     }
 
     private static Booking requested() {
-        return Booking.requestedByCustomer(1L, 2L, 3L, MONDAY_9, 3000, REQUESTED);
+        return Booking.requestedByCustomer(1L, 2L, 3L, MONDAY_9, 3000, REQUESTED, Duration.ofHours(24));
     }
 
     private static Booking waitingForApproval() {

@@ -59,10 +59,10 @@ class CreditSchemaTest {
         assertRefused("credit_lot_service_practitioner_fk", () -> data.grantLot(customer, marco, seduta));
     }
 
-    // LATE_PAYMENT does not exist (D-068); CANCELLATION arrives with step 11
+    // LATE_PAYMENT does not exist (D-068); CANCELLATION arrived with step 11 (V16)
     @ParameterizedTest
-    @ValueSource(strings = {"LATE_PAYMENT", "CANCELLATION"})
-    void sourcesOfOtherStepsAreRejected(String source) {
+    @ValueSource(strings = {"LATE_PAYMENT", "REFUND"})
+    void unknownSourcesAreRejected(String source) {
         assertRefused("credit_lot_source_ck", () -> jdbc.update("""
                 insert into credit_lot (customer_id, practitioner_id, service_id, source, valid_until, created_at)
                 values (?, ?, ?, ?, '2027-02-08', now())
@@ -221,10 +221,10 @@ class CreditSchemaTest {
         assertRefused("credit_movement_amount_ck", () -> data.adjustment(lot, 0, annasUser));
     }
 
-    // APPROVAL_RELEASE was the provisional name (now BOOKING_RELEASE); CANCELLATION_RESTORE arrives with step 11
+    // APPROVAL_RELEASE was the provisional name (now BOOKING_RELEASE); CANCELLATION_RESTORE arrived with step 11
     @ParameterizedTest
-    @ValueSource(strings = {"APPROVAL_RELEASE", "CANCELLATION_RESTORE", "EXPIRED"})
-    void reasonsOutsideStep10AreRejected(String reason) {
+    @ValueSource(strings = {"APPROVAL_RELEASE", "EXPIRED"})
+    void unknownReasonsAreRejected(String reason) {
         long lot = data.lotWith(customer, anna, seduta, 5);
         long booking = data.creditBooking(anna, seduta, customer);
 

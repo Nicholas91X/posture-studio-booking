@@ -96,7 +96,7 @@ class CreditViews {
                 // a gift has its why in the lot (guide 36, 4.4), a correction in its movement
                 case LOT_CREATED -> lot.getNote();
                 case ADJUSTMENT -> movement.getNote();
-                case BOOKING, BOOKING_RELEASE -> null;
+                case BOOKING, BOOKING_RELEASE, CANCELLATION_RESTORE -> null;
             };
             history.add(new Timed(movement.getCreatedAt(), 0, movement.getId(), new CreditEntry(
                     CreditEntry.Kind.valueOf(movement.getReason().name()), inRome(movement.getCreatedAt()),

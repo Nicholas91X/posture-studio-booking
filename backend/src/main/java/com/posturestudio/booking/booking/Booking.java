@@ -34,7 +34,7 @@ class Booking {
     // The price is the one of the service right now, copied (D-011). Rules (slot, limit) are checked
     // by BookingService before: here only the shape of the data
     static Booking requestedByCustomer(long customerId, long practitionerId, long serviceId, TimeRange slot,
-                                       long priceCents, Instant now) {
+                                       long priceCents, Instant now, Duration cancellationNotice) {
         Objects.requireNonNull(slot, "slot must not be null");
         Objects.requireNonNull(now, "now must not be null");
         Booking booking = new Booking();
@@ -49,6 +49,7 @@ class Booking {
         booking.priceCents = Checks.requirePositive(priceCents, "priceCents");
         booking.holdExpiresAt = now.plus(HOLD);
         booking.createdAt = now;
+        booking.photographNotice(cancellationNotice);
         return booking;
     }
 
@@ -57,7 +58,8 @@ class Booking {
     // The credit is committed by BookingService right after the insert (-1 on the lot). Not a transition:
     // the state machine is about steps, not birth (as bookedFromPanel)
     static Booking requestedWithCredit(long customerId, long practitionerId, long serviceId, TimeRange slot,
-                                       long priceCents, Instant now, Duration approvalWindow) {
+                                       long priceCents, Instant now, Duration approvalWindow,
+                                       Duration cancellationNotice) {
         Objects.requireNonNull(slot, "slot must not be null");
         Objects.requireNonNull(now, "now must not be null");
         Objects.requireNonNull(approvalWindow, "approvalWindow must not be null");
@@ -74,6 +76,7 @@ class Booking {
         booking.priceCents = Checks.requirePositive(priceCents, "priceCents");
         booking.createdAt = now;
         booking.approvalDeadline = now.plus(approvalWindow);
+        booking.photographNotice(cancellationNotice);
         return booking;
     }
 
@@ -82,7 +85,7 @@ class Booking {
     // Paid with a credit of the customer when there is one (D-024, guide 39), committed by BookingService right
     // after the insert; otherwise to be paid in the studio (D-040). Nothing else from the panel
     static Booking bookedFromPanel(long customerId, long practitionerId, long serviceId, TimeRange slot,
-                                   long priceCents, Instant now, PaidWith paidWith) {
+                                   long priceCents, Instant now, PaidWith paidWith, Duration cancellationNotice) {
         Objects.requireNonNull(slot, "slot must not be null");
         Objects.requireNonNull(now, "now must not be null");
         if (paidWith != PaidWith.IN_STUDIO && paidWith != PaidWith.CREDIT) {
@@ -101,7 +104,19 @@ class Booking {
         booking.priceCents = Checks.requirePositive(priceCents, "priceCents");
         booking.decidedAt = now;
         booking.createdAt = now;
+        booking.photographNotice(cancellationNotice);
         return booking;
+    }
+
+    // The notice of cancellation of the practitioner, photographed at birth like the price (D-011, D-078,
+    // guide 42, part 6): the rule the customer saw when booking. Changing the setting later moves nothing.
+    // The same for every booking, from the panel too: paid by a payment link, it becomes a card booking (D-059)
+    private void photographNotice(Duration cancellationNotice) {
+        Objects.requireNonNull(cancellationNotice, "cancellationNotice must not be null");
+        if (cancellationNotice.isNegative() || cancellationNotice.isZero()) {
+            throw new IllegalArgumentException("the notice must be positive: " + cancellationNotice);
+        }
+        this.freeCancellationUntil = startsAt.minus(cancellationNotice);
     }
 
     @Id
@@ -152,6 +167,11 @@ class Booking {
 
     @Column
     private Instant cancelledAt;
+
+    // starts_at minus the notice, photographed at birth (V16): until when a cancellation of the customer is in
+    // time. Whether that instant itself still is, is the rule of piece 2
+    @Column(updatable = false)
+    private Instant freeCancellationUntil;
 
     // optimistic lock, the second defense: transitions take a pessimistic lock on the row first
     // (guide 20, 3.4), so this only catches a future write that forgets it
@@ -297,6 +317,10 @@ class Booking {
 
     Instant getCancelledAt() {
         return cancelledAt;
+    }
+
+    Instant getFreeCancellationUntil() {
+        return freeCancellationUntil;
     }
 
     Instant getCreatedAt() {
