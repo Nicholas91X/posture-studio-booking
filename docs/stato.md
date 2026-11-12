@@ -1,6 +1,6 @@
 # Stato del progetto
 
-Ultimo aggiornamento: 2026-11-12 (**passo 12 fatto**, D-083–D-085, branch `feat/step-12-customer-frontend` con la PR verso `main`; resta la prova manuale con Stripe dal sito; prossimo: passo 13, pannello)
+Ultimo aggiornamento: 2026-11-12 (**passo 12 fatto**, D-083–D-085, unito in `main` con un merge (PR #9); resta la prova manuale con Stripe dal sito; prossimo: passo 13, pannello)
 
 ## Dove siamo
 
@@ -90,7 +90,7 @@ Fatto nel passo 4: struttura del repository, progetto Spring Boot 4.1.1 su Java 
 **Passo 12 fatto** (2026-11-12, frontend del cliente, dal brief del 2026-11-12, branch `feat/step-12-customer-frontend`, `passi/12-frontend-cliente.md`, nota di studio `studio/47-frontend-e-backend.md`). Codice scritto da Claude (D-005). Costruito:
 - **pezzo 0, backend** (D-083, D-084): springdoc 3.2.0, contratto a `/v3/api-docs` acceso solo con `OPENAPI_ENABLED=true` (spento per default, quindi in produzione; fuori da `/api`); `OpenApiConfiguration` con gli errori `ApiProblem` e la lista chiusa dei codici (`ProblemCodes`), i campi delle risposte obbligatori e i `null` dichiarati con `@Schema(nullable = true)`; `PublicPractitioner` con `onlineBooking`, `bookingApproval`, `approvalWindowHours`, `cancellationNoticeHours` (`OnlinePayments` dichiarata da `practitioner` e implementata da `payment`, `PublicPractitioners`);
 - **frontend** (D-085) in `frontend/`: Next.js 16.4.6, React 19.3, TypeScript 5.9.3 rigoroso, `openapi-fetch`; tipi generati in `src/api/schema.d.ts` dalla copia `openapi.json`; un solo client (CSRF, `ApiError`), un solo dizionario degli errori, token di aspetto in `tokens.css` e nome in `brand.ts`; pagine: professionisti, professionista, orari e prenotazione, accesso (email, SMS, nome e cognome), le mie sedute (pagamento da riprendere, ritiro, cancellazione con la frase prima), dettaglio e ritorno da Stripe (rilegge ogni 2 secondi per un minuto), crediti e storia di un lotto (ritorno da un acquisto), profilo (nome, cellulare per l'SMS, uscita);
-- **prove**: 1128 test del backend verdi (`mvnw clean test`); 8 test end-to-end Playwright verdi su un Pixel 7 simulato contro il backend vero (accesso, credito, cancellazione in tempo e tardiva con la frase giusta, ritiro, orario preso nel frattempo, codice d'errore sconosciuto, ogni pagina nello schermo con le schermate guardate). **Da fare: la prova manuale con Stripe dal sito** (procedura in `passi/12-frontend-cliente.md`), che chiude l'ultimo criterio del brief.
+- **prove**: 1128 test del backend verdi (`mvnw clean test`); 8 test end-to-end Playwright verdi su un Pixel 7 simulato contro il backend vero (accesso, credito, cancellazione in tempo e tardiva con la frase giusta, ritiro, orario preso nel frattempo, codice d'errore sconosciuto, ogni pagina nello schermo con le schermate guardate). **Da fare: la prova manuale con Stripe dal sito** (procedura in `passi/12-frontend-cliente.md`), che chiude l'ultimo criterio del brief. Unito in `main` con un merge del branch `feat/step-12-customer-frontend` (PR #9).
 
 **Avvio del frontend in sviluppo** (dal passo 12):
 1. Database e Mailpit su (`docker compose -f infra/docker-compose.dev.yml --env-file .env up -d`); nel `.env` `OPENAPI_ENABLED=true` (riga nuova di `.env.example`).

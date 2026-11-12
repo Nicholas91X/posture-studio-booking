@@ -15,7 +15,7 @@ Il codice l'ha scritto Claude (D-005, percorso). Al posto delle guide di studio,
 - [x] **Crediti e acquisto di un pacchetto** — pagina dei crediti e storia di un lotto (test end-to-end 8); l'acquisto apre Stripe e torna a `/crediti?acquisto=...`, da provare a mano con la stessa procedura.
 - [x] **Nessun errore tecnico mostrato al cliente; codice sconosciuto gestito** — un solo dizionario (`errors.ts`), test end-to-end 6 (orario preso nel frattempo) e 7 (codice inventato e `detail` tecnico: compare solo la frase generica).
 - [x] **Test end-to-end verdi; pagine usabili da telefono** — 8 su 8 su un Pixel 7 simulato; il test 8 visita ogni pagina, controlla che niente sia più largo dello schermo e salva le schermate (guardate una per una).
-- [x] **stato.md aggiornato** (avvio del frontend, note per i passi 13 e 14); **PR verso main**.
+- [x] **stato.md aggiornato** (avvio del frontend, note per i passi 13 e 14); **PR verso main**: PR #9, unita con un merge.
 - [x] **Riepilogo per la chat di pianificazione**.
 
 ## Cosa è stato costruito
