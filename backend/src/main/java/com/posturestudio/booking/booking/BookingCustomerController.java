@@ -9,6 +9,7 @@ import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
+import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
 
 import com.posturestudio.booking.auth.CurrentUser;
@@ -42,10 +43,11 @@ class BookingCustomerController {
         return ResponseEntity.created(URI.create("/api/customer/bookings/" + created.id())).body(created);
     }
 
-    // "my sessions": all of them, the furthest in the future first
+    // "my sessions": all of them, the furthest in the future first; ?period=upcoming (not over, the soonest first) or
+    // ?period=past (over, the latest first), guide 46, part 4. An unknown value is a 400
     @GetMapping
-    List<CustomerBookingView> list() {
-        return bookings.listForCustomer(current.id());
+    List<CustomerBookingView> list(@RequestParam(required = false) String period) {
+        return bookings.listForCustomer(current.id(), period == null ? null : BookingPeriod.fromQuery(period));
     }
 
     // the page back from the payment asks for the status here (D-007)

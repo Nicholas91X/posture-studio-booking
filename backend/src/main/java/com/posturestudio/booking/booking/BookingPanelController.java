@@ -71,6 +71,18 @@ class BookingPanelController {
         return bookings.reject(current.id(), id);
     }
 
+    // after the session (guide 46): the customer did not come, or did after all. From the start of the session until
+    // 7 days after its end
+    @PostMapping("/{id}/no-show")
+    PanelBookingView noShow(@PathVariable long id) {
+        return bookings.markNoShow(current.id(), user.id(), id);
+    }
+
+    @PostMapping("/{id}/attended")
+    PanelBookingView attended(@PathVariable long id) {
+        return bookings.markAttended(current.id(), user.id(), id);
+    }
+
     // a future session of theirs, confirmed or in wait: the customer loses nothing (D-075, guide 44)
     @PostMapping("/{id}/cancel")
     PanelCancellationView cancel(@PathVariable long id) {

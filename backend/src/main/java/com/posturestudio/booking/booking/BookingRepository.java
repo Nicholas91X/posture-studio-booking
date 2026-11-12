@@ -95,6 +95,22 @@ interface BookingRepository extends JpaRepository<Booking, Long> {
             """)
     int expireAllStaleHolds(Instant now, BookingStatus pending, BookingStatus expired);
 
+    // CONFIRMED -> COMPLETED for every session over (guide 46, part 1), in one statement: nothing outside the
+    // database. The starting state in the where is the guard: a session marked NO_SHOW meanwhile is not CONFIRMED
+    // any more, and PostgreSQL, after waiting for that transaction, checks the where again and skips it
+    @Modifying
+    @Query("""
+            update Booking b set b.status = :completed, b.version = b.version + 1
+            where b.status = :confirmed and b.endsAt <= :now
+            """)
+    int completeAllOver(Instant now, BookingStatus confirmed, BookingStatus completed);
+
+    // "my sessions" of the customer split by time (guide 46, part 4): not over, the soonest first; over, the latest
+    // first. By time only: a cancelled session to come is in the upcoming list, with its state
+    List<Booking> findByCustomerIdAndEndsAtAfterOrderByStartsAtAsc(Long customerId, Instant now);
+
+    List<Booking> findByCustomerIdAndEndsAtLessThanEqualOrderByStartsAtDesc(Long customerId, Instant now);
+
     // only the ids: each one is then closed in a transaction of its own, after a lock and a fresh look
     @Query("""
             select b.id from Booking b

@@ -199,7 +199,11 @@ Il cliente riceve un'email per ognuna, senza la nota del professionista.
 4. Il cliente vede quei crediti come `PRACTITIONER_UNAVAILABLE`; se il professionista torna attivo, tornano utilizzabili da soli.
 5. **La gara con una prenotazione nuova**: ogni prenotazione prende `FOR KEY SHARE` sulla stessa riga come primo passo, prima di chiedere se il professionista è attivo. Una delle due aspetta l'altra, e poi vede quello che l'altra ha confermato.
 
-Le sedute svolte o non presentate (pezzo 5) arrivano con un pezzo successivo.
+### Dopo la seduta (D-082)
+
+1. Ogni minuto un lavoro porta a `COMPLETED`, con un solo `update`, le sedute `CONFIRMED` finite.
+2. Il professionista può segnare "non presentato" (`/no-show`) o correggerlo (`/attended`) dall'inizio della seduta fino a 7 giorni dopo la sua fine; la traccia dice chi e quando. Nessun effetto sui crediti: un "non presentato" è come una cancellazione tardiva.
+3. Il cliente chiede le sue sedute future (`?period=upcoming`, la più vicina prima) o passate (`?period=past`, la più recente prima).
 
 ## Stripe
 

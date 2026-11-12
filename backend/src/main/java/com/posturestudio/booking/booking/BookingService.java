@@ -474,6 +474,49 @@ public class BookingService {
                 credits.returnedTo(List.of(booking.getId())).get(booking.getId()));
     }
 
+    // ***** AFTER THE SESSION (guide 46, part 2) *****
+
+    // The customer did not come: from the start of the session until 7 days after its end. No effect on credits:
+    // what was paid is used, as for a late cancellation (requirements). Repeated, the same answer, the first mark kept
+    @Transactional
+    public PanelBookingView markNoShow(long practitionerId, long markedBy, long bookingId) {
+        Booking booking = attendanceTarget(practitionerId, bookingId, BookingStatus.NO_SHOW);
+        if (booking.getStatus() != BookingStatus.NO_SHOW) {
+            booking.markNoShow(clock.instant(), markedBy);
+        }
+        return PanelBookingView.from(booking);
+    }
+
+    // The correction: attended after all. Same window, same idempotence
+    @Transactional
+    public PanelBookingView markAttended(long practitionerId, long markedBy, long bookingId) {
+        Booking booking = attendanceTarget(practitionerId, bookingId, BookingStatus.COMPLETED);
+        if (booking.getStatus() != BookingStatus.COMPLETED) {
+            booking.markAttended(clock.instant(), markedBy);
+        }
+        return PanelBookingView.from(booking);
+    }
+
+    // The session, locked (the job may be closing it in this very moment), with the rules of the window. Asked in this
+    // order: a session in another state says so first (409 from the state machine), then the time
+    private Booking attendanceTarget(long practitionerId, long bookingId, BookingStatus wanted) {
+        Instant now = clock.instant();
+        Booking booking = lockedForPractitioner(practitionerId, bookingId);
+        if (booking.getStatus() != wanted) {
+            booking.checkMove(wanted);
+        }
+        if (!booking.hasStartedAt(now)) {
+            throw new BusinessRuleException(ErrorCode.BOOKING_NOT_STARTED,
+                    "Booking " + bookingId + " starts at " + booking.getStartsAt());
+        }
+        if (booking.attendanceClosedAt(now)) {
+            throw new BusinessRuleException(ErrorCode.ATTENDANCE_WINDOW_CLOSED,
+                    "Booking " + bookingId + " ended at " + booking.getEndsAt() + ", more than "
+                            + Booking.ATTENDANCE_WINDOW.toDays() + " days ago");
+        }
+        return booking;
+    }
+
     // ***** ADMIN (D-077, guide 45, part 5) *****
 
     // the sessions that stop the deactivation of this practitioner: what the admin must cancel first. No names of
@@ -527,8 +570,19 @@ public class BookingService {
 
     @Transactional(readOnly = true)
     public List<CustomerBookingView> listForCustomer(long customerId) {
+        return listForCustomer(customerId, null);
+    }
+
+    // period null: every session, the furthest in the future first (the list of before, unchanged); UPCOMING: not over,
+    // the soonest first; PAST: over, the latest first (guide 46, part 4)
+    @Transactional(readOnly = true)
+    public List<CustomerBookingView> listForCustomer(long customerId, BookingPeriod period) {
         Instant now = clock.instant();
-        List<Booking> own = bookings.findByCustomerIdOrderByStartsAtDesc(customerId);
+        List<Booking> own = period == null ? bookings.findByCustomerIdOrderByStartsAtDesc(customerId)
+                : switch (period) {
+                    case UPCOMING -> bookings.findByCustomerIdAndEndsAtAfterOrderByStartsAtAsc(customerId, now);
+                    case PAST -> bookings.findByCustomerIdAndEndsAtLessThanEqualOrderByStartsAtDesc(customerId, now);
+                };
         // what came back to each booking: one question for the whole list (D-029)
         Map<Long, ReturnedCredit> returned = credits.returnedTo(own.stream().map(Booking::getId).toList());
         return own.stream()
@@ -537,6 +591,12 @@ public class BookingService {
     }
 
     // ***** JOBS (guide 21) *****
+
+    // CONFIRMED -> COMPLETED for every session over, in one statement: no card, no event (guide 46, part 1)
+    @Transactional
+    public int completeSessionsOver() {
+        return bookings.completeAllOver(clock.instant(), BookingStatus.CONFIRMED, BookingStatus.COMPLETED);
+    }
 
     // PENDING_PAYMENT -> EXPIRED for every expired hold, in one statement: no card, no event
     @Transactional

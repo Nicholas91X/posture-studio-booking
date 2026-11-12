@@ -26,6 +26,10 @@ class Booking {
     // that do not agree (guide 31, part 5)
     static final Duration HOLD = Duration.ofMinutes(32);
 
+    // How long after its end the practitioner can still mark a session as attended or not (Nicholas, 2026-11-12,
+    // guide 46, part 3): a rule of the studio, the same for everyone, with no effect on the money
+    static final Duration ATTENDANCE_WINDOW = Duration.ofDays(7);
+
     protected Booking() {
         // JPA needs a no-arg constructor
     }
@@ -172,6 +176,13 @@ class Booking {
     @Column
     private Long cancelledBy;
 
+    // who marked the attendance last, and when (V16): a no-show, or its correction; null for the job
+    @Column
+    private Long attendanceMarkedBy;
+
+    @Column
+    private Instant attendanceMarkedAt;
+
     // starts_at minus the notice, photographed at birth (V16): until when a cancellation of the customer is in
     // time. Whether that instant itself still is, is the rule of piece 2
     @Column(updatable = false)
@@ -235,6 +246,24 @@ class Booking {
         this.cancelledBy = cancelledBy;
     }
 
+    // The customer did not come (guide 46, part 2): from CONFIRMED (the job has not run yet, or the session is still
+    // going on) or from COMPLETED (the job closed it as attended). Who and when: the last mark (V16)
+    void markNoShow(Instant now, long markedBy) {
+        moveTo(BookingStatus.NO_SHOW);
+        mark(now, markedBy);
+    }
+
+    // The correction: the customer came after all (from NO_SHOW), or a session in progress closed by hand
+    void markAttended(Instant now, long markedBy) {
+        moveTo(BookingStatus.COMPLETED);
+        mark(now, markedBy);
+    }
+
+    private void mark(Instant now, long markedBy) {
+        this.attendanceMarkedAt = Objects.requireNonNull(now, "now must not be null");
+        this.attendanceMarkedBy = markedBy;
+    }
+
     // nobody answered in time: void, like a rejection (D-030). Done by the job of guide 21
     void expireApproval() {
         moveTo(BookingStatus.APPROVAL_EXPIRED);
@@ -283,6 +312,12 @@ class Booking {
     // from its start included a session is no longer cancellable: it is taking place, or over (guide 43, part 2)
     boolean hasStartedAt(Instant now) {
         return !now.isBefore(startsAt);
+    }
+
+    // the attendance can be marked from the start of the session until ATTENDANCE_WINDOW after its end, that instant
+    // included (guide 46, part 3)
+    boolean attendanceClosedAt(Instant now) {
+        return now.isAfter(endsAt.plus(ATTENDANCE_WINDOW));
     }
 
     // cancelled by its customer, in time or late: a second request just finds it so (guide 43, part 6)
@@ -362,6 +397,14 @@ class Booking {
 
     Long getCancelledBy() {
         return cancelledBy;
+    }
+
+    Long getAttendanceMarkedBy() {
+        return attendanceMarkedBy;
+    }
+
+    Instant getAttendanceMarkedAt() {
+        return attendanceMarkedAt;
     }
 
     Instant getFreeCancellationUntil() {
