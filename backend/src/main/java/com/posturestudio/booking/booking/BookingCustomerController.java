@@ -15,6 +15,10 @@ import org.springframework.web.bind.annotation.RestController;
 import com.posturestudio.booking.auth.CurrentUser;
 import com.posturestudio.booking.customer.CurrentCustomer;
 
+import io.swagger.v3.oas.annotations.Parameter;
+import io.swagger.v3.oas.annotations.media.Content;
+import io.swagger.v3.oas.annotations.media.Schema;
+import io.swagger.v3.oas.annotations.responses.ApiResponse;
 import jakarta.validation.Valid;
 
 /**
@@ -37,6 +41,8 @@ class BookingCustomerController {
         this.user = user;
     }
 
+    // the contract (D-083): a 201 with the body, as ResponseEntity.created answers
+    @ApiResponse(responseCode = "201", description = "Created", content = @Content(schema = @Schema(implementation = CustomerBookingView.class)))
     @PostMapping
     ResponseEntity<CustomerBookingView> request(@Valid @RequestBody NewBooking request) {
         CustomerBookingView created = bookings.request(current.id(), request);
@@ -46,7 +52,8 @@ class BookingCustomerController {
     // "my sessions": all of them, the furthest in the future first; ?period=upcoming (not over, the soonest first) or
     // ?period=past (over, the latest first), guide 46, part 4. An unknown value is a 400
     @GetMapping
-    List<CustomerBookingView> list(@RequestParam(required = false) String period) {
+    List<CustomerBookingView> list(@Parameter(schema = @Schema(allowableValues = {"upcoming", "past"}))
+                                   @RequestParam(required = false) String period) {
         return bookings.listForCustomer(current.id(), period == null ? null : BookingPeriod.fromQuery(period));
     }
 

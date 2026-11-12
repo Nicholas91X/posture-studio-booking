@@ -11,6 +11,7 @@ import com.posturestudio.booking.auth.SmsRequests.PhoneOnly;
 
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.validation.Valid;
+import io.swagger.v3.oas.annotations.responses.ApiResponse;
 
 /**
  * Asking for an access code (guide 24). Under /api/public: whoever asks is not signed in yet (D-029).
@@ -27,6 +28,7 @@ class LoginCodeController {
     }
 
     // 202 Accepted, no body, the same for every email (guide 24, 5.1): "taken in charge", which is the truth
+    @ApiResponse(responseCode = "202", description = "Taken in charge, the same for every email")
     @PostMapping("/login-code")
     ResponseEntity<Void> requestCode(@Valid @RequestBody LoginCodeRequest request, HttpServletRequest http) {
         codes.request(request.email(), ClientAddress.of(http));
@@ -35,6 +37,7 @@ class LoginCodeController {
 
     // The same by SMS (guide 29, part 4): 202 for every number, known or not. 503 at once when no SMS
     // provider is configured: the same for every number, so it tells nothing
+    @ApiResponse(responseCode = "202", description = "Taken in charge, the same for every number")
     @PostMapping("/login-code/sms")
     ResponseEntity<?> requestSmsCode(@Valid @RequestBody PhoneOnly request, HttpServletRequest http) {
         if (!codes.smsAvailable()) {

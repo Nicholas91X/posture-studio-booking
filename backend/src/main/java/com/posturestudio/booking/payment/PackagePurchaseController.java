@@ -13,6 +13,9 @@ import org.springframework.web.bind.annotation.RestController;
 
 import com.posturestudio.booking.customer.CurrentCustomer;
 
+import io.swagger.v3.oas.annotations.media.Content;
+import io.swagger.v3.oas.annotations.media.Schema;
+import io.swagger.v3.oas.annotations.responses.ApiResponse;
 import jakarta.validation.Valid;
 
 /**
@@ -32,6 +35,8 @@ class PackagePurchaseController {
     }
 
     // 201 with the Stripe page to send the customer to
+    // the contract (D-083): a 201 with the body, as ResponseEntity.created answers
+    @ApiResponse(responseCode = "201", description = "Created", content = @Content(schema = @Schema(implementation = PackagePurchaseView.class)))
     @PostMapping
     ResponseEntity<PackagePurchaseView> start(@Valid @RequestBody NewPackagePurchase request) {
         PackagePurchaseView created = purchases.start(current.id(), request);

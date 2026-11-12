@@ -57,6 +57,13 @@
 			<artifactId>stripe-java</artifactId>
 			<version>34.1.0</version>
 		</dependency>
+		<!-- The OpenAPI contract the frontend generates its types from (step 12, D-083). 3.2.0 of 2026-10-24, built on
+		     Spring Boot 4.1.2. The "api" starter: the JSON of the contract only, no Swagger UI page -->
+		<dependency>
+			<groupId>org.springdoc</groupId>
+			<artifactId>springdoc-openapi-starter-webmvc-api</artifactId>
+			<version>3.2.0</version>
+		</dependency>
 		<dependency>
 			<groupId>org.postgresql</groupId>
 			<artifactId>postgresql</artifactId>

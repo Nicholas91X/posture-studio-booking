@@ -7,6 +7,8 @@ import java.util.List;
 import com.posturestudio.booking.customer.CustomerName;
 import com.posturestudio.booking.shared.StudioTime;
 
+import io.swagger.v3.oas.annotations.media.Schema;
+
 /**
  * A row of the practitioner's lists (guide 23), times in Rome. The customer is one of theirs, so the
  * name is shown. Two flags, computed only for bookings that hold the time now:
@@ -15,9 +17,9 @@ import com.posturestudio.booking.shared.StudioTime;
  * - evaluationOverlaps: the intervals shared with the other practitioner's bookings when one of the two
  *   is an evaluation (D-043). Only the times.
  */
-public record PanelBookingRow(long id, long customerId, String customerFirstName, String customerLastName,
+public record PanelBookingRow(long id, long customerId, @Schema(nullable = true) String customerFirstName, @Schema(nullable = true) String customerLastName,
                               long serviceId, OffsetDateTime startsAt, OffsetDateTime endsAt, BookingStatus status,
-                              BookedBy bookedBy, PaidWith paidWith, OffsetDateTime approvalDeadline,
+                              BookedBy bookedBy, PaidWith paidWith, @Schema(nullable = true) OffsetDateTime approvalDeadline,
                               boolean outsideWorkingHours, List<RoomOverlap> evaluationOverlaps) {
 
     static PanelBookingRow from(Booking booking, CustomerName customer, boolean outsideWorkingHours,

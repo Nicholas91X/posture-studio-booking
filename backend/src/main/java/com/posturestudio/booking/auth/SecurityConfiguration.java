@@ -3,6 +3,7 @@ package com.posturestudio.booking.auth;
 import org.springframework.beans.factory.annotation.Qualifier;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
+import org.springframework.http.HttpMethod;
 import org.springframework.security.config.annotation.web.builders.HttpSecurity;
 import org.springframework.security.web.AuthenticationEntryPoint;
 import org.springframework.security.web.SecurityFilterChain;
@@ -63,6 +64,9 @@ class SecurityConfiguration {
                         .requestMatchers("/api/account/**").authenticated()
                         // Stripe calling us (D-062): no account, the signature of each payment account decides
                         .requestMatchers("/api/webhooks/**").permitAll()
+                        // the OpenAPI contract (D-083): it exists only when springdoc.api-docs.enabled is true, in
+                        // development; off (the default, production) the path has no handler and answers 404
+                        .requestMatchers(HttpMethod.GET, "/v3/api-docs", "/v3/api-docs/**").permitAll()
                         .anyRequest().denyAll());
         return http.build();
     }

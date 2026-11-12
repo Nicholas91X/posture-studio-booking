@@ -14,9 +14,9 @@ import org.springframework.web.bind.annotation.RestController;
 @RequestMapping("/api/public/practitioners")
 class PractitionerPublicController {
 
-    private final PractitionerService practitioners;
+    private final PublicPractitioners practitioners;
 
-    PractitionerPublicController(PractitionerService practitioners) {
+    PractitionerPublicController(PublicPractitioners practitioners) {
         this.practitioners = practitioners;
     }
 

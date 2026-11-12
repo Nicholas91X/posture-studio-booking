@@ -94,7 +94,7 @@ public class PractitionerServiceTest {
     // ***** PUBLIC *****
 
     @Test
-    void listActiveHidesDeactivatedAccountsAndSortsByLastNameThenFirstName() {
+    void activeInOrderHidesDeactivatedAccountsAndSortsByLastNameThenFirstName() {
         // arrange
         long rossiMarta = insertPractitioner("marta@example.com", "Marta", "Rossi", true);
         long bianchi = insertPractitioner("luca@example.com", "Luca", "Bianchi", true);
@@ -102,16 +102,17 @@ public class PractitionerServiceTest {
         insertPractitioner("marco@example.com", "Marco", "Verdi", false);
 
         // act
-        List<PublicPractitioner> listed = service.listActive();
+        List<Practitioner> listed = service.activeInOrder();
 
         // assert
-        assertThat(listed).extracting(PublicPractitioner::id).containsExactly(bianchi, rossiAnna, rossiMarta);
-        assertThat(listed.getFirst()).isEqualTo(new PublicPractitioner(bianchi, "Luca", "Bianchi"));
+        assertThat(listed).extracting(Practitioner::getId).containsExactly(bianchi, rossiAnna, rossiMarta);
+        assertThat(listed.getFirst().getFirstName()).isEqualTo("Luca");
+        assertThat(listed.getFirst().getLastName()).isEqualTo("Bianchi");
     }
 
     @Test
-    void listActiveWithNoPractitionersIsEmpty() {
-        assertThat(service.listActive()).isEmpty();
+    void activeInOrderWithNoPractitionersIsEmpty() {
+        assertThat(service.activeInOrder()).isEmpty();
     }
 
     @Test
@@ -174,11 +175,11 @@ public class PractitionerServiceTest {
         long anna = insertPractitioner("anna@example.com", "Anna", "Rossi", true);
 
         assertThat(service.deactivate(anna).active()).isFalse();
-        assertThat(service.listActive()).isEmpty();
+        assertThat(service.activeInOrder()).isEmpty();
         Assertions.assertThrows(NotFoundException.class, () -> service.requireActive(anna));
 
         assertThat(service.activate(anna).active()).isTrue();
-        assertThat(service.listActive()).extracting(PublicPractitioner::id).containsExactly(anna);
+        assertThat(service.activeInOrder()).extracting(Practitioner::getId).containsExactly(anna);
     }
 
     @Test
