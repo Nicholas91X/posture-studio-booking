@@ -15,12 +15,19 @@ record CreditLotSummary(long id, long practitionerId, long serviceId, LotSource 
         // nothing left, whatever the day
         USED_UP,
         // credits left, but the last valid day is gone: the case for an extension (D-067)
-        EXPIRED
+        EXPIRED,
+        // credits left and in time, but the practitioner is deactivated: not usable (D-077). Computed, not stored:
+        // a reactivation makes the lot USABLE again by itself
+        PRACTITIONER_UNAVAILABLE
     }
 
-    static CreditLotSummary of(CreditLot lot, long balance, LocalDate today) {
+    // the order of the rules (guide 45, part 7): used up, then expired (it would be anyway), then the practitioner
+    static CreditLotSummary of(CreditLot lot, long balance, LocalDate today, boolean practitionerActive) {
         LocalDate lastDay = lot.getValidUntil().lastDay();
-        Status status = balance <= 0 ? Status.USED_UP : lastDay.isBefore(today) ? Status.EXPIRED : Status.USABLE;
+        Status status = balance <= 0 ? Status.USED_UP
+                : lastDay.isBefore(today) ? Status.EXPIRED
+                : !practitionerActive ? Status.PRACTITIONER_UNAVAILABLE
+                : Status.USABLE;
         return new CreditLotSummary(lot.getId(), lot.getPractitionerId(), lot.getServiceId(), lot.getSource(), balance,
                 lastDay, status);
     }

@@ -36,6 +36,15 @@ class BookingJobs {
         }
     }
 
+    // CONFIRMED -> COMPLETED once a session is over (guide 46, part 1)
+    @Scheduled(fixedDelayString = "PT1M", initialDelayString = "PT1M")
+    void completeSessionsOver() {
+        int completed = bookings.completeSessionsOver();
+        if (completed > 0) {
+            log.info("Completed {} sessions over", completed);
+        }
+    }
+
     // PENDING_APPROVAL -> APPROVAL_EXPIRED, hold on the card released (D-030, D-031).
     // One transaction per request: one failure does not stop the others
     @Scheduled(fixedDelayString = "PT1M", initialDelayString = "PT1M")

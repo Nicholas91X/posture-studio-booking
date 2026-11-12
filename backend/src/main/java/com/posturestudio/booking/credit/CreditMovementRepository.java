@@ -26,6 +26,15 @@ interface CreditMovementRepository extends Repository<CreditMovement, Long> {
     // the credit a booking took: at most one (credit_movement_one_debit_per_booking_uq)
     java.util.Optional<CreditMovement> findByBookingIdAndReason(long bookingId, MovementReason reason);
 
+    // what came back to these bookings, and where: the positive movement with the booking (a release, a restore, or
+    // the LOT_CREATED of a cancellation lot, V16), at most one each. One query for a whole list (D-029)
+    @Query("""
+            select new com.posturestudio.booking.credit.BookingReturn(m.bookingId, l.id, l.validUntil)
+            from CreditMovement m join CreditLot l on l.id = m.creditLotId
+            where m.bookingId in :bookingIds and m.amount > 0
+            """)
+    List<BookingReturn> findReturnsTo(java.util.Collection<Long> bookingIds);
+
     // whether a booking already gave a credit back: at most once (credit_movement_one_return_per_booking_uq)
     boolean existsByBookingIdAndAmountGreaterThan(long bookingId, int amount);
 }

@@ -22,13 +22,16 @@ import org.springframework.transaction.annotation.Transactional;
 
 import com.posturestudio.booking.booking.BookingEvent.ApprovalExpired;
 import com.posturestudio.booking.booking.BookingEvent.ApprovalRequested;
+import com.posturestudio.booking.booking.BookingEvent.BookingCancelled;
 import com.posturestudio.booking.booking.BookingEvent.BookingConfirmed;
 import com.posturestudio.booking.booking.BookingEvent.BookingRejected;
 import com.posturestudio.booking.booking.BookingEvent.BookingWithdrawn;
 import com.posturestudio.booking.booking.BookingEvent.LatePaymentReleased;
 import com.posturestudio.booking.catalog.CatalogService;
 import com.posturestudio.booking.catalog.ServiceOnSale;
+import com.posturestudio.booking.credit.CancelledBy;
 import com.posturestudio.booking.credit.CreditService;
+import com.posturestudio.booking.credit.ReturnedCredit;
 import com.posturestudio.booking.customer.CustomerName;
 import com.posturestudio.booking.customer.CustomerService;
 import com.posturestudio.booking.practitioner.PractitionerService;
@@ -97,6 +100,11 @@ public class BookingService {
     public CustomerBookingView request(long customerId, NewBooking request) {
         Instant now = clock.instant();
         long practitionerId = request.practitionerId();
+
+        // 0. FIRST the lock against a deactivation in flight (guide 45, part 4), THEN everything that asks whether
+        // the practitioner is active (the service on sale, step 1): asked after the wait, it sees the deactivation
+        practitioners.lockForBooking(practitionerId);
+
         Instant start = request.startsAt().toInstant();
 
         // 1. the request names something on sale (404): no lock needed for that
@@ -146,7 +154,7 @@ public class BookingService {
 
         // 7. the insert, flushed here and not at commit, so that a violation can be translated
         Booking booking = Booking.requestedByCustomer(customerId, practitionerId, service.id(), slot,
-                service.priceCents(), now);
+                service.priceCents(), now, cancellationNotice(settings));
         insert(booking, practitionerId, slot);
 
         // 8. the Stripe page, inside this transaction (guide 31, parts 3 and 4): if Stripe fails, the booking
@@ -164,7 +172,8 @@ public class BookingService {
                                                   TimeRange slot, long lotId, PractitionerSettings settings,
                                                   Instant now) {
         Booking booking = Booking.requestedWithCredit(customerId, practitionerId, service.id(), slot,
-                service.priceCents(), now, Duration.ofHours(settings.approvalWindowHours()));
+                service.priceCents(), now, Duration.ofHours(settings.approvalWindowHours()),
+                cancellationNotice(settings));
         insert(booking, practitionerId, slot);
         credits.commit(lotId, booking.getId());
         switch (settings.bookingApproval()) {
@@ -172,6 +181,11 @@ public class BookingService {
             case MANUAL -> events.publishEvent(ApprovalRequested.of(booking));
         }
         return CustomerBookingView.from(booking);
+    }
+
+    // the notice of the practitioner now, photographed into the booking (guide 42, part 6)
+    private static Duration cancellationNotice(PractitionerSettings settings) {
+        return Duration.ofHours(settings.cancellationNoticeHours());
     }
 
     private void insert(Booking booking, long practitionerId, TimeRange slot) {
@@ -190,7 +204,7 @@ public class BookingService {
     @Transactional(readOnly = true)
     public CustomerBookingView findForCustomer(long customerId, long bookingId) {
         Booking booking = bookings.findByIdAndCustomerId(bookingId, customerId).orElseThrow(() -> notFound(bookingId));
-        return customerView(booking, clock.instant());
+        return customerView(booking, clock.instant(), credits.returnedTo(List.of(booking.getId())));
     }
 
     // While waiting for the answer the customer can give up, nothing charged (D-030). Allowed even after
@@ -203,7 +217,50 @@ public class BookingService {
         booking.withdraw(now);
         releasePayment(booking);
         events.publishEvent(BookingWithdrawn.of(booking));
-        return CustomerBookingView.from(booking);
+        return customerView(booking, now, credits.returnedTo(List.of(booking.getId())));
+    }
+
+    // The customer gives up a CONFIRMED session (guide 43). In time (until free_cancellation_until, included, V16):
+    // the credit comes back, or a new credit for a card; nothing for a session to be paid in the studio. Late: nothing.
+    // One transaction with the session locked (D-046): a second request, or a webhook of a payment link, waits here
+    // and then sees the session as it really is (guide 43, part 7). The open payment link of a session to be paid in
+    // the studio is closed AFTER the commit, by payment, outside this lock (guide 43, part 5).
+    // cancelledBy: the account that acts, for the trace (V16)
+    @Transactional
+    public CustomerBookingView cancel(long customerId, long cancelledBy, long bookingId) {
+        Instant now = clock.instant();
+        Booking booking = bookings.findLockedByIdAndCustomerId(bookingId, customerId)
+                .orElseThrow(() -> notFound(bookingId));
+        // the second click, or a retry after a lost response: the same answer, no new effect (guide 43, part 6)
+        if (booking.isCancelledByCustomer()) {
+            return customerView(booking, now, credits.returnedTo(List.of(booking.getId())));
+        }
+        if (booking.getStatus() == BookingStatus.CONFIRMED && booking.hasStartedAt(now)) {
+            throw new BusinessRuleException(ErrorCode.BOOKING_ALREADY_STARTED,
+                    "Booking " + bookingId + " started at " + booking.getStartsAt());
+        }
+        // any state but CONFIRMED: 409 from the state machine (a request in wait is withdrawn, not cancelled)
+        BookingStatus outcome = booking.cancelByCustomer(now, cancelledBy);
+        ReturnedCredit returned = outcome == BookingStatus.CANCELLED_IN_TIME
+                ? giveBack(booking, CancelledBy.CUSTOMER) : null;
+        events.publishEvent(BookingCancelled.of(booking, returned == null ? null : returned.validUntil()));
+        return CustomerBookingView.from(booking, null, returned);
+    }
+
+    // What a session gives back when cancelled in time, or by the studio (guide 43, part 4.1). A card was already
+    // captured (a confirmed card session always is, D-063, D-065): nothing to ask Stripe, a new credit of 1. Valid
+    // single_credit_validity_days from today, read now: the validity of a NEW credit, not a rule the customer agreed
+    // to when booking (unlike the notice, guide 42, 8.4). A switch expression: a new way of paying does not compile
+    // until someone decides what its cancellation gives back
+    private ReturnedCredit giveBack(Booking booking, CancelledBy who) {
+        int days = practitioners.getSettings(booking.getPractitionerId()).singleCreditValidityDays();
+        return switch (booking.getPaidWith()) {
+            case CREDIT -> credits.restoreOnCancellation(booking.getId(), days, who);
+            case CARD -> credits.lotFromCancellation(booking.getCustomerId(), booking.getPractitionerId(),
+                    booking.getServiceId(), booking.getId(), days);
+            // nothing was paid (D-040)
+            case IN_STUDIO -> null;
+        };
     }
 
     // ***** PAYMENT *****
@@ -316,6 +373,9 @@ public class BookingService {
     @Transactional
     public PanelBookingView bookFromPanel(long practitionerId, NewPanelBooking request) {
         Instant now = clock.instant();
+        // the lock against a deactivation in flight, first (guide 45, part 4); the practitioner acting here is signed
+        // in, but a deactivation may be committing in this very moment
+        practitioners.lockForBooking(practitionerId);
         // an own active service, or 404
         ServiceOnSale service = catalog.serviceOnSale(practitionerId, request.serviceId());
         long customerId = customers.findOrCreate(request.customer());
@@ -335,7 +395,8 @@ public class BookingService {
         // the usable lot that ends first, locked: under the lock on the customer taken above (lock order of D-069)
         var lot = credits.lockUsableLot(customerId, practitionerId, service.id(), slot.start());
         Booking booking = Booking.bookedFromPanel(customerId, practitionerId, service.id(), slot,
-                service.priceCents(), now, lot.isPresent() ? PaidWith.CREDIT : PaidWith.IN_STUDIO);
+                service.priceCents(), now, lot.isPresent() ? PaidWith.CREDIT : PaidWith.IN_STUDIO,
+                cancellationNotice(practitioners.getSettings(practitionerId)));
         insert(booking, practitionerId, slot);
         // used at once: no request that a rejection could give back; only a cancellation in time will (step 11)
         lot.ifPresent(lotId -> credits.commit(lotId, booking.getId()));
@@ -365,13 +426,109 @@ public class BookingService {
 
     @Transactional
     public PanelBookingView reject(long practitionerId, long bookingId) {
+        Booking booking = lockedForPractitioner(practitionerId, bookingId);
+        rejectLocked(booking, clock.instant());
+        return PanelBookingView.from(booking);
+    }
+
+    // The studio cancels one of its future sessions (D-075, guide 44), whatever the notice: the customer loses
+    // nothing. A confirmed session becomes CANCELLED_BY_STUDIO and gives back what was paid, with the minimum
+    // validity always (CancelledBy.STUDIO, D-076); a request in wait is REJECTED, by the same code as /reject
+    // (D-078). The open payment link of a session to be paid in the studio is closed after the commit, as for the
+    // customer (PaymentLinkClosing). cancelledBy: the account that acts, for the trace (V16)
+    @Transactional
+    public PanelCancellationView cancelByStudio(long practitionerId, long cancelledBy, long bookingId) {
         Instant now = clock.instant();
         Booking booking = lockedForPractitioner(practitionerId, bookingId);
+        // the second click sees the result of the first: what /cancel produces is one of these two (guide 44, part 4)
+        if (booking.getStatus() == BookingStatus.CANCELLED_BY_STUDIO || booking.getStatus() == BookingStatus.REJECTED) {
+            return cancellationView(booking);
+        }
+        if (booking.getStatus() == BookingStatus.PENDING_APPROVAL) {
+            rejectLocked(booking, now);
+            return cancellationView(booking);
+        }
+        if (booking.getStatus() == BookingStatus.CONFIRMED && booking.hasStartedAt(now)) {
+            throw new BusinessRuleException(ErrorCode.BOOKING_ALREADY_STARTED,
+                    "Booking " + bookingId + " started at " + booking.getStartsAt());
+        }
+        // any other state (paying, cancelled by the customer meanwhile, over): 409 from the state machine
+        booking.cancelByStudio(now, cancelledBy);
+        ReturnedCredit returned = giveBack(booking, CancelledBy.STUDIO);
+        events.publishEvent(BookingCancelled.of(booking, returned == null ? null : returned.validUntil()));
+        return new PanelCancellationView(PanelBookingView.from(booking), returned);
+    }
+
+    // A rejection on a booking the caller has locked: within the deadline (D-030), the hold released or the credit
+    // back to its lot, the email. The one place of it, for /reject and for /cancel of a request in wait
+    private void rejectLocked(Booking booking, Instant now) {
         requireBeforeDeadline(booking, now);
         booking.reject(now);
         releasePayment(booking);
         events.publishEvent(BookingRejected.of(booking));
+    }
+
+    // what the panel sees of a cancellation: the session and what came back, read from the ledger (one question)
+    private PanelCancellationView cancellationView(Booking booking) {
+        return new PanelCancellationView(PanelBookingView.from(booking),
+                credits.returnedTo(List.of(booking.getId())).get(booking.getId()));
+    }
+
+    // ***** AFTER THE SESSION (guide 46, part 2) *****
+
+    // The customer did not come: from the start of the session until 7 days after its end. No effect on credits:
+    // what was paid is used, as for a late cancellation (requirements). Repeated, the same answer, the first mark kept
+    @Transactional
+    public PanelBookingView markNoShow(long practitionerId, long markedBy, long bookingId) {
+        Booking booking = attendanceTarget(practitionerId, bookingId, BookingStatus.NO_SHOW);
+        if (booking.getStatus() != BookingStatus.NO_SHOW) {
+            booking.markNoShow(clock.instant(), markedBy);
+        }
         return PanelBookingView.from(booking);
+    }
+
+    // The correction: attended after all. Same window, same idempotence
+    @Transactional
+    public PanelBookingView markAttended(long practitionerId, long markedBy, long bookingId) {
+        Booking booking = attendanceTarget(practitionerId, bookingId, BookingStatus.COMPLETED);
+        if (booking.getStatus() != BookingStatus.COMPLETED) {
+            booking.markAttended(clock.instant(), markedBy);
+        }
+        return PanelBookingView.from(booking);
+    }
+
+    // The session, locked (the job may be closing it in this very moment), with the rules of the window. Asked in this
+    // order: a session in another state says so first (409 from the state machine), then the time
+    private Booking attendanceTarget(long practitionerId, long bookingId, BookingStatus wanted) {
+        Instant now = clock.instant();
+        Booking booking = lockedForPractitioner(practitionerId, bookingId);
+        if (booking.getStatus() != wanted) {
+            booking.checkMove(wanted);
+        }
+        if (!booking.hasStartedAt(now)) {
+            throw new BusinessRuleException(ErrorCode.BOOKING_NOT_STARTED,
+                    "Booking " + bookingId + " starts at " + booking.getStartsAt());
+        }
+        if (booking.attendanceClosedAt(now)) {
+            throw new BusinessRuleException(ErrorCode.ATTENDANCE_WINDOW_CLOSED,
+                    "Booking " + bookingId + " ended at " + booking.getEndsAt() + ", more than "
+                            + Booking.ATTENDANCE_WINDOW.toDays() + " days ago");
+        }
+        return booking;
+    }
+
+    // ***** ADMIN (D-077, guide 45, part 5) *****
+
+    // the sessions that stop the deactivation of this practitioner: what the admin must cancel first. No names of
+    // customers: the admin needs to know what to cancel, not who
+    @Transactional(readOnly = true)
+    public List<AdminBookingView> unfinishedForAdmin(long practitionerId) {
+        practitioners.requireExists(practitionerId);
+        return unfinished(practitionerId, clock.instant()).stream().map(AdminBookingView::from).toList();
+    }
+
+    List<Booking> unfinished(long practitionerId, Instant now) {
+        return bookings.findUnfinishedHolding(practitionerId, now, BookingStatus.HOLDS_TIME, BookingStatus.PENDING_PAYMENT);
     }
 
     // ***** LISTS (guide 23) *****
@@ -413,13 +570,33 @@ public class BookingService {
 
     @Transactional(readOnly = true)
     public List<CustomerBookingView> listForCustomer(long customerId) {
+        return listForCustomer(customerId, null);
+    }
+
+    // period null: every session, the furthest in the future first (the list of before, unchanged); UPCOMING: not over,
+    // the soonest first; PAST: over, the latest first (guide 46, part 4)
+    @Transactional(readOnly = true)
+    public List<CustomerBookingView> listForCustomer(long customerId, BookingPeriod period) {
         Instant now = clock.instant();
-        return bookings.findByCustomerIdOrderByStartsAtDesc(customerId).stream()
-                .map(booking -> customerView(booking, now))
+        List<Booking> own = period == null ? bookings.findByCustomerIdOrderByStartsAtDesc(customerId)
+                : switch (period) {
+                    case UPCOMING -> bookings.findByCustomerIdAndEndsAtAfterOrderByStartsAtAsc(customerId, now);
+                    case PAST -> bookings.findByCustomerIdAndEndsAtLessThanEqualOrderByStartsAtDesc(customerId, now);
+                };
+        // what came back to each booking: one question for the whole list (D-029)
+        Map<Long, ReturnedCredit> returned = credits.returnedTo(own.stream().map(Booking::getId).toList());
+        return own.stream()
+                .map(booking -> customerView(booking, now, returned))
                 .toList();
     }
 
     // ***** JOBS (guide 21) *****
+
+    // CONFIRMED -> COMPLETED for every session over, in one statement: no card, no event (guide 46, part 1)
+    @Transactional
+    public int completeSessionsOver() {
+        return bookings.completeAllOver(clock.instant(), BookingStatus.CONFIRMED, BookingStatus.COMPLETED);
+    }
 
     // PENDING_PAYMENT -> EXPIRED for every expired hold, in one statement: no card, no event
     @Transactional
@@ -454,11 +631,12 @@ public class BookingService {
 
     // The payment page only while the slot is still held for the customer (guide 31, part 9). At most a few
     // such bookings per customer (the limit of future bookings), so one question each is fine
-    private CustomerBookingView customerView(Booking booking, Instant now) {
+    private CustomerBookingView customerView(Booking booking, Instant now, Map<Long, ReturnedCredit> returned) {
+        ReturnedCredit credit = returned.get(booking.getId());
         if (booking.getStatus() == BookingStatus.PENDING_PAYMENT && booking.holdsTimeAt(now)) {
-            return CustomerBookingView.from(booking, checkout.pageOf(booking.getId()).orElse(null));
+            return CustomerBookingView.from(booking, checkout.pageOf(booking.getId()).orElse(null), credit);
         }
-        return CustomerBookingView.from(booking);
+        return CustomerBookingView.from(booking, null, credit);
     }
 
     // The rows of a panel list with names and flags (guide 23, part 2). A fixed number of queries whatever

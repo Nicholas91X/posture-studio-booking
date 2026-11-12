@@ -36,10 +36,11 @@ final class PaymentTestData {
         OffsetDateTime start = OffsetDateTime.parse("2026-11-20T09:00+01:00").plusHours(bookings++);
         return jdbc.queryForObject("""
                 insert into booking (customer_id, practitioner_id, service_id, starts_at, ends_at, status,
-                                     booked_by, paid_with, price_cents)
-                values (?, ?, ?, ?, ?, 'CONFIRMED', 'PRACTITIONER', 'IN_STUDIO', 3000)
+                                     booked_by, paid_with, price_cents, free_cancellation_until)
+                values (?, ?, ?, ?, ?, 'CONFIRMED', 'PRACTITIONER', 'IN_STUDIO', 3000, ?)
                 returning id
-                """, Long.class, customerId, practitionerId, serviceId, start, start.plusHours(1));
+                """, Long.class, customerId, practitionerId, serviceId, start, start.plusHours(1),
+                start.minusHours(24));
     }
 
     // a request of a customer waiting for its payment, held until 7 November (far after the fixed clock)
@@ -55,11 +56,13 @@ final class PaymentTestData {
         OffsetDateTime start = OffsetDateTime.parse("2026-11-20T09:00+01:00").plusHours(bookings++);
         return jdbc.queryForObject("""
                 insert into booking (customer_id, practitioner_id, service_id, starts_at, ends_at, status,
-                                     booked_by, paid_with, price_cents, hold_expires_at, created_at)
+                                     booked_by, paid_with, price_cents, hold_expires_at, created_at,
+                                     free_cancellation_until)
                 values (?, ?, ?, ?, ?, 'PENDING_PAYMENT', 'CUSTOMER', 'CARD', 3000, '2026-11-07T10:00+01:00',
-                        '2026-11-06T09:00:00Z')
+                        '2026-11-06T09:00:00Z', ?)
                 returning id
-                """, Long.class, customerId, practitionerId, serviceId, start, start.plusHours(1));
+                """, Long.class, customerId, practitionerId, serviceId, start, start.plusHours(1),
+                start.minusHours(24));
     }
 
     // a request paid and waiting for the practitioner until 6 November 22:00 in Rome, its amount held on

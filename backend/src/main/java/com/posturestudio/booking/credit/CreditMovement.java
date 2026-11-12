@@ -27,6 +27,17 @@ class CreditMovement {
         return movement(lotId, Checks.requirePositive(credits, "credits"), MovementReason.LOT_CREATED, null, now);
     }
 
+    // +1: the lot of 1 born from the cancellation of this booking (V16). The booking is here so that the index
+    // "one return per booking" sees this lot as the credit given back: never a second one (guide 42, 7.1)
+    static CreditMovement lotCreatedByCancellation(long lotId, long bookingId, Instant now) {
+        return movement(lotId, 1, MovementReason.LOT_CREATED, bookingId, now);
+    }
+
+    // +1 on the same lot: a session cancelled in time, or by the studio, gives its credit back (D-076)
+    static CreditMovement cancellationRestore(long lotId, long bookingId, Instant now) {
+        return movement(lotId, 1, MovementReason.CANCELLATION_RESTORE, bookingId, now);
+    }
+
     // -1: the credit is committed to a booking
     static CreditMovement booking(long lotId, long bookingId, Instant now) {
         return movement(lotId, -1, MovementReason.BOOKING, bookingId, now);

@@ -11,6 +11,7 @@ import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
 
+import com.posturestudio.booking.auth.CurrentUser;
 import com.posturestudio.booking.practitioner.CurrentPractitioner;
 import com.posturestudio.booking.schedule.SlotRange;
 
@@ -27,10 +28,13 @@ class BookingPanelController {
 
     private final BookingService bookings;
     private final CurrentPractitioner current;
+    // the account that acts, for the trace of a cancellation (V16), as the concessions (D-073)
+    private final CurrentUser user;
 
-    BookingPanelController(BookingService bookings, CurrentPractitioner current) {
+    BookingPanelController(BookingService bookings, CurrentPractitioner current, CurrentUser user) {
         this.bookings = bookings;
         this.current = current;
+        this.user = user;
     }
 
     // for a customer of theirs, paid in the studio (D-024, D-040)
@@ -65,5 +69,23 @@ class BookingPanelController {
     @PostMapping("/{id}/reject")
     PanelBookingView reject(@PathVariable long id) {
         return bookings.reject(current.id(), id);
+    }
+
+    // after the session (guide 46): the customer did not come, or did after all. From the start of the session until
+    // 7 days after its end
+    @PostMapping("/{id}/no-show")
+    PanelBookingView noShow(@PathVariable long id) {
+        return bookings.markNoShow(current.id(), user.id(), id);
+    }
+
+    @PostMapping("/{id}/attended")
+    PanelBookingView attended(@PathVariable long id) {
+        return bookings.markAttended(current.id(), user.id(), id);
+    }
+
+    // a future session of theirs, confirmed or in wait: the customer loses nothing (D-075, guide 44)
+    @PostMapping("/{id}/cancel")
+    PanelCancellationView cancel(@PathVariable long id) {
+        return bookings.cancelByStudio(current.id(), user.id(), id);
     }
 }

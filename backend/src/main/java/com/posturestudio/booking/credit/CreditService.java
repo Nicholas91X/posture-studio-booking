@@ -97,6 +97,63 @@ public class CreditService {
         return true;
     }
 
+    // ***** CANCELLATIONS (step 11, guide 43, part 4) *****
+
+    // A session paid with a credit, cancelled in time or by the studio: its credit comes back, valid at least
+    // validityDays (single_credit_validity_days) from the day of the cancellation in Rome (D-076):
+    // 1. its lot lasts at least that long: +1 on the same lot (CANCELLATION_RESTORE);
+    // 2. it ends sooner, but it is a CANCELLATION lot ("already extended") and the customer cancelled: +1 on the
+    //    same lot all the same, no new extension. Without this, "book, cancel in time" would extend a credit
+    //    forever, and from a card too (guide 42, part 8);
+    // 3. otherwise (a package or a gift that ends sooner; or the studio cancelled): a new lot of 1 until that day.
+    // Once only: the caller holds the lock on the booking and checks its state; the index "one return per booking"
+    // refuses a second credit anyway, whichever of the two ways (V16). A positive movement takes no lock on the lot:
+    // it cannot take it below zero (D-069). MANDATORY: in the transaction of the cancellation
+    @Transactional(propagation = Propagation.MANDATORY)
+    public ReturnedCredit restoreOnCancellation(long bookingId, int validityDays, CancelledBy who) {
+        Instant now = clock.instant();
+        CreditMovement taken = movements.findByBookingIdAndReason(bookingId, MovementReason.BOOKING)
+                .orElseThrow(() -> new IllegalStateException("Booking " + bookingId + " took no credit"));
+        CreditLot lot = lots.findById(taken.getCreditLotId()).orElseThrow();
+        ValidUntil minimum = ValidUntil.daysAfter(now, validityDays);
+        boolean longEnough = !minimum.isAfter(lot.getValidUntil());
+        boolean alreadyExtended = lot.getSource() == LotSource.CANCELLATION && who == CancelledBy.CUSTOMER;
+        if (longEnough || alreadyExtended) {
+            movements.save(CreditMovement.cancellationRestore(lot.getId(), bookingId, now));
+            return new ReturnedCredit(lot.getId(), lot.getValidUntil().lastDay());
+        }
+        return newLot(lot.getCustomerId(), lot.getPractitionerId(), lot.getServiceId(), bookingId, minimum, now);
+    }
+
+    // A session paid by card, cancelled in time or by the studio: a credit of 1 valid validityDays from the day of
+    // the cancellation (D-010, D-076). The money stays with the studio (D-015)
+    @Transactional(propagation = Propagation.MANDATORY)
+    public ReturnedCredit lotFromCancellation(long customerId, long practitionerId, long serviceId, long bookingId,
+                                              int validityDays) {
+        Instant now = clock.instant();
+        return newLot(customerId, practitionerId, serviceId, bookingId, ValidUntil.daysAfter(now, validityDays), now);
+    }
+
+    // The credits that came back to these bookings (guide 43, part 9), by booking: one query for a list (D-029)
+    @Transactional(readOnly = true)
+    public Map<Long, ReturnedCredit> returnedTo(Collection<Long> bookingIds) {
+        if (bookingIds.isEmpty()) {
+            return Map.of();
+        }
+        return movements.findReturnsTo(bookingIds).stream()
+                .collect(Collectors.toUnmodifiableMap(BookingReturn::bookingId,
+                        row -> new ReturnedCredit(row.lotId(), row.validUntil())));
+    }
+
+    // The one place that creates a CANCELLATION lot (D-078): with its LOT_CREATED carrying the booking, the rule
+    // across two tables that the database cannot check by itself
+    private ReturnedCredit newLot(long customerId, long practitionerId, long serviceId, long bookingId,
+                                  ValidUntil validUntil, Instant now) {
+        CreditLot lot = lots.save(CreditLot.fromCancellation(customerId, practitionerId, serviceId, validUntil, now));
+        movements.save(CreditMovement.lotCreatedByCancellation(lot.getId(), bookingId, now));
+        return new ReturnedCredit(lot.getId(), validUntil.lastDay());
+    }
+
     // The customers with at least one lot with this practitioner (D-066): booking joins them with the customers of
     // its bookings, for "my customers" of the panel (guide 41, part 4)
     @Transactional(readOnly = true)

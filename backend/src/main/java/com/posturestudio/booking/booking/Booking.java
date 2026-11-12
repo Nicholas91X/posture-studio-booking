@@ -26,6 +26,10 @@ class Booking {
     // that do not agree (guide 31, part 5)
     static final Duration HOLD = Duration.ofMinutes(32);
 
+    // How long after its end the practitioner can still mark a session as attended or not (Nicholas, 2026-11-12,
+    // guide 46, part 3): a rule of the studio, the same for everyone, with no effect on the money
+    static final Duration ATTENDANCE_WINDOW = Duration.ofDays(7);
+
     protected Booking() {
         // JPA needs a no-arg constructor
     }
@@ -34,7 +38,7 @@ class Booking {
     // The price is the one of the service right now, copied (D-011). Rules (slot, limit) are checked
     // by BookingService before: here only the shape of the data
     static Booking requestedByCustomer(long customerId, long practitionerId, long serviceId, TimeRange slot,
-                                       long priceCents, Instant now) {
+                                       long priceCents, Instant now, Duration cancellationNotice) {
         Objects.requireNonNull(slot, "slot must not be null");
         Objects.requireNonNull(now, "now must not be null");
         Booking booking = new Booking();
@@ -49,6 +53,7 @@ class Booking {
         booking.priceCents = Checks.requirePositive(priceCents, "priceCents");
         booking.holdExpiresAt = now.plus(HOLD);
         booking.createdAt = now;
+        booking.photographNotice(cancellationNotice);
         return booking;
     }
 
@@ -57,7 +62,8 @@ class Booking {
     // The credit is committed by BookingService right after the insert (-1 on the lot). Not a transition:
     // the state machine is about steps, not birth (as bookedFromPanel)
     static Booking requestedWithCredit(long customerId, long practitionerId, long serviceId, TimeRange slot,
-                                       long priceCents, Instant now, Duration approvalWindow) {
+                                       long priceCents, Instant now, Duration approvalWindow,
+                                       Duration cancellationNotice) {
         Objects.requireNonNull(slot, "slot must not be null");
         Objects.requireNonNull(now, "now must not be null");
         Objects.requireNonNull(approvalWindow, "approvalWindow must not be null");
@@ -74,6 +80,7 @@ class Booking {
         booking.priceCents = Checks.requirePositive(priceCents, "priceCents");
         booking.createdAt = now;
         booking.approvalDeadline = now.plus(approvalWindow);
+        booking.photographNotice(cancellationNotice);
         return booking;
     }
 
@@ -82,7 +89,7 @@ class Booking {
     // Paid with a credit of the customer when there is one (D-024, guide 39), committed by BookingService right
     // after the insert; otherwise to be paid in the studio (D-040). Nothing else from the panel
     static Booking bookedFromPanel(long customerId, long practitionerId, long serviceId, TimeRange slot,
-                                   long priceCents, Instant now, PaidWith paidWith) {
+                                   long priceCents, Instant now, PaidWith paidWith, Duration cancellationNotice) {
         Objects.requireNonNull(slot, "slot must not be null");
         Objects.requireNonNull(now, "now must not be null");
         if (paidWith != PaidWith.IN_STUDIO && paidWith != PaidWith.CREDIT) {
@@ -101,7 +108,19 @@ class Booking {
         booking.priceCents = Checks.requirePositive(priceCents, "priceCents");
         booking.decidedAt = now;
         booking.createdAt = now;
+        booking.photographNotice(cancellationNotice);
         return booking;
+    }
+
+    // The notice of cancellation of the practitioner, photographed at birth like the price (D-011, D-078,
+    // guide 42, part 6): the rule the customer saw when booking. Changing the setting later moves nothing.
+    // The same for every booking, from the panel too: paid by a payment link, it becomes a card booking (D-059)
+    private void photographNotice(Duration cancellationNotice) {
+        Objects.requireNonNull(cancellationNotice, "cancellationNotice must not be null");
+        if (cancellationNotice.isNegative() || cancellationNotice.isZero()) {
+            throw new IllegalArgumentException("the notice must be positive: " + cancellationNotice);
+        }
+        this.freeCancellationUntil = startsAt.minus(cancellationNotice);
     }
 
     @Id
@@ -153,6 +172,22 @@ class Booking {
     @Column
     private Instant cancelledAt;
 
+    // the account that cancelled, for the three cancellation states only (V16, booking_cancellation_trace_ck)
+    @Column
+    private Long cancelledBy;
+
+    // who marked the attendance last, and when (V16): a no-show, or its correction; null for the job
+    @Column
+    private Long attendanceMarkedBy;
+
+    @Column
+    private Instant attendanceMarkedAt;
+
+    // starts_at minus the notice, photographed at birth (V16): until when a cancellation of the customer is in
+    // time. Whether that instant itself still is, is the rule of piece 2
+    @Column(updatable = false)
+    private Instant freeCancellationUntil;
+
     // optimistic lock, the second defense: transitions take a pessimistic lock on the row first
     // (guide 20, 3.4), so this only catches a future write that forgets it
     @Version
@@ -189,6 +224,44 @@ class Booking {
     void withdraw(Instant now) {
         moveTo(BookingStatus.WITHDRAWN);
         this.cancelledAt = Objects.requireNonNull(now, "now must not be null");
+    }
+
+    // The customer gives up a confirmed session (guide 43): in time until freeCancellationUntil INCLUDED, late after
+    // it. The state machine refuses any state but CONFIRMED; the caller has refused a session already started.
+    // Who: the account that acted (V16). Returns the state reached, which decides what comes back
+    BookingStatus cancelByCustomer(Instant now, long cancelledBy) {
+        Objects.requireNonNull(now, "now must not be null");
+        moveTo(freeToCancelAt(now) ? BookingStatus.CANCELLED_IN_TIME : BookingStatus.CANCELLED_LATE);
+        this.cancelledAt = now;
+        this.cancelledBy = cancelledBy;
+        return status;
+    }
+
+    // The studio cancels a confirmed session (D-075, guide 44): whatever the notice, so always CANCELLED_BY_STUDIO.
+    // The state machine refuses any state but CONFIRMED; the caller has refused a session already started
+    void cancelByStudio(Instant now, long cancelledBy) {
+        Objects.requireNonNull(now, "now must not be null");
+        moveTo(BookingStatus.CANCELLED_BY_STUDIO);
+        this.cancelledAt = now;
+        this.cancelledBy = cancelledBy;
+    }
+
+    // The customer did not come (guide 46, part 2): from CONFIRMED (the job has not run yet, or the session is still
+    // going on) or from COMPLETED (the job closed it as attended). Who and when: the last mark (V16)
+    void markNoShow(Instant now, long markedBy) {
+        moveTo(BookingStatus.NO_SHOW);
+        mark(now, markedBy);
+    }
+
+    // The correction: the customer came after all (from NO_SHOW), or a session in progress closed by hand
+    void markAttended(Instant now, long markedBy) {
+        moveTo(BookingStatus.COMPLETED);
+        mark(now, markedBy);
+    }
+
+    private void mark(Instant now, long markedBy) {
+        this.attendanceMarkedAt = Objects.requireNonNull(now, "now must not be null");
+        this.attendanceMarkedBy = markedBy;
     }
 
     // nobody answered in time: void, like a rejection (D-030). Done by the job of guide 21
@@ -228,6 +301,29 @@ class Booking {
     }
 
     // ***** QUESTIONS *****
+
+    // "Until" includes its last instant (guide 43, part 3.1): exactly at freeCancellationUntil it is still in time.
+    // Not the rule of approval_deadline, where at the deadline the request is already void: there the instant ends
+    // a time given to someone, here it is the last instant of a right of the customer
+    boolean freeToCancelAt(Instant now) {
+        return !now.isAfter(freeCancellationUntil);
+    }
+
+    // from its start included a session is no longer cancellable: it is taking place, or over (guide 43, part 2)
+    boolean hasStartedAt(Instant now) {
+        return !now.isBefore(startsAt);
+    }
+
+    // the attendance can be marked from the start of the session until ATTENDANCE_WINDOW after its end, that instant
+    // included (guide 46, part 3)
+    boolean attendanceClosedAt(Instant now) {
+        return now.isAfter(endsAt.plus(ATTENDANCE_WINDOW));
+    }
+
+    // cancelled by its customer, in time or late: a second request just finds it so (guide 43, part 6)
+    boolean isCancelledByCustomer() {
+        return status == BookingStatus.CANCELLED_IN_TIME || status == BookingStatus.CANCELLED_LATE;
+    }
 
     // Holds the time for whoever looks at instant now: a holding state, and not a pending payment whose
     // hold has expired (guide 18, 3.5). The same rule as the two queries of BookingRepository that say
@@ -297,6 +393,22 @@ class Booking {
 
     Instant getCancelledAt() {
         return cancelledAt;
+    }
+
+    Long getCancelledBy() {
+        return cancelledBy;
+    }
+
+    Long getAttendanceMarkedBy() {
+        return attendanceMarkedBy;
+    }
+
+    Instant getAttendanceMarkedAt() {
+        return attendanceMarkedAt;
+    }
+
+    Instant getFreeCancellationUntil() {
+        return freeCancellationUntil;
     }
 
     Instant getCreatedAt() {

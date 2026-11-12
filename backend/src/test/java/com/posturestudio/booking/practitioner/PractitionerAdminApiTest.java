@@ -199,7 +199,7 @@ public class PractitionerAdminApiTest {
         for (int i = 0; i < 2; i++) {
             assertThat(mvc.post().uri("/api/admin/practitioners/" + id + "/deactivate").with(sessions.user(admin)))
                     .hasStatusOk()
-                    .bodyJson().extractingPath("$.active").isEqualTo(false);
+                    .bodyJson().extractingPath("$.practitioner.active").isEqualTo(false);
         }
 
         // after: the session already open is out at its next request (SessionAccounts), and nothing public

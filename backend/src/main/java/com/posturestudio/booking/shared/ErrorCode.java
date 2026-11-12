@@ -29,6 +29,14 @@ public enum ErrorCode {
     // the booking is not in a state that allows this step, e.g. approving a request just withdrawn (guide 20, part 2)
     BOOKING_TRANSITION_NOT_ALLOWED,
 
+    BOOKING_ALREADY_STARTED,
+
+    PRACTITIONER_HAS_FUTURE_BOOKINGS,
+
+    BOOKING_NOT_STARTED,
+
+    ATTENDANCE_WINDOW_CLOSED,
+
     // the practitioner answers after approval_deadline: the request is already void, the job closes it (D-030)
     APPROVAL_DEADLINE_PASSED,
 

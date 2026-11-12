@@ -11,10 +11,12 @@ import org.springframework.stereotype.Component;
 import com.posturestudio.booking.booking.BookingEvent;
 import com.posturestudio.booking.booking.BookingEvent.ApprovalExpired;
 import com.posturestudio.booking.booking.BookingEvent.ApprovalRequested;
+import com.posturestudio.booking.booking.BookingEvent.BookingCancelled;
 import com.posturestudio.booking.booking.BookingEvent.BookingConfirmed;
 import com.posturestudio.booking.booking.BookingEvent.BookingRejected;
 import com.posturestudio.booking.booking.BookingEvent.BookingWithdrawn;
 import com.posturestudio.booking.booking.BookingEvent.LatePaymentReleased;
+import com.posturestudio.booking.booking.BookingStatus;
 import com.posturestudio.booking.booking.PaidWith;
 import com.posturestudio.booking.notification.OutgoingEmail.Recipient;
 import com.posturestudio.booking.shared.StudioTime;
@@ -37,6 +39,8 @@ class BookingEmails {
             DateTimeFormatter.ofPattern("EEEE d MMMM yyyy, 'ore' H:mm", Locale.ITALIAN);
     private static final DateTimeFormatter WHEN_IN_SUBJECT =
             DateTimeFormatter.ofPattern("EEEE d MMMM, H:mm", Locale.ITALIAN);
+    // the last valid day of a credit: a day, no hour (D-069)
+    private static final DateTimeFormatter DAY = DateTimeFormatter.ofPattern("EEEE d MMMM yyyy", Locale.ITALIAN);
 
     // cancelling a hold is immediate for us, but the bank may take days to show it (guide 27, 6.3)
     private static final String NOTHING_CHARGED = """
@@ -101,6 +105,7 @@ class BookingEmails {
 
                     Le tue prenotazioni: %s
                     """.formatted(details(facts, withdrawn.startsAt()), nothingLost(withdrawn.paidWith()), appUrl)));
+            case BookingCancelled cancelled -> cancellation(cancelled, facts);
             case LatePaymentReleased late -> List.of(toCustomer(facts, "Pagamento arrivato in ritardo", late.startsAt(), """
                     il tuo pagamento è arrivato dopo la scadenza del tempo per pagare, e l'orario non era più
                     riservato a te:
@@ -111,6 +116,57 @@ class BookingEmails {
 
                     Per scegliere un altro orario: %s
                     """.formatted(details(facts, late.startsAt()), NOTHING_CHARGED, appUrl)));
+        };
+    }
+
+    // A confirmed session cancelled (guide 43, part 8). To the customer: what is left to them. To the practitioner,
+    // only when the customer cancelled: the fallback of the push "Seduta cancellata" (D-054), never who
+    private List<OutgoingEmail> cancellation(BookingCancelled cancelled, BookingFacts facts) {
+        boolean byStudio = cancelled.status() == BookingStatus.CANCELLED_BY_STUDIO;
+        OutgoingEmail toCustomer = toCustomer(facts, "Seduta cancellata", cancelled.startsAt(), """
+                %s:
+
+                %s
+
+                %s
+
+                Per prenotare un'altra seduta: %s
+                """.formatted(byStudio ? "lo studio ha dovuto cancellare la tua seduta" : "hai cancellato la tua seduta",
+                details(facts, cancelled.startsAt()), whatIsLeft(cancelled), appUrl));
+        if (byStudio) {
+            return List.of(toCustomer);
+        }
+        String text = """
+                Ciao %s,
+
+                una seduta è stata cancellata dal cliente %s:
+
+                    %s
+                    %s
+
+                L'orario è di nuovo libero. I dettagli nel pannello: %s
+                """.formatted(facts.practitioner().firstName(),
+                cancelled.status() == BookingStatus.CANCELLED_IN_TIME ? "in tempo" : "oltre il preavviso",
+                facts.serviceName(), when(cancelled.startsAt()), appUrl);
+        return List.of(toCustomer, new OutgoingEmail(Recipient.PRACTITIONER, facts.practitioner().email(),
+                subject("Seduta cancellata", cancelled.startsAt()), text + FOOTER));
+    }
+
+    // What the customer keeps (guide 43, part 4.1): a credit with its last day, nothing for a session that was not
+    // paid, nothing for a late cancellation. A credit came back if and only if creditValidUntil is there
+    private static String whatIsLeft(BookingCancelled cancelled) {
+        String back = cancelled.creditValidUntil() == null ? null : """
+                Ti abbiamo restituito un credito per questa seduta: puoi usarlo per prenotarne
+                un'altra entro %s.""".formatted(DAY.format(cancelled.creditValidUntil()));
+        // a switch expression: a new way of paying does not compile until someone writes what the customer is told
+        return switch (cancelled.paidWith()) {
+            case CREDIT -> back != null ? back : """
+                    La cancellazione è arrivata oltre il preavviso dello studio: il credito usato per
+                    questa seduta non torna disponibile.""";
+            case CARD -> back != null ? back : """
+                    La cancellazione è arrivata oltre il preavviso dello studio: la seduta pagata non
+                    viene restituita come credito.""";
+            case IN_STUDIO -> "La seduta era da pagare in studio: non c'è niente da restituire.";
         };
     }
 

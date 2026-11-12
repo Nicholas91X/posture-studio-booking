@@ -1,6 +1,7 @@
 package com.posturestudio.booking.booking;
 
 import java.time.Instant;
+import java.time.LocalDate;
 
 /**
  * Domain events: what happened to a booking, announced without knowing who listens (D-039).
@@ -17,7 +18,8 @@ import java.time.Instant;
  */
 public sealed interface BookingEvent
         permits BookingEvent.ApprovalRequested, BookingEvent.BookingConfirmed, BookingEvent.BookingRejected,
-                BookingEvent.BookingWithdrawn, BookingEvent.ApprovalExpired, BookingEvent.LatePaymentReleased {
+                BookingEvent.BookingWithdrawn, BookingEvent.ApprovalExpired, BookingEvent.LatePaymentReleased,
+                BookingEvent.BookingCancelled {
 
     long bookingId();
 
@@ -83,6 +85,22 @@ implements BookingEvent {
         static LatePaymentReleased of(Booking booking) {
             return new LatePaymentReleased(booking.getId(), booking.getPractitionerId(), booking.getCustomerId(),
                     booking.getServiceId(), booking.getStartsAt());
+        }
+    }
+
+    // A confirmed session cancelled (guide 43, part 8): status says how (CANCELLED_IN_TIME, CANCELLED_LATE; piece 3
+    // of step 11 adds CANCELLED_BY_STUDIO), and creditValidUntil is the last valid day of the credit that came back,
+    // or null when nothing did. Facts of the moment, as paidWith: the listeners after the commit do not rebuild
+    // them. Email to the customer, push to the practitioner; payment closes the open payment link of a session to
+    // be paid in the studio (PaymentLinkClosing)
+    record BookingCancelled(long bookingId, long practitionerId, long customerId, long serviceId, Instant startsAt,
+                            BookingStatus status, PaidWith paidWith, LocalDate creditValidUntil)
+            implements BookingEvent {
+
+        static BookingCancelled of(Booking booking, LocalDate creditValidUntil) {
+            return new BookingCancelled(booking.getId(), booking.getPractitionerId(), booking.getCustomerId(),
+                    booking.getServiceId(), booking.getStartsAt(), booking.getStatus(), booking.getPaidWith(),
+                    creditValidUntil);
         }
     }
 

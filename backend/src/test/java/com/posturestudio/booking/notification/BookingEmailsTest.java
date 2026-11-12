@@ -12,6 +12,8 @@ import org.junit.jupiter.api.Test;
 import com.posturestudio.booking.booking.BookingEvent;
 import com.posturestudio.booking.booking.BookingEvent.ApprovalExpired;
 import com.posturestudio.booking.booking.BookingEvent.ApprovalRequested;
+import com.posturestudio.booking.booking.BookingEvent.BookingCancelled;
+import com.posturestudio.booking.booking.BookingStatus;
 import com.posturestudio.booking.booking.BookingEvent.BookingConfirmed;
 import com.posturestudio.booking.booking.BookingEvent.BookingRejected;
 import com.posturestudio.booking.booking.BookingEvent.BookingWithdrawn;
@@ -171,6 +173,67 @@ class BookingEmailsTest {
                 });
     }
 
+    // ***** a confirmed session cancelled (guide 43, part 8) *****
+
+    private static final java.time.LocalDate FEBRUARY_4 = java.time.LocalDate.of(2027, 2, 4);
+
+    @Test
+    void aCancellationInTimeTellsTheCustomerTheCreditAndItsLastDay() {
+        List<OutgoingEmail> sent = emails.emailsFor(cancelled(BookingStatus.CANCELLED_IN_TIME, PaidWith.CARD, FEBRUARY_4),
+                facts);
+
+        assertThat(sent).extracting(OutgoingEmail::recipient)
+                .containsExactly(Recipient.CUSTOMER, Recipient.PRACTITIONER);
+        OutgoingEmail toMaria = sent.getFirst();
+        assertThat(toMaria.subject()).isEqualTo("Seduta cancellata: giovedì 12 novembre, 9:30");
+        assertThat(toMaria.text()).startsWith("Gentile Maria,")
+                .contains("hai cancellato la tua seduta", "Valutazione posturale con Anna Rossi")
+                .contains("Ti abbiamo restituito un credito per questa seduta")
+                .contains("entro giovedì 4 febbraio 2027");
+    }
+
+    @Test
+    void aLateCancellationTellsTheCustomerThatNothingComesBack() {
+        assertThat(emails.emailsFor(cancelled(BookingStatus.CANCELLED_LATE, PaidWith.CREDIT, null), facts).getFirst().text())
+                .contains("oltre il preavviso", "il credito usato per\nquesta seduta non torna disponibile")
+                .doesNotContain("restituito");
+        assertThat(emails.emailsFor(cancelled(BookingStatus.CANCELLED_LATE, PaidWith.CARD, null), facts).getFirst().text())
+                .contains("oltre il preavviso", "non\nviene restituita come credito");
+    }
+
+    @Test
+    void aSessionToBePaidInTheStudioHadNothingToGiveBack() {
+        assertThat(emails.emailsFor(cancelled(BookingStatus.CANCELLED_IN_TIME, PaidWith.IN_STUDIO, null), facts)
+                .getFirst().text()).contains("era da pagare in studio: non c'è niente da restituire");
+    }
+
+    // the fallback of the push: when, what is free again, in time or not; never who (D-032)
+    @Test
+    void thePractitionerIsToldThatTheTimeIsFreeWithoutTheName() {
+        OutgoingEmail toAnna = emails.emailsFor(cancelled(BookingStatus.CANCELLED_LATE, PaidWith.CARD, null), facts).get(1);
+
+        assertThat(toAnna.to()).isEqualTo("anna@example.com");
+        assertThat(toAnna.subject()).isEqualTo("Seduta cancellata: giovedì 12 novembre, 9:30");
+        assertThat(toAnna.text()).startsWith("Ciao Anna,")
+                .contains("cancellata dal cliente oltre il preavviso", "giovedì 12 novembre 2026, ore 9:30",
+                        "L'orario è di nuovo libero")
+                .doesNotContain("Maria").doesNotContain("Bianchi");
+    }
+
+    // the studio knows what it did: only the customer is written to (piece 3)
+    @Test
+    void aCancellationOfTheStudioWritesOnlyToTheCustomer() {
+        List<OutgoingEmail> sent = emails.emailsFor(
+                cancelled(BookingStatus.CANCELLED_BY_STUDIO, PaidWith.CREDIT, FEBRUARY_4), facts);
+
+        assertThat(sent).singleElement().satisfies(email -> assertThat(email.text())
+                .contains("lo studio ha dovuto cancellare la tua seduta", "entro giovedì 4 febbraio 2027"));
+    }
+
+    private static BookingCancelled cancelled(BookingStatus status, PaidWith paidWith, java.time.LocalDate creditUntil) {
+        return new BookingCancelled(1, 2, 3, 4, THURSDAY_930, status, paidWith, creditUntil);
+    }
+
     // Thursday 9 July 2026, 9:30 in Rome is 07:30 UTC: summer time, +02:00, chosen by the date
     @Test
     void summerTimeIsTheStudiosToo() {
@@ -191,13 +254,14 @@ class BookingEmailsTest {
                 new BookingRejected(1, 2, 3, 4, THURSDAY_930, PaidWith.CARD),
                 new ApprovalExpired(1, 2, 3, 4, THURSDAY_930, PaidWith.CARD),
                 new BookingWithdrawn(1, 2, 3, 4, THURSDAY_930, PaidWith.CARD),
-                new LatePaymentReleased(1, 2, 3, 4, THURSDAY_930));
+                new LatePaymentReleased(1, 2, 3, 4, THURSDAY_930),
+                cancelled(BookingStatus.CANCELLED_IN_TIME, PaidWith.CARD, FEBRUARY_4));
 
         List<String> subjects = every.flatMap(event -> emails.emailsFor(event, facts).stream())
                 .map(OutgoingEmail::subject)
                 .toList();
 
-        assertThat(subjects).hasSize(7).allSatisfy(subject -> assertThat(subject)
+        assertThat(subjects).hasSize(9).allSatisfy(subject -> assertThat(subject)
                 .doesNotContain("Maria", "Bianchi", "Anna", "Rossi", "Valutazione"));
     }
 }

@@ -95,6 +95,25 @@ class BookingWithCreditTest {
 
     // one path for both modes (D-030): nothing to capture, so it is confirmed at once
     @Test
+    void theNoticeOfCancellationIsPhotographedInARequestWithACredit() throws Exception {
+        data.creditLot(anna, seduta, cliente, "2026-12-31", 5);
+        jdbc.update("update practitioner set cancellation_notice_hours = 48 where id = ?", anna);
+
+        long booking = idOf(request(MONDAY_9));
+        jdbc.update("update practitioner set cancellation_notice_hours = 72 where id = ?", anna);
+
+        assertThat(noticeIs(booking, 48)).isTrue();
+    }
+
+    // the notice of the practitioner photographed at birth (V16, guide 42, part 6): changing the setting
+    // afterwards moves nothing
+    private boolean noticeIs(long bookingId, int hours) {
+        return jdbc.queryForObject(
+                "select free_cancellation_until = starts_at - make_interval(hours => ?) from booking where id = ?",
+                Boolean.class, hours, bookingId);
+    }
+
+    @Test
     void inAutomaticModeACreditConfirmsAtOnce() throws Exception {
         jdbc.update("update practitioner set booking_approval = 'AUTOMATIC' where id = ?", anna);
         long lot = data.creditLot(anna, seduta, cliente, "2026-12-31", 5);

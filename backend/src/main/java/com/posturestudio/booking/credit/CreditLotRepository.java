@@ -33,6 +33,18 @@ interface CreditLotRepository extends Repository<CreditLot, Long> {
             """)
     List<Long> findUsableIds(long customerId, long practitionerId, long serviceId, LocalDate day);
 
+    // the lots of a practitioner still valid on this day, with credits left (D-077): the warning of a deactivation
+    @Query("""
+            select l.id
+            from CreditLot l join CreditMovement m on m.creditLotId = l.id
+            where l.practitionerId = :practitionerId and l.validUntil >= :day
+            group by l.id
+            having sum(m.amount) > 0
+            """)
+    List<Long> findValidIdsOf(long practitionerId, LocalDate day);
+
+    List<CreditLot> findByIdInOrderByValidUntilAscIdAsc(Collection<Long> ids);
+
     // WITH the lock on the row (select ... for update): every debit of a lot waits here (D-069)
     @Lock(LockModeType.PESSIMISTIC_WRITE)
     Optional<CreditLot> findLockedById(long id);

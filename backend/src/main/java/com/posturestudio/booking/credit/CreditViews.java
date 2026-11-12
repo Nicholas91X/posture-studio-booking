@@ -8,11 +8,13 @@ import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 import java.util.stream.Collectors;
 
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
+import com.posturestudio.booking.practitioner.PractitionerService;
 import com.posturestudio.booking.shared.NotFoundException;
 import com.posturestudio.booking.shared.StudioTime;
 
@@ -33,13 +35,16 @@ class CreditViews {
     private final CreditLotRepository lots;
     private final CreditMovementRepository movements;
     private final CreditLotExtensionRepository extensions;
+    // which practitioners are still active: their lots are usable, the others' are not (D-077, guide 45, part 7)
+    private final PractitionerService practitioners;
     private final Clock clock;
 
     CreditViews(CreditLotRepository lots, CreditMovementRepository movements, CreditLotExtensionRepository extensions,
-                Clock clock) {
+                PractitionerService practitioners, Clock clock) {
         this.lots = lots;
         this.movements = movements;
         this.extensions = extensions;
+        this.practitioners = practitioners;
         this.clock = clock;
     }
 
@@ -80,8 +85,11 @@ class CreditViews {
         Map<Long, Long> balances = movements.balancesOf(found.stream().map(CreditLot::getId).toList()).stream()
                 .collect(Collectors.toMap(LotBalance::lotId, LotBalance::balance));
         LocalDate today = StudioTime.today(clock);
+        // one question for the whole list (D-029)
+        Set<Long> active = practitioners.activeAmong(found.stream().map(CreditLot::getPractitionerId).collect(Collectors.toSet()));
         return found.stream()
-                .map(lot -> CreditLotSummary.of(lot, balances.getOrDefault(lot.getId(), 0L), today))
+                .map(lot -> CreditLotSummary.of(lot, balances.getOrDefault(lot.getId(), 0L), today,
+                        active.contains(lot.getPractitionerId())))
                 .toList();
     }
 
@@ -96,7 +104,7 @@ class CreditViews {
                 // a gift has its why in the lot (guide 36, 4.4), a correction in its movement
                 case LOT_CREATED -> lot.getNote();
                 case ADJUSTMENT -> movement.getNote();
-                case BOOKING, BOOKING_RELEASE -> null;
+                case BOOKING, BOOKING_RELEASE, CANCELLATION_RESTORE -> null;
             };
             history.add(new Timed(movement.getCreatedAt(), 0, movement.getId(), new CreditEntry(
                     CreditEntry.Kind.valueOf(movement.getReason().name()), inRome(movement.getCreatedAt()),
@@ -111,7 +119,8 @@ class CreditViews {
                     withNotes ? extension.getNote() : null)));
         }
         history.sort(Comparator.comparing(Timed::at).thenComparingInt(Timed::table).thenComparingLong(Timed::id));
-        return new CreditLotDetail(CreditLotSummary.of(lot, balance, StudioTime.today(clock)),
+        boolean practitionerActive = !practitioners.activeAmong(List.of(lot.getPractitionerId())).isEmpty();
+        return new CreditLotDetail(CreditLotSummary.of(lot, balance, StudioTime.today(clock), practitionerActive),
                 history.stream().map(Timed::entry).toList());
     }
 

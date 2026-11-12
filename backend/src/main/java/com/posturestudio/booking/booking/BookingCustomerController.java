@@ -9,8 +9,10 @@ import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
+import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
 
+import com.posturestudio.booking.auth.CurrentUser;
 import com.posturestudio.booking.customer.CurrentCustomer;
 
 import jakarta.validation.Valid;
@@ -26,10 +28,13 @@ class BookingCustomerController {
 
     private final BookingService bookings;
     private final CurrentCustomer current;
+    // the account that acts, for the trace of a cancellation (V16), as the concessions of the panel (D-073)
+    private final CurrentUser user;
 
-    BookingCustomerController(BookingService bookings, CurrentCustomer current) {
+    BookingCustomerController(BookingService bookings, CurrentCustomer current, CurrentUser user) {
         this.bookings = bookings;
         this.current = current;
+        this.user = user;
     }
 
     @PostMapping
@@ -38,10 +43,11 @@ class BookingCustomerController {
         return ResponseEntity.created(URI.create("/api/customer/bookings/" + created.id())).body(created);
     }
 
-    // "my sessions": all of them, the furthest in the future first
+    // "my sessions": all of them, the furthest in the future first; ?period=upcoming (not over, the soonest first) or
+    // ?period=past (over, the latest first), guide 46, part 4. An unknown value is a 400
     @GetMapping
-    List<CustomerBookingView> list() {
-        return bookings.listForCustomer(current.id());
+    List<CustomerBookingView> list(@RequestParam(required = false) String period) {
+        return bookings.listForCustomer(current.id(), period == null ? null : BookingPeriod.fromQuery(period));
     }
 
     // the page back from the payment asks for the status here (D-007)
@@ -54,5 +60,11 @@ class BookingCustomerController {
     @PostMapping("/{id}/withdraw")
     CustomerBookingView withdraw(@PathVariable long id) {
         return bookings.withdraw(current.id(), id);
+    }
+
+    // a confirmed session: in time the credit comes back, late it is lost (guide 43). Repeated, the same answer
+    @PostMapping("/{id}/cancel")
+    CustomerBookingView cancel(@PathVariable long id) {
+        return bookings.cancel(current.id(), user.id(), id);
     }
 }

@@ -114,7 +114,7 @@ Formato: contesto → decisione → alternative scartate → conseguenze.
 ---
 
 ## D-010 — Lotti di crediti con scadenza; il pacchetto acquistato è un lotto
-**Stato:** accettata · 2026-10-13
+**Stato:** accettata · 2026-10-13 · **modificata da D-076** (2026-11-12): un credito restituito da una cancellazione vale almeno `single_credit_validity_days` dal giorno della cancellazione; se il suo lotto scade prima, torna in un lotto nuovo da 1, una volta sola per credito
 
 **Contesto.** I crediti nascono da pacchetti (scadenza del pacchetto) e da cancellazioni in tempo di sedute pagate con carta (90 giorni).
 
@@ -165,7 +165,7 @@ Formato: contesto → decisione → alternative scartate → conseguenze.
 ---
 
 ## D-015 — Cancellazione in tempo = credito, mai rimborso
-**Stato:** accettata · 2026-10-13
+**Stato:** accettata · 2026-10-13 · **confermata da D-075** (2026-11-12): anche quando cancella lo studio il sistema dà un credito; il rimborso, se il cliente lo vuole, è a mano da Stripe, seguito da una correzione che azzera il credito (procedura in `docs/procedure-studio.md`)
 
 **Decisione.** Chi cancella entro il preavviso riceve un credito. Il sistema non effettua rimborsi in denaro; casi eccezionali si gestiscono a mano dalla dashboard Stripe.
 
@@ -839,7 +839,7 @@ Implementazione (pezzo 3, guida 16): `FreeSlots.compute(SlotQuery)` nel package 
 ---
 
 ## D-052 — Admin e professionisti: primo admin da `ADMIN_EMAIL`, API nel modulo `practitioner`, impostazioni iniziali dal database
-**Stato:** accettata · 2026-11-09 · completa D-021 · confronto completo: `docs/studio/26-admin-e-professionisti.md` · scelte di Claude secondo le raccomandazioni della guida, su indicazione di Nicholas
+**Stato:** accettata · 2026-11-09 · completa D-021 · confronto completo: `docs/studio/26-admin-e-professionisti.md` · scelte di Claude secondo le raccomandazioni della guida, su indicazione di Nicholas · **modificata da D-077** (2026-11-12): la disattivazione è rifiutata (409) se il professionista ha sedute future che occupano l'orario; l'alternativa scartata qui ("rifiutare la disattivazione con prenotazioni future") diventa la regola
 
 **Contesto.** Il pezzo 3 del passo 8 deve far creare e disattivare i professionisti all'admin (D-021). Un professionista disattivato non deve entrare né essere prenotabile. E il primo admin deve nascere senza segreti nel repository, anche se solo un admin può creare account speciali.
 
@@ -1226,12 +1226,12 @@ Implementazione (pezzo 3, guida 16): `FreeSlots.compute(SlotQuery)` nel package 
 ---
 
 ## D-071 — Prenotare con un credito: si usa da solo se copre il giorno della seduta, il lotto che scade prima, restituzione sullo stesso lotto, uno `switch` su come è pagata
-**Stato:** accettata · 2026-11-11 · realizza D-010 e D-030 per i crediti · **precisa D-061** (il 409 senza conto non viene più "prima di tutto" quando c'è un credito) · confronto completo: `docs/studio/38-prenotare-con-un-credito.md` · scelte di Claude secondo le raccomandazioni della guida, su indicazione di Nicholas ("se non hai domande, procedi") · **la regola della scadenza è da confermare con lo studio**
+**Stato:** accettata · 2026-11-11 · realizza D-010 e D-030 per i crediti · **precisa D-061** (il 409 senza conto non viene più "prima di tutto" quando c'è un credito) · confronto completo: `docs/studio/38-prenotare-con-un-credito.md` · scelte di Claude secondo le raccomandazioni della guida, su indicazione di Nicholas ("se non hai domande, procedi") · **regola della scadenza confermata dallo studio** (brief del passo 11, 2026-11-12) · restituzione per le cancellazioni **modificata da D-076** (validità minima)
 
 **Contesto.** Il cliente con un credito valido per quel professionista e quel servizio prenota senza Stripe: il credito si impegna, poi l'approvazione come sempre (D-030); rifiuto, risposta scaduta e ritiro lo restituiscono. Il brief chiedeva di decidere se un credito che scade prima della seduta si può usare, se il cliente può scegliere la carta, e di verificare che il lucchetto sul cliente (D-045) basti contro due richieste che vogliono l'ultimo credito.
 
 **Decisione.**
-- **Un credito si usa se il suo ultimo giorno valido copre il giorno della seduta** (`ValidUntil.covers(inizioDellaSeduta)`), non solo il giorno della richiesta. "Scade il 15" vuol dire "sedute entro il 15"; e un credito restituito (rifiuto, scadenza della risposta, ritiro, che arrivano tutti prima della seduta) trova sempre il suo lotto ancora valido. Altrimenti la richiesta va con la carta. **Da confermare con lo studio**: la regola opposta ("valido al momento della prenotazione") cambia un solo argomento.
+- **Un credito si usa se il suo ultimo giorno valido copre il giorno della seduta** (`ValidUntil.covers(inizioDellaSeduta)`), non solo il giorno della richiesta. "Scade il 15" vuol dire "sedute entro il 15"; e un credito restituito (rifiuto, scadenza della risposta, ritiro, che arrivano tutti prima della seduta) trova sempre il suo lotto ancora valido. Altrimenti la richiesta va con la carta. **Confermata dallo studio** (2026-11-12); la regola opposta ("valido al momento della prenotazione") avrebbe cambiato un solo argomento.
 - **Nessuna scelta del cliente**: se c'è un credito utilizzabile si usa, altrimenti la carta. `NewBooking` non cambia.
 - **"Scade prima, si usa prima"** (FEFO): il lotto di quel cliente, professionista e servizio con `valid_until` più vicino tra quelli che coprono la seduta e hanno saldo positivo (`group by ... having sum(amount) > 0`), a parità il più vecchio.
 - **Ordine della richiesta** (precisa D-045 e D-061): servizio in vendita (404) → **409 `CARD_PAYMENTS_UNAVAILABLE` solo se non c'è né un credito né un conto**, con una lettura senza lucchetti → lucchetto sul cliente → **limite, che vale anche con il credito** (protegge il calendario) → orario libero → blocchi scaduti → **scelta vera** del lotto, con il suo lucchetto e il saldo riletto → con il credito: `insert` in `PENDING_APPROVAL` (`Booking.requestedWithCredit`, con la scadenza della risposta), movimento −1, poi approvazione automatica o richiesta al professionista; senza: 409 se manca il conto (il credito è sparito nel frattempo), altrimenti carta come oggi. Un professionista senza conto riceve le prenotazioni di chi ha un suo credito.
@@ -1303,3 +1303,167 @@ Implementazione (pezzo 3, guida 16): `FreeSlots.compute(SlotQuery)` nel package 
 **Alternative scartate.** *Lo stato calcolato dal frontend*: una regola (il giorno di Roma) in due posti. *Nascondere i lotti finiti*: la storia è del cliente, e un lotto scaduto con crediti è quello da prorogare. *I nomi nei lotti*: `credit` dovrebbe chiedere a due moduli per un dato che il frontend ha già. *Un record senza note per il cliente*: più sicuro ma una seconda copia della stessa storia; il parametro esplicito più il test bastano. *"I miei clienti" in `customer`*: dovrebbe dipendere da `booking` e `credit`, un ciclo.
 
 **Conseguenze.** Il pannello (passo 13) ha tutto per le concessioni: trova il cliente, vede i suoi lotti, sceglie quello da prorogare o correggere. Nessuna paginazione: se servirà, si aggiunge. **Provato** con lo script corretto (D-072): tolti a turno il professionista nella lista dei lotti di un cliente, le note escluse per il cliente, "l'ultimo giorno vale ancora oggi" e i clienti con un lotto in "i miei clienti", fallisce ogni volta il test che li protegge. Il giorno di **Roma** del calcolo dello stato non è provato da questi test (il loro orologio è alle 10 di Roma, dove il giorno UTC e quello di Roma coincidono): lo garantisce `StudioTime.today`, usato apposta.
+
+---
+
+## D-075 — Cancellazione da parte dello studio: uno stato proprio, il cliente non perde niente, nessun rimborso dal sistema
+**Stato:** accettata · 2026-11-12 · brief del passo 11 · **chiude il punto aperto 2** dei requisiti · conferma D-015 · completa D-052 (le sedute confermate di un professionista che lascia) · nome dello stato, colonne e trattamento delle richieste in attesa decisi in D-078 · **ordine della procedura confermato da Nicholas** il 2026-11-12 (prima la correzione, poi il rimborso)
+
+**Contesto.** Il punto aperto 2 proponeva: se cancella lo studio, il cliente riceve sempre il credito, a prescindere dal preavviso. Restava da decidere come si registra, cosa riceve il cliente secondo come aveva pagato, cosa gli si dice, e cosa succede se vuole indietro i soldi invece del credito.
+
+**Decisione.**
+- La cancellazione da parte dello studio ha **uno stato proprio** della prenotazione, diverso da quelli della cancellazione del cliente (`CANCELLED_IN_TIME`, `CANCELLED_LATE`). La fa il professionista della seduta, su una sua seduta futura, confermata o in attesa.
+- **Cosa riceve il cliente**, sempre **a prescindere dal preavviso**:
+  - pagata con un **credito**: +1 allo stesso lotto, con la regola della validità minima (D-076);
+  - pagata con **carta**: un **lotto nuovo da 1**, valido `single_credit_validity_days`;
+  - **in studio**: niente, perché non ha pagato niente; un link di pagamento aperto si fa scadere (D-065).
+- **Richieste in attesa** (`PENDING_APPROVAL`): l'effetto è quello di un **rifiuto** (D-030): con la carta il blocco si annulla, con un credito +1 sullo stesso lotto.
+- **Email al cliente**: dice che **ha cancellato lo studio** e **cosa gli resta** (il credito, con il suo ultimo giorno valido; niente per una seduta da pagare in studio; il blocco annullato per una richiesta in attesa).
+- **Il sistema non rimborsa** (D-015). Se il cliente vuole i soldi invece del credito, il professionista **rimborsa a mano** dalla dashboard di Stripe e **azzera il credito** con una correzione (D-067, D-073), con la nota. La procedura per lo studio è in `docs/procedure-studio.md`.
+
+**Ordine della procedura, proposto da Claude e confermato da Nicholas** (2026-11-12). Il brief diceva "rimborsa, poi azzera". La procedura inverte l'ordine: **prima la correzione, poi il rimborso**. Motivo: tra il rimborso e la correzione il credito è ancora utilizzabile, e il cliente potrebbe prenotarci sopra (e averlo così due volte); azzerato prima, il credito non si può più usare, e se il rimborso poi non riesce basta una correzione +1. Un credito già usato non si può azzerare (saldo mai negativo): la correzione rifiutata è proprio il segnale di non rimborsare.
+
+**Alternative scartate.** *Rimborso automatico dal sistema*: contro D-015, con le commissioni di Stripe perse e un'integrazione in più per un caso raro. *Lo stesso stato della cancellazione in tempo*: nelle liste e nelle email "hai cancellato tu" e "ha cancellato lo studio" sono fatti diversi, e un domani una statistica sulle cancellazioni dei clienti li confonderebbe. *Credito solo se in tempo*: il cliente perderebbe la seduta per una decisione non sua.
+
+**Conseguenze.** Uno stato in più nel `check` e nella macchina a stati (V16, guida 42). La seduta "in studio" con un link aperto segue la stessa regola della cancellazione del cliente: link fatto scadere, e un pagamento arrivato dopo si annulla (D-065).
+
+---
+
+## D-076 — Validità minima del credito restituito da una cancellazione, una volta sola per credito
+**Stato:** accettata · 2026-11-12 · brief del passo 11 · **modifica D-010** ("il credito torna allo stesso lotto, che mantiene la sua scadenza") e la restituzione di D-071 per le cancellazioni · "già allungato" e la cancellazione dello studio **precisati da Nicholas** il 2026-11-12 (raccomandazioni della guida 42, parte 8): vedi sotto
+
+**Contesto.** Con D-010 un credito restituito da una cancellazione torna al suo lotto con la scadenza del lotto. Un credito di un pacchetto che scade il 20, usato per una seduta del 19 e cancellata in tempo il 17, tornerebbe valido due giorni: il cliente lo perderebbe quasi certamente, per aver cancellato **in tempo**, cioè per aver fatto la cosa giusta.
+
+**Decisione.**
+- Un credito che **torna** per una cancellazione **in tempo** o **da parte dello studio** vale **almeno** `single_credit_validity_days` (default 90) dal **giorno della cancellazione** (giorno di Roma, `ValidUntil.daysAfter`, D-069).
+- Se il suo lotto vale abbastanza: +1 allo stesso lotto (`CANCELLATION_RESTORE`), come prima.
+- Se il suo lotto **scade prima**: nasce un **lotto nuovo da 1** con la nuova scadenza, invece del +1 sul lotto originale.
+- **Una sola volta per credito**: un credito che viene da un lotto **già allungato** torna al suo lotto **senza nuovo allungamento**, anche se scade presto. Motivo: senza questo limite, prenotare e cancellare in tempo allungherebbe un credito all'infinito.
+- Il rifiuto, la risposta scaduta e il ritiro (D-030, D-071) **non cambiano**: arrivano prima della seduta, e il lotto copre sempre il giorno della seduta (D-071).
+
+**Un giro trovato registrando la decisione, da chiudere nella guida 42.** Anche il credito nato da una seduta pagata con **carta** e cancellata in tempo ha già ricevuto i suoi 90 giorni "dal giorno della cancellazione". Se solo i lotti nati dall'allungamento contassero come "già allungati", il giro resterebbe aperto per la carta: carta → cancellazione in tempo (lotto fino al giorno 90) → al giorno 85 una seduta per il giorno 88 → cancellazione in tempo il giorno 86 → il lotto scade prima di 86 + 90 → lotto nuovo fino al giorno 176 → e così via. **Deciso** (Nicholas, 2026-11-12, guida 42, 8.2): "già allungato" = ogni lotto **nato da una cancellazione** (`source = CANCELLATION`), con la carta o con l'allungamento. In parole per lo studio: *un credito si allunga al massimo una volta, quando nasce da una cancellazione*.
+
+**Eccezione: la cancellazione dello studio** (Nicholas, 2026-11-12, guida 42, 8.3; **cambia il testo del brief**). Quando cancella lo studio la validità minima è **sempre** garantita, anche a un credito già allungato: nasce un altro lotto `CANCELLATION`, che a sua volta non si allunga più per le cancellazioni del cliente. Motivo: un giro ha bisogno che sia il cliente a ripetere le azioni, e la cancellazione dello studio non è sotto il suo controllo; senza l'eccezione il cliente perderebbe un credito per una decisione non sua, contro D-075.
+
+**Alternative scartate.** *Lasciare D-010 com'è*: punisce chi cancella in tempo vicino alla scadenza. *Prorogare il lotto originale*: allungherebbe anche gli altri crediti del pacchetto, che non sono stati cancellati, e la proroga è una concessione del professionista con la sua traccia (D-067), non un automatismo. *Allungamento senza limite*: il giro qui sopra.
+
+**Conseguenze.** Il lotto nuovo ricorda da quale prenotazione nasce nel suo movimento `LOT_CREATED` (D-078), così che la storia del cliente si spieghi; una seconda cancellazione lo riconosce dall'origine. Il lotto originale mantiene il suo −1 (`BOOKING`) senza restituzione: la storia dice dove è andato il credito.
+
+---
+
+## D-077 — Crediti di un professionista che lascia: ognuno risponde per sé, disattivazione rifiutata con sedute future, crediti mostrati come non utilizzabili
+**Stato:** accettata · 2026-11-12 · brief del passo 11 · **modifica D-052** (la disattivazione non è più sempre possibile) · chiude il punto aperto "crediti di un professionista che lascia" (`stato.md`, note per il passo 11)
+
+**Contesto.** D-052 permetteva di disattivare un professionista in ogni momento, anche in urgenza, senza toccare le prenotazioni; restava aperto cosa succede alle sue sedute confermate future e ai crediti dei suoi clienti. Un credito è un debito del professionista verso il cliente (una seduta pagata e non ancora fatta), e i due professionisti sono due partite IVA distinte (D-022, D-057).
+
+**Decisione.**
+- **Ogni professionista risponde per sé**: il sistema **non sposta** crediti da un professionista all'altro.
+- **Disattivazione rifiutata (409)** se il professionista ha sedute **future** in uno stato che **occupa l'orario** (`PENDING_PAYMENT` con il blocco ancora valido, `PENDING_APPROVAL`, `CONFIRMED`). Prima si cancellano (cancellazione da parte dello studio, D-075), poi si disattiva.
+- Disattivazione riuscita: l'admin riceve, **come avviso**, l'elenco dei **crediti ancora validi** dei clienti di quel professionista. Cosa farne (rimborsi a mano, accordi) si decide fuori dal sistema.
+- **Il cliente li vede come non utilizzabili**: nella vista dei crediti (D-074), i lotti di un professionista disattivato hanno uno stato che lo dice, deciso dal backend.
+
+**Da decidere nella guida del pezzo 4.** (1) *L'urgenza*: con questa regola, un professionista irraggiungibile non si disattiva finché qualcuno non cancella le sue sedute, e oggi solo lui può cancellarle. Proposta da valutare: l'admin può fare la cancellazione da parte dello studio per conto del professionista (la traccia "chi" lo distingue). (2) *La gara*: tra il controllo "nessuna seduta futura" e la disattivazione può arrivare una prenotazione nuova; serve un lucchetto che le due operazioni condividano. (3) *I moduli*: `practitioner` deve chiedere a `booking`, che dipende già da `practitioner` (il ciclo che D-052 aveva evitato).
+
+**Alternative scartate.** *Spostare i crediti all'altro professionista*: soldi incassati da una partita IVA, seduta resa da un'altra. *Disattivazione sempre possibile, come in D-052*: lascerebbe sedute confermate con un professionista che non c'è più e nessuno che avvisa il cliente. *Cancellare in automatico le sedute alla disattivazione*: una cancellazione da parte dello studio di massa, con email a tutti, partita da un clic dell'admin; meglio che le cancellazioni siano una scelta, una per una.
+
+**Conseguenze.** L'alternativa scartata in D-052 ("rifiutare la disattivazione con prenotazioni future") diventa la regola; il motivo per cui era stata scartata (l'urgenza) va coperto nel pezzo 4. La pagina dell'admin (passo 13) mostra le sedute future prima di disattivare, come già previsto.
+
+---
+
+## D-078 — Migrazione V16: cinque stati, chi e quando ha cancellato, il preavviso fotografato, un solo credito per cancellazione con l'indice che c'era già
+**Stato:** accettata · 2026-11-12 · realizza D-075 e D-076 nello schema · confronto completo: `docs/studio/42-migrazione-v16-cancellazioni.md` · scelte di Claude secondo le raccomandazioni della guida, **confermate da Nicholas** ("segui le raccomandazioni")
+
+**Contesto.** Il pezzo 1 del passo 11 dà la forma dei dati a tutto il passo: gli stati del "dopo" la conferma, la traccia di chi cancella e di chi segna un "non presentato", il confine del preavviso, i crediti nati da una cancellazione. Tre fatti del codice pesano: `canMoveTo` è uno `switch` espressione senza `default`; `practitioner.cancellation_notice_hours` è un'impostazione che si cambia dal pannello; l'indice `credit_movement_one_return_per_booking_uq` (V15) vede solo i movimenti positivi **con** una prenotazione.
+
+**Decisione.**
+- **Stati**: `CANCELLED_IN_TIME`, `CANCELLED_LATE`, `CANCELLED_BY_STUDIO`, `COMPLETED`, `NO_SHOW`. Frecce: da `CONFIRMED` verso tutti e cinque; `COMPLETED` ↔ `NO_SHOW` (la correzione); gli stati di cancellazione sono finali. Nessuno occupa l'orario: `booking_no_overlap_ex` e `HOLDS_TIME` non cambiano.
+- **Richiesta in attesa cancellata dallo studio** = un **rifiuto** (`REJECTED`, la freccia che c'era già). `CANCELLED_BY_STUDIO` arriva solo da `CONFIRMED`. L'API del pezzo 3 può accettare anche una richiesta in attesa ed eseguire il rifiuto.
+- **Chi ha cancellato**: `booking.cancelled_by` → `app_user`, l'account che ha agito, come `granted_by` (D-073). `booking_cancellation_trace_ck`: i tre stati di cancellazione, e solo loro, hanno `cancelled_by`, sempre con `cancelled_at`. Il ritiro tiene solo `cancelled_at`.
+- **Il preavviso fotografato**: `booking.free_cancellation_until` = `starts_at` − `cancellation_notice_hours`, scritto alla nascita della prenotazione (richiesta con carta, con credito, dal pannello), come il prezzo (D-011). Le righe esistenti riempite con il preavviso di oggi del loro professionista, poi `not null`; `booking_free_cancellation_ck`: sempre prima dell'inizio. Se quell'istante sia ancora "in tempo" lo decide il pezzo 2.
+- **Svolta e non presentato**: `attendance_marked_by` → `app_user` e `attendance_marked_at`, l'ultimo segno; `booking_attendance_trace_ck`: insieme o nessuno dei due, sempre per un `NO_SHOW`, solo per `COMPLETED` o `NO_SHOW`. Nessuna tabella della storia.
+- **Crediti**: origine `CANCELLATION` (lotto da 1: carta, o validità minima) e motivo `CANCELLATION_RESTORE` (+1 sullo stesso lotto). Il `LOT_CREATED` di un lotto `CANCELLATION` porta la **prenotazione** (solo con importo 1): così l'indice "una sola restituzione per prenotazione" vede il +1 e il lotto nuovo come la stessa cosa, e un solo credito torna per ogni cancellazione, qualunque sia la strada. Nessuna colonna nuova in `credit_lot` (il trigger `credit_lot_only_extend` non cambia).
+- **"Già allungato"** = `source = CANCELLATION` (D-076).
+- **Credito concesso su una cancellazione tardiva** (D-067): l'**omaggio** di oggi (`GRANT`, D-073), con la nota che dice quale seduta; nessuno schema nuovo (Nicholas, 2026-11-12).
+
+**Alternative scartate.** *`CANCELLED_BY_PRACTITIONER`*: falso se un giorno cancella l'admin. *`CANCELLED_BY_STUDIO` anche da `PENDING_APPROVAL`*: due stati per lo stesso effetto. *`cancelled_by` come ruolo*: ridondante con lo stato, e non dice chi se cancella l'admin. *Preavviso letto alla cancellazione*: un professionista che lo alza renderebbe tardi chi aveva già prenotato. *`credit_lot.origin_booking_id` unico*: ferma due lotti per la stessa cancellazione, ma non "+1 e lotto nuovo" insieme, e una colonna nuova obbligherebbe a riscrivere il trigger del lotto. *Due origini (carta, allungamento)*: lascia aperto il giro della carta. *Tabella della storia dei segni*: nessun effetto sui crediti, si aggiunge se servirà.
+
+**Conseguenze.** Che un `LOT_CREATED` con la prenotazione stia in un lotto `CANCELLATION`, e viceversa, è una regola tra due tabelle: la tiene Java, nell'unico metodo che crea quei lotti (pezzo 2). Ogni migrazione futura che aggiunge una colonna a `credit_lot` deve aggiungerla anche al trigger `credit_lot_only_extend` (promemoria nella V16). Una tecnica di test nuova: `V16BackfillTest`, Flyway fino alla V15, righe scritte come al passo 10, poi la V16, in un container suo. **Provato**: tolti a turno la traccia della cancellazione, la traccia del "non presentato", "il preavviso prima dell'inizio", "il lotto da una prenotazione vale 1", il preavviso del proprio professionista nel riempimento, il preavviso fotografato alla richiesta e "lo studio cancella solo una confermata", fallisce ogni volta il test che li protegge (7 su 7, ognuno per il motivo giusto).
+
+
+---
+
+## D-079 — Cancellazione del cliente: in tempo fino all'istante compreso, il credito che torna deciso da `credit`, il link chiuso dopo il commit, il secondo clic con la stessa risposta
+**Stato:** accettata · 2026-11-12 · realizza D-075 (per la parte del cliente), D-076 e il criterio di D-065 · confronto completo: `docs/studio/43-cancellazione-del-cliente.md` · scelte di Claude secondo le raccomandazioni della guida, su indicazione di Nicholas ("se non ci sono domande specifiche per me procedi")
+
+**Contesto.** Il cliente cancella una sua seduta confermata. Il brief chiede la regola esatta del confine, provata al secondo; la restituzione con la validità minima; il link di pagamento aperto da far scadere; un solo credito con il doppio clic; e che i lucchetti di D-046 e D-065 coprano anche la cancellazione.
+
+**Decisione.**
+- **API** `POST /api/customer/bookings/{id}/cancel` (`BookingCustomerController`, con l'account che agisce da `CurrentUser`, come D-073). Solo le sedute **`CONFIRMED`** del cliente; quella di un altro è un 404; una richiesta in attesa si ritira (409 `BOOKING_TRANSITION_NOT_ALLOWED`); dall'inizio della seduta compreso, 409 **`BOOKING_ALREADY_STARTED`**.
+- **Il confine**: in tempo se `now ≤ free_cancellation_until` (**compreso**, "fino a"), `Booking.freeToCancelAt`; provato a −1 secondo, all'istante esatto (la riga che distingue `<` da `≤`), a +1 secondo e all'inizio. Il preavviso è una durata: diverso dall'"ora del giorno prima" solo se il cambio dell'ora cade nelle 24 ore (un fine settimana, studio chiuso).
+- **Cosa torna**, solo in tempo: `CREDIT` → `CreditService.restoreOnCancellation` (+1 sullo stesso lotto se vale fino al giorno minimo compreso, o se è un lotto `CANCELLATION` e cancella il cliente; altrimenti lotto nuovo da 1 fino al giorno minimo); `CARD` → `lotFromCancellation` (lotto da 1, `single_credit_validity_days` letto alla cancellazione; Stripe non si chiama, l'importo è già incassato); `IN_STUDIO` → niente. Tardi: niente. `CancelledBy` (`CUSTOMER`, `STUDIO`) è pronto per il pezzo 3.
+- **Il link aperto** di una seduta "in studio": lo chiude `PaymentLinkClosing`, un ascoltatore di `payment` su `BookingCancelled`, **dopo il commit**: prende solo il lucchetto del pagamento (l'ordine del webhook, mai incrociato), legge la pagina, la fa scadere e segna il pagamento `EXPIRED`; una pagina appena pagata la lascia al webhook, che annulla il blocco. Il metodo che scrive è **`REQUIRES_NEW`**: con la propagazione di default si unirebbe alla transazione che Spring sta chiudendo, e la lettura con il lucchetto fallisce (`No active transaction`, provato). Ogni errore si registra come avviso: la correttezza non dipende da questo (il webhook annulla comunque).
+- **Il secondo clic**: su una seduta già cancellata **dal cliente** la stessa risposta (200, la seduta e il credito tornato), nessun effetto nuovo; cancellata dallo studio o in altri stati, 409. Effetti una volta sola per il lucchetto sulla seduta e, se un bug lo saltasse, per l'indice "una sola restituzione per prenotazione".
+- **Evento** `BookingCancelled` (stato raggiunto, come era pagata, ultimo giorno del credito tornato o `null`). **Al cliente** un'email "Seduta cancellata" con quello che gli resta. **Al professionista**, solo quando cancella il cliente, una **push** "Seduta cancellata" (giorno e ora, "l'orario è di nuovo libero"; mai nome né trattamento; vive fino all'inizio) e l'email di riserva (D-054). Il brief non la chiedeva: si toglie con una riga se lo studio non la vuole.
+- **Vista del cliente**: `freeCancellationUntil`, `cancelledAt`, `returnedCredit` (`lotId`, `validUntil`, per una cancellazione o un rifiuto), con una domanda sola per una lista (`CreditService.returnedTo`).
+
+**Alternative scartate.** *In tempo fino all'istante escluso*: "fino a" comprende l'ultimo istante. *Chiudere il link nella transazione della cancellazione*: seduta poi pagamento, l'ordine opposto al webhook (deadlock possibile), e la seduta bloccata durante la chiamata a Stripe. *409 al secondo clic*: un nuovo tentativo dopo una risposta persa sembrerebbe un errore. *Lasciar cancellare "tardi" una seduta già iniziata*: è svolta o non presentata, non cancellata.
+
+**Conseguenze.** La risposta della cancellazione aspetta Stripe solo per una seduta "in studio" con un link aperto (l'ascoltatore è sincrono, nel thread della richiesta). **Provato** togliendo a turno nove difese: otto prese dal loro test (il confine compreso, la seduta già iniziata, "tardi non dà niente", la validità minima, "già allungato", l'eccezione dello studio, il secondo clic, `REQUIRES_NEW`); la nona, il `catch` dell'ascoltatore, **no**: Spring registra e inghiotte da sé un'eccezione di un ascoltatore dopo il commit (gira in `afterCompletion`). Il `catch` resta per il registro, e la guida 43 è stata corretta (diceva che il cliente avrebbe ricevuto un 500). **Criterio di D-065 provato con il percorso vero** (link dall'API del pannello, cancellazione dall'API del cliente, poi il pagamento), nei due ordini; due cancellazioni nello stesso istante danno un solo credito.
+
+
+---
+
+## D-080 — Cancellazione da parte dello studio: una porta per confermate e richieste, a prescindere dal preavviso, la risposta con il credito tornato
+**Stato:** accettata · 2026-11-12 · realizza D-075 (la parte dello studio) e l'eccezione dello studio di D-076 · confronto completo: `docs/studio/44-cancellazione-dello-studio.md` · scelte di Claude secondo le raccomandazioni della guida, su indicazione di Nicholas ("se non ci sono domande specifiche per me procedi")
+
+**Contesto.** Il professionista cancella una sua seduta futura, confermata o in attesa, e il cliente non perde niente (D-075). Quasi tutto c'era già dal pezzo 2: la regola del credito con `CancelledBy.STUDIO`, l'email per lo studio, l'ascoltatore che chiude il link aperto.
+
+**Decisione.**
+- **API** `POST /api/panel/bookings/{id}/cancel` (`BookingPanelController`, con l'account che agisce da `CurrentUser`). Solo le sedute del professionista (404 per quella di un altro).
+- **Una seduta confermata e non iniziata** → `CANCELLED_BY_STUDIO`, **a prescindere dal preavviso**, con `giveBack(booking, CancelledBy.STUDIO)`: credito → +1 sullo stesso lotto o lotto nuovo con la validità minima, **sempre** (anche per un credito già allungato); carta → lotto da 1; in studio → niente, e il link aperto si chiude dopo il commit. Dall'inizio della seduta, 409 `BOOKING_ALREADY_STARTED`.
+- **Una richiesta in attesa** → il **rifiuto di sempre** (D-078): lo stesso metodo di `/reject` (`rejectLocked`, estratto per l'occasione), quindi la stessa scadenza della risposta (dopo, 409 `APPROVAL_DEADLINE_PASSED`), la stessa restituzione, la stessa email `BookingRejected`. `PENDING_PAYMENT` e gli stati finiti: 409.
+- **La risposta** è un `record` nuovo, `PanelCancellationView(booking, returnedCredit)`: la seduta come la vede il pannello e il credito tornato (il lotto da azzerare se il cliente vuole i soldi, `procedure-studio.md`). Non un campo nuovo di `PanelBookingView`, che è il contratto di tutte le risposte del pannello.
+- **Il secondo clic**: su una seduta già `CANCELLED_BY_STUDIO` o `REJECTED`, la stessa risposta, nessun effetto; in ogni altro stato (per esempio cancellata dal cliente nel frattempo) 409.
+- **Il cliente** riceve l'email "lo studio ha dovuto cancellare la tua seduta" con quello che gli resta (pezzo 2), o quella del rifiuto per una richiesta. **Il rimborso non è nell'email**: il sistema non lo offre (D-015); se il cliente lo chiede, la procedura dello studio. Nessuna push al professionista.
+
+**Alternative scartate.** *Due porte, `/cancel` solo per le confermate*: il pannello dovrebbe sapere lo stato per scegliere il pulsante, e il brief vuole "confermata o in attesa". *Ricopiare il rifiuto in `/cancel`*: la stessa regola in due posti. *`returnedCredit` in `PanelBookingView`*: un campo quasi sempre vuoto in ogni risposta del pannello. *Il rimborso offerto nell'email*: lo trasformerebbe in un'opzione standard, contro D-015.
+
+**Conseguenze.** L'admin che cancella per un professionista irraggiungibile resta una domanda del pezzo 4 (D-077). **Provato** togliendo a turno cinque difese ("a prescindere dal preavviso", `STUDIO` al posto di `CUSTOMER`, la seduta iniziata, il secondo clic, la richiesta che passa da `rejectLocked`): fallisce ogni volta il test che le protegge, per il motivo giusto. Con commit veri: la cancellazione dello studio chiude il link aperto, come quella del cliente.
+
+
+---
+
+## D-081 — Disattivazione di un professionista: due interfacce contro il ciclo, `FOR UPDATE` contro `FOR KEY SHARE`, l'admin che cancella, lo stato `PRACTITIONER_UNAVAILABLE`
+**Stato:** accettata · 2026-11-12 · realizza D-077 · confronto completo: `docs/studio/45-disattivazione-di-un-professionista.md` · l'admin che cancella e lo stato per il cliente **scelti da Nicholas** ("segui le tue raccomandazioni"); il resto secondo le raccomandazioni della guida
+
+**Contesto.** D-077 vuole: disattivazione rifiutata con sedute future, l'avviso dei crediti ancora validi all'admin, i lotti non utilizzabili per il cliente; e lasciava da decidere l'urgenza (oggi solo il professionista cancella le sue sedute), la gara tra il controllo e la disattivazione, il ciclo `practitioner` → `booking`.
+
+**Decisione.**
+- **Le sedute che fermano**: quelle che occupano l'orario e **non sono finite** (`ends_at > now`): `PENDING_APPROVAL`, `CONFIRMED`, `PENDING_PAYMENT` con il blocco ancora valido. Una seduta in corso ferma; un blocco scaduto no. 409 **`PRACTITIONER_HAS_FUTURE_BOOKINGS`**.
+- **Il ciclo**: `practitioner` dichiara `FutureBookings` (implementata da `booking`, `BookingFutureBookings`) e `OutstandingCredits` (implementata da `credit`, `CreditOutstanding`), come `OccupiedTime` (D-044). La disattivazione con i controlli sta in un servizio nuovo di `practitioner`, `PractitionerDeactivation`, che usa `PractitionerService.deactivate` (solo l'account, D-052): `PractitionerService` resta usabile senza i moduli che dipendono da lui (lo importano 14 contesti di test).
+- **La gara**: la disattivazione prende **`FOR UPDATE`** sulla riga del professionista **prima** di contare; ogni prenotazione nuova (del cliente e dal pannello) prende **`FOR KEY SHARE`** sulla stessa riga come **primo passo**, prima di chiedere se il professionista è attivo. In SQL nativo con la clausola esplicita: `FOR NO KEY UPDATE`, che è quello di un `update` normale e una possibile traduzione di `@Lock(PESSIMISTIC_WRITE)`, **non** è in conflitto con `FOR KEY SHARE` (provato: con lui la disattivazione non aspetta la prenotazione). Due prenotazioni dello stesso professionista non si aspettano (`FOR KEY SHARE` è compatibile con se stesso). Ordine dei lucchetti nella richiesta: professionista, cliente, lotto.
+- **L'urgenza** (Nicholas): l'admin fa la **cancellazione dello studio per conto del professionista**, con lo stesso codice (`cancelByStudio`, D-080), firmata dal suo account. API `GET /api/admin/practitioners/{id}/bookings` (le sedute che fermano, senza i nomi dei clienti: `AdminBookingView`) e `POST /api/admin/practitioners/{id}/bookings/{b}/cancel`, in `BookingAdminController`.
+- **L'avviso**: la risposta della disattivazione diventa `PractitionerDeactivationView(practitioner, outstandingCredits)`, con i lotti di saldo positivo e ultimo giorno non passato, e per ognuno il cliente (nome, cognome, email), il servizio, il saldo, l'ultimo giorno. Idempotente come prima.
+- **Il cliente** (Nicholas): stato **`PRACTITIONER_UNAVAILABLE`** nella vista dei crediti, dopo `USED_UP` ed `EXPIRED` e prima di `USABLE`; calcolato a ogni lettura con una domanda su un insieme (`PractitionerService.activeAmong`), quindi una riattivazione rende il lotto di nuovo `USABLE` da sola.
+
+**Alternative scartate.** *La disattivazione spostata in `booking`*: i dati e l'API dei professionisti sono di `practitioner`. *Un evento "sto per disattivare"*: un evento non è una domanda. *`FOR UPDATE` anche nelle prenotazioni*: metterebbe in fila tutte le prenotazioni dello stesso professionista. *`@Lock(PESSIMISTIC_WRITE)`*: la traduzione può essere `FOR NO KEY UPDATE`. *Il controllo "attivo" prima del lucchetto*: già vecchio quando il lucchetto arriva. *Lo stato salvato nel lotto*: da aggiornare a ogni disattivazione e riattivazione. *I nomi dei clienti nell'elenco delle sedute per l'admin*: non servono a cancellare.
+
+**Conseguenze.** La risposta di `POST /api/admin/practitioners/{id}/deactivate` cambia forma (`{practitioner, outstandingCredits}`): il passo 13 la usa così. **Provato** con commit veri nei due ordini (la richiesta durante una disattivazione aspetta e riceve 404; la disattivazione durante una prenotazione aspetta e riceve 409) e togliendo a turno sette difese, tutte prese dal loro test per il motivo giusto: il conteggio delle sedute, `FOR UPDATE` (con `FOR NO KEY UPDATE`), il lucchetto della richiesta, il lucchetto preso dopo il controllo "attivo", lo stato nuovo, il blocco scaduto che non ferma, "non finita" al posto di "non iniziata".
+
+
+---
+
+## D-082 — Dopo la seduta: `COMPLETED` da un lavoro in blocco, `NO_SHOW` e correzione per 7 giorni, "le mie sedute" con `?period`
+**Stato:** accettata · 2026-11-12 · completa D-078 (frecce e traccia del pezzo 1) · confronto completo: `docs/studio/46-dopo-la-seduta.md` · **la finestra di 7 giorni scelta da Nicholas** ("segui la raccomandazione"); il resto secondo le raccomandazioni della guida
+
+**Contesto.** Il brief vuole: un lavoro programmato che porti a `COMPLETED` le sedute `CONFIRMED` finite; il professionista che segna `NO_SHOW` e corregge entro un tempo da decidere; nessun effetto sui crediti; "le mie sedute" che distingua passato e futuro.
+
+**Decisione.**
+- **Il lavoro** (`BookingJobs.completeSessionsOver`, ogni minuto con gli altri): un solo `update` in blocco, `CONFIRMED` → `COMPLETED` dove `ends_at <= now`, con la versione incrementata a mano. Nessun evento, nessuna email, nessun segno (`attendance_marked_by` resta vuoto). La guardia `CONFIRMED` nel `where` basta contro un segno contemporaneo: in `READ COMMITTED` PostgreSQL, dopo aver aspettato l'altra transazione, rilegge la riga e la salta se non soddisfa più il `where`. Sicuro con due istanze.
+- **I segni**: `POST /api/panel/bookings/{id}/no-show` (da `CONFIRMED` o `COMPLETED`) e `/attended` (da `CONFIRMED` o `NO_SHOW`), con il lucchetto sulla seduta e la traccia di chi e quando (l'ultimo segno). Idempotenti: lo stesso segno di nuovo risponde 200 e tiene il primo chi e quando. 404 per la seduta di un altro, 409 dalla macchina a stati per gli altri stati. **Nessun effetto sui crediti**, nei due versi.
+- **La finestra**: dall'inizio della seduta compreso (prima: 409 **`BOOKING_NOT_STARTED`**) fino a **7 giorni dopo la fine, compreso** (dopo: 409 **`ATTENDANCE_WINDOW_CLOSED`**), una costante nel codice (`Booking.ATTENDANCE_WINDOW`), non un'impostazione.
+- **"Le mie sedute"**: `GET /api/customer/bookings?period=upcoming` (non finite, `ends_at > now`, la più vicina prima; una seduta in corso è qui) e `?period=past` (finite, la più recente prima). Divide per tempo, non per stato. Senza parametro la lista di prima, invariata; un valore sconosciuto è un 400.
+
+**Alternative scartate.** *Una transazione per seduta nel lavoro*: niente fuori dal database da proteggere. *`starts_at` invece di `ends_at`*: una seduta in corso non è svolta. *La finestra come impostazione del professionista*: nessuno l'ha chiesta diversa, e non tocca i soldi. *Una risposta in due parti o un campo `past`*: cambiano il contratto, o lasciano al frontend l'ordine.
+
+**Conseguenze.** Nessuna migrazione: frecce e colonne c'erano dalla V16. **Provato** al secondo sui confini (fine della seduta per il lavoro; inizio e fine + 7 giorni per i segni) e togliendo a turno cinque difese, tutte prese. La guardia del lavoro, tolta, era presa due volte: per una seduta cancellata dal `check` della traccia della V16 (una `COMPLETED` non può avere un `cancelled_by`), per un "non presentato" solo dall'asserzione del test, perché lì il database lo lascerebbe passare.

@@ -172,13 +172,38 @@ Il cliente riceve un'email per ognuna, senza la nota del professionista.
 4. Al webhook `checkout.session.completed` con `payment_status = paid`: il pagamento diventa "riuscito" e nasce il lotto dalla fotografia (anche se nel frattempo il pacchetto è cambiato o è stato disattivato), con il movimento +N e l'ultimo giorno valido contato dal giorno del pagamento a Roma. **Una volta sola**: evento già visto, pagamento letto con il lucchetto, un lotto per pagamento nel database (D-070).
 5. Dopo il commit, il cliente riceve l'email "Acquisto confermato".
 
-### Cancellazione
+### Cancellazione del cliente (D-078, D-079)
 
-1. Il backend confronta l'ora attuale con l'inizio della seduta e il preavviso del professionista.
-2. **In tempo**: stato "cancellata in tempo", l'orario si libera, e:
-   - se era pagata con credito: movimento +1 sullo stesso lotto (mantiene la sua scadenza);
-   - se era pagata con carta: nuovo lotto da 1, con la validità prevista per le sedute singole.
-3. **Tardi**: stato "cancellata tardi", l'orario si libera, nessun credito.
+1. Il cliente cancella una sua seduta **confermata** e non ancora iniziata (`POST /api/customer/bookings/{id}/cancel`). Il backend blocca la seduta e confronta l'ora con `free_cancellation_until`, il preavviso **fotografato** alla prenotazione: in tempo fino a quell'istante **compreso**.
+2. **In tempo**: stato `CANCELLED_IN_TIME`, l'orario si libera, e:
+   - pagata con credito: +1 sullo stesso lotto, se vale ancora almeno `single_credit_validity_days` dal giorno della cancellazione; altrimenti un lotto nuovo da 1 fino a quel giorno, **una volta sola** per credito (un lotto nato da una cancellazione non si allunga più per mano del cliente) (D-076);
+   - pagata con carta: un lotto nuovo da 1, valido `single_credit_validity_days`; l'importo resta allo studio (D-015);
+   - da pagare in studio: niente.
+3. **Tardi**: stato `CANCELLED_LATE`, l'orario si libera, niente torna.
+4. Dopo il commit: email al cliente con quello che gli resta; push "Seduta cancellata" al professionista (email di riserva); per una seduta "in studio", il modulo `payment` fa scadere su Stripe il link di pagamento aperto. Se il cliente lo paga lo stesso, il webhook annulla il blocco (D-065).
+5. Il secondo clic riceve la stessa risposta, senza effetti nuovi; un solo credito per cancellazione lo garantiscono il lucchetto sulla seduta e un indice del registro.
+
+### Cancellazione da parte dello studio (D-075, D-080)
+
+1. Il professionista cancella una sua seduta futura (`POST /api/panel/bookings/{id}/cancel`), confermata o in attesa.
+2. **Confermata**: stato `CANCELLED_BY_STUDIO`, **a prescindere dal preavviso**. Credito: torna, con la validità minima sempre garantita (anche a un credito già allungato); carta: lotto nuovo da 1; in studio: niente, e il link aperto si fa scadere dopo il commit.
+3. **In attesa**: il rifiuto di sempre (`REJECTED`), con la stessa scadenza della risposta e la stessa email.
+4. Il cliente riceve l'email "lo studio ha dovuto cancellare la tua seduta" con quello che gli resta. La risposta al pannello dice quale credito è tornato.
+5. **Nessun rimborso dal sistema** (D-015): se il cliente vuole i soldi, il professionista azzera il credito con una correzione e poi rimborsa da Stripe (`docs/procedure-studio.md`).
+
+### Disattivazione di un professionista (D-077, D-081)
+
+1. L'admin chiede `POST /api/admin/practitioners/{id}/deactivate`. Il backend blocca la riga del professionista (`FOR UPDATE`) e conta le sue sedute che occupano l'orario e non sono finite.
+2. **Ce ne sono**: 409. L'admin le vede (`GET /api/admin/practitioners/{id}/bookings`, senza i nomi dei clienti) e le cancella lui, se il professionista non può: è la cancellazione da parte dello studio, firmata dall'admin.
+3. **Non ce ne sono**: l'account si disattiva (D-052), e la risposta elenca come avviso i crediti ancora validi dei suoi clienti, con nome ed email. Il sistema non li sposta.
+4. Il cliente vede quei crediti come `PRACTITIONER_UNAVAILABLE`; se il professionista torna attivo, tornano utilizzabili da soli.
+5. **La gara con una prenotazione nuova**: ogni prenotazione prende `FOR KEY SHARE` sulla stessa riga come primo passo, prima di chiedere se il professionista è attivo. Una delle due aspetta l'altra, e poi vede quello che l'altra ha confermato.
+
+### Dopo la seduta (D-082)
+
+1. Ogni minuto un lavoro porta a `COMPLETED`, con un solo `update`, le sedute `CONFIRMED` finite.
+2. Il professionista può segnare "non presentato" (`/no-show`) o correggerlo (`/attended`) dall'inizio della seduta fino a 7 giorni dopo la sua fine; la traccia dice chi e quando. Nessun effetto sui crediti: un "non presentato" è come una cancellazione tardiva.
+3. Il cliente chiede le sue sedute future (`?period=upcoming`, la più vicina prima) o passate (`?period=past`, la più recente prima).
 
 ## Stripe
 

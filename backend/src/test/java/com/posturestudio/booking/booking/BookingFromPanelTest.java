@@ -88,6 +88,26 @@ public class BookingFromPanelTest {
     }
 
     // the panel has no horizon: a session after the last valid day goes in the studio (D-071, guide 39, part 2)
+    // a booking from the panel too: paid by a payment link, it becomes a card booking (D-059)
+    @Test
+    void theNoticeOfCancellationIsPhotographedFromThePanel() {
+        jdbc.update("update practitioner set cancellation_notice_hours = 48 where id = ?", anna);
+
+        PanelBookingView booked = book("2026-11-09T09:00+01:00", MARIO);
+        entityManager.flush();
+        jdbc.update("update practitioner set cancellation_notice_hours = 72 where id = ?", anna);
+
+        assertThat(noticeIs(booked.id(), 48)).isTrue();
+    }
+
+    // the notice of the practitioner photographed at birth (V16, guide 42, part 6): changing the setting
+    // afterwards moves nothing
+    private boolean noticeIs(long bookingId, int hours) {
+        return jdbc.queryForObject(
+                "select free_cancellation_until = starts_at - make_interval(hours => ?) from booking where id = ?",
+                Boolean.class, hours, bookingId);
+    }
+
     @Test
     void aCreditThatEndsBeforeTheSessionIsNotUsedFromThePanelEither() {
         long mario = data.customer(MARIO.email());

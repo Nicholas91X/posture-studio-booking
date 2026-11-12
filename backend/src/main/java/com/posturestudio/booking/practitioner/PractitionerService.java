@@ -1,10 +1,12 @@
 package com.posturestudio.booking.practitioner;
 
+import java.util.Collection;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
 
 import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Propagation;
 import org.springframework.transaction.annotation.Transactional;
 
 import com.posturestudio.booking.auth.AccountService;
@@ -64,6 +66,28 @@ public class PractitionerService {
         }
     }
 
+    // The first step of every new booking (guide 45, part 4): FOR KEY SHARE on the row of the practitioner, BEFORE
+    // asking whether they are active. A deactivation in flight holds FOR UPDATE: this waits, and then the question
+    // "active?" reads what it committed. MANDATORY: the lock lives until the booking commits
+    @Transactional(propagation = Propagation.MANDATORY)
+    public void lockForBooking(long practitionerId) {
+        repository.lockForBooking(practitionerId);
+    }
+
+    // which of these practitioners are active (D-029): two queries for a whole list, whatever its length
+    @Transactional(readOnly = true)
+    public Set<Long> activeAmong(Collection<Long> practitionerIds) {
+        if (practitionerIds.isEmpty()) {
+            return Set.of();
+        }
+        List<Practitioner> found = repository.findAllById(practitionerIds);
+        Set<Long> activeUsers = accounts.activeAmong(found.stream().map(Practitioner::getUserId).toList());
+        return found.stream()
+                .filter(practitioner -> activeUsers.contains(practitioner.getUserId()))
+                .map(Practitioner::getId)
+                .collect(java.util.stream.Collectors.toUnmodifiableSet());
+    }
+
     // Active or not: the admin assigns a payment account to a deactivated practitioner too, who finds it
     // again when reactivated (guide 30, 9.2)
     @Transactional(readOnly = true)
@@ -119,8 +143,8 @@ public class PractitionerService {
     }
 
     // Only the account (D-029): sign-in, open sessions, public list, catalog, free slots and new bookings all
-    // follow from it. Bookings already made are not touched (guide 26, 6.3): pending approvals expire by
-    // themselves, confirmed ones are a cancellation by the studio (open point, before step 11)
+    // follow from it. Bookings already made are not touched (guide 26, 6.3). The admin API goes through
+    // PractitionerDeactivation (D-077), which first refuses a practitioner with sessions to come
     @Transactional
     public AdminPractitionerView deactivate(long practitionerId) {
         Practitioner practitioner = find(practitionerId);
