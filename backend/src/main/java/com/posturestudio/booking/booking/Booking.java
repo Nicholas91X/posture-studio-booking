@@ -168,6 +168,10 @@ class Booking {
     @Column
     private Instant cancelledAt;
 
+    // the account that cancelled, for the three cancellation states only (V16, booking_cancellation_trace_ck)
+    @Column
+    private Long cancelledBy;
+
     // starts_at minus the notice, photographed at birth (V16): until when a cancellation of the customer is in
     // time. Whether that instant itself still is, is the rule of piece 2
     @Column(updatable = false)
@@ -211,6 +215,17 @@ class Booking {
         this.cancelledAt = Objects.requireNonNull(now, "now must not be null");
     }
 
+    // The customer gives up a confirmed session (guide 43): in time until freeCancellationUntil INCLUDED, late after
+    // it. The state machine refuses any state but CONFIRMED; the caller has refused a session already started.
+    // Who: the account that acted (V16). Returns the state reached, which decides what comes back
+    BookingStatus cancelByCustomer(Instant now, long cancelledBy) {
+        Objects.requireNonNull(now, "now must not be null");
+        moveTo(freeToCancelAt(now) ? BookingStatus.CANCELLED_IN_TIME : BookingStatus.CANCELLED_LATE);
+        this.cancelledAt = now;
+        this.cancelledBy = cancelledBy;
+        return status;
+    }
+
     // nobody answered in time: void, like a rejection (D-030). Done by the job of guide 21
     void expireApproval() {
         moveTo(BookingStatus.APPROVAL_EXPIRED);
@@ -248,6 +263,23 @@ class Booking {
     }
 
     // ***** QUESTIONS *****
+
+    // "Until" includes its last instant (guide 43, part 3.1): exactly at freeCancellationUntil it is still in time.
+    // Not the rule of approval_deadline, where at the deadline the request is already void: there the instant ends
+    // a time given to someone, here it is the last instant of a right of the customer
+    boolean freeToCancelAt(Instant now) {
+        return !now.isAfter(freeCancellationUntil);
+    }
+
+    // from its start included a session is no longer cancellable: it is taking place, or over (guide 43, part 2)
+    boolean hasStartedAt(Instant now) {
+        return !now.isBefore(startsAt);
+    }
+
+    // cancelled by its customer, in time or late: a second request just finds it so (guide 43, part 6)
+    boolean isCancelledByCustomer() {
+        return status == BookingStatus.CANCELLED_IN_TIME || status == BookingStatus.CANCELLED_LATE;
+    }
 
     // Holds the time for whoever looks at instant now: a holding state, and not a pending payment whose
     // hold has expired (guide 18, 3.5). The same rule as the two queries of BookingRepository that say
@@ -317,6 +349,10 @@ class Booking {
 
     Instant getCancelledAt() {
         return cancelledAt;
+    }
+
+    Long getCancelledBy() {
+        return cancelledBy;
     }
 
     Instant getFreeCancellationUntil() {

@@ -42,6 +42,13 @@ class CreditLot {
         return lot;
     }
 
+    // A credit of 1 born from a cancellation (V16, guide 43, part 4): a session paid by card, or a credit whose lot
+    // ended too soon (D-076). The booking it comes from is in its LOT_CREATED movement, not here (D-078)
+    static CreditLot fromCancellation(long customerId, long practitionerId, long serviceId, ValidUntil validUntil,
+                                      Instant now) {
+        return lot(LotSource.CANCELLATION, customerId, practitionerId, serviceId, validUntil, now);
+    }
+
     private static CreditLot lot(LotSource source, long customerId, long practitionerId, long serviceId,
                                  ValidUntil validUntil, Instant now) {
         CreditLot lot = new CreditLot();

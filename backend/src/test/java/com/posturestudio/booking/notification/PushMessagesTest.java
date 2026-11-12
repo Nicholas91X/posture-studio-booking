@@ -9,6 +9,8 @@ import org.junit.jupiter.api.Test;
 
 import com.posturestudio.booking.booking.BookingEvent.ApprovalExpired;
 import com.posturestudio.booking.booking.BookingEvent.ApprovalRequested;
+import com.posturestudio.booking.booking.BookingEvent.BookingCancelled;
+import com.posturestudio.booking.booking.BookingStatus;
 import com.posturestudio.booking.booking.BookingEvent.BookingConfirmed;
 import com.posturestudio.booking.booking.BookingEvent.BookingRejected;
 import com.posturestudio.booking.booking.BookingEvent.BookingWithdrawn;
@@ -53,6 +55,23 @@ class PushMessagesTest {
                 .isEqualTo(Duration.ofHours(12));
         assertThat(pushes.pushFor(new ApprovalRequested(42, 2, 3, 4, MONDAY_9, DEADLINE, PaidWith.CARD), DEADLINE.plusSeconds(1))
                 .orElseThrow().timeToLive()).isZero();
+    }
+
+    // a session gone from the agenda (guide 43, part 8): when, and that the time is free; kept until the start
+    @Test
+    void aCancellationOfTheCustomerHasAPushUntilTheStart() {
+        PushMessage push = pushes.pushFor(new BookingCancelled(42, 2, 3, 4, MONDAY_9, BookingStatus.CANCELLED_LATE,
+                PaidWith.CARD, null), NOW).orElseThrow();
+
+        assertThat(push.payload()).isEqualTo(new PushPayload("Seduta cancellata",
+                "lunedì 9 novembre, 9:00 · l'orario è di nuovo libero", "https://studio.example", "booking-42"));
+        assertThat(push.timeToLive()).isEqualTo(Duration.ofHours(71));
+    }
+
+    @Test
+    void aCancellationOfTheStudioHasNoPush() {
+        assertThat(pushes.pushFor(new BookingCancelled(42, 2, 3, 4, MONDAY_9, BookingStatus.CANCELLED_BY_STUDIO,
+                PaidWith.CARD, null), NOW)).isEmpty();
     }
 
     // nothing for the practitioner to do in the others (guide 28, 8.1)

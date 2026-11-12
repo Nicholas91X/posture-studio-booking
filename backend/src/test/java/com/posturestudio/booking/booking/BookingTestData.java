@@ -141,6 +141,26 @@ final class BookingTestData {
                 noticeBefore(startsAt));
     }
 
+    // A confirmed session of one hour (step 11): paid by CARD or with a CREDIT by the customer's request, or
+    // IN_STUDIO from the panel. With a credit, give the lot: its -1 is written too
+    long confirmed(long practitionerId, long serviceId, long customerId, String startsAt, String paidWith,
+                   Long creditLot) {
+        long id = jdbc.queryForObject("""
+                insert into booking (customer_id, practitioner_id, service_id, starts_at, ends_at, status,
+                                     booked_by, paid_with, price_cents, free_cancellation_until, decided_at)
+                values (?, ?, ?, ?, ?, 'CONFIRMED', ?, ?, 3000, ?, now())
+                returning id
+                """, Long.class, customerId, practitionerId, serviceId, at(startsAt), at(startsAt).plusHours(1),
+                paidWith.equals("IN_STUDIO") ? "PRACTITIONER" : "CUSTOMER", paidWith, noticeBefore(startsAt));
+        if (creditLot != null) {
+            jdbc.update("""
+                    insert into credit_movement (credit_lot_id, amount, reason, booking_id, created_at)
+                    values (?, -1, 'BOOKING', ?, now())
+                    """, creditLot, id);
+        }
+        return id;
+    }
+
     // the default notice of 24 hours, photographed as the application does (V16, guide 42, part 6)
     static OffsetDateTime noticeBefore(String startsAt) {
         return at(startsAt).minusHours(24);

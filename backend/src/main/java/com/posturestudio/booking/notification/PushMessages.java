@@ -12,10 +12,12 @@ import org.springframework.stereotype.Component;
 import com.posturestudio.booking.booking.BookingEvent;
 import com.posturestudio.booking.booking.BookingEvent.ApprovalExpired;
 import com.posturestudio.booking.booking.BookingEvent.ApprovalRequested;
+import com.posturestudio.booking.booking.BookingEvent.BookingCancelled;
 import com.posturestudio.booking.booking.BookingEvent.BookingConfirmed;
 import com.posturestudio.booking.booking.BookingEvent.BookingRejected;
 import com.posturestudio.booking.booking.BookingEvent.BookingWithdrawn;
 import com.posturestudio.booking.booking.BookingEvent.LatePaymentReleased;
+import com.posturestudio.booking.booking.BookingStatus;
 import com.posturestudio.booking.credit.CreditEvent;
 import com.posturestudio.booking.credit.CreditEvent.CreditAdjusted;
 import com.posturestudio.booking.credit.CreditEvent.CreditExtended;
@@ -60,6 +62,14 @@ class PushMessages {
             case BookingWithdrawn withdrawn -> Optional.empty();
             // the customer is told by email; nothing for the practitioner to do (guide 32, part 9)
             case LatePaymentReleased late -> Optional.empty();
+            // a confirmed session gone from the agenda: worth knowing, the time is free again (guide 43, part 8).
+            // Only when the customer cancelled: the studio knows what it did. Kept until the session would start
+            case BookingCancelled cancelled -> cancelled.status() == BookingStatus.CANCELLED_BY_STUDIO
+                    ? Optional.empty()
+                    : Optional.of(new PushMessage(
+                            new PushPayload("Seduta cancellata", when(cancelled.startsAt()) + " · l'orario è di nuovo libero",
+                                    appUrl, "booking-" + cancelled.bookingId()),
+                            untilDeadline(cancelled.startsAt(), now)));
         };
     }
 

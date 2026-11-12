@@ -22,13 +22,16 @@ import org.springframework.transaction.annotation.Transactional;
 
 import com.posturestudio.booking.booking.BookingEvent.ApprovalExpired;
 import com.posturestudio.booking.booking.BookingEvent.ApprovalRequested;
+import com.posturestudio.booking.booking.BookingEvent.BookingCancelled;
 import com.posturestudio.booking.booking.BookingEvent.BookingConfirmed;
 import com.posturestudio.booking.booking.BookingEvent.BookingRejected;
 import com.posturestudio.booking.booking.BookingEvent.BookingWithdrawn;
 import com.posturestudio.booking.booking.BookingEvent.LatePaymentReleased;
 import com.posturestudio.booking.catalog.CatalogService;
 import com.posturestudio.booking.catalog.ServiceOnSale;
+import com.posturestudio.booking.credit.CancelledBy;
 import com.posturestudio.booking.credit.CreditService;
+import com.posturestudio.booking.credit.ReturnedCredit;
 import com.posturestudio.booking.customer.CustomerName;
 import com.posturestudio.booking.customer.CustomerService;
 import com.posturestudio.booking.practitioner.PractitionerService;
@@ -196,7 +199,7 @@ public class BookingService {
     @Transactional(readOnly = true)
     public CustomerBookingView findForCustomer(long customerId, long bookingId) {
         Booking booking = bookings.findByIdAndCustomerId(bookingId, customerId).orElseThrow(() -> notFound(bookingId));
-        return customerView(booking, clock.instant());
+        return customerView(booking, clock.instant(), credits.returnedTo(List.of(booking.getId())));
     }
 
     // While waiting for the answer the customer can give up, nothing charged (D-030). Allowed even after
@@ -209,7 +212,50 @@ public class BookingService {
         booking.withdraw(now);
         releasePayment(booking);
         events.publishEvent(BookingWithdrawn.of(booking));
-        return CustomerBookingView.from(booking);
+        return customerView(booking, now, credits.returnedTo(List.of(booking.getId())));
+    }
+
+    // The customer gives up a CONFIRMED session (guide 43). In time (until free_cancellation_until, included, V16):
+    // the credit comes back, or a new credit for a card; nothing for a session to be paid in the studio. Late: nothing.
+    // One transaction with the session locked (D-046): a second request, or a webhook of a payment link, waits here
+    // and then sees the session as it really is (guide 43, part 7). The open payment link of a session to be paid in
+    // the studio is closed AFTER the commit, by payment, outside this lock (guide 43, part 5).
+    // cancelledBy: the account that acts, for the trace (V16)
+    @Transactional
+    public CustomerBookingView cancel(long customerId, long cancelledBy, long bookingId) {
+        Instant now = clock.instant();
+        Booking booking = bookings.findLockedByIdAndCustomerId(bookingId, customerId)
+                .orElseThrow(() -> notFound(bookingId));
+        // the second click, or a retry after a lost response: the same answer, no new effect (guide 43, part 6)
+        if (booking.isCancelledByCustomer()) {
+            return customerView(booking, now, credits.returnedTo(List.of(booking.getId())));
+        }
+        if (booking.getStatus() == BookingStatus.CONFIRMED && booking.hasStartedAt(now)) {
+            throw new BusinessRuleException(ErrorCode.BOOKING_ALREADY_STARTED,
+                    "Booking " + bookingId + " started at " + booking.getStartsAt());
+        }
+        // any state but CONFIRMED: 409 from the state machine (a request in wait is withdrawn, not cancelled)
+        BookingStatus outcome = booking.cancelByCustomer(now, cancelledBy);
+        ReturnedCredit returned = outcome == BookingStatus.CANCELLED_IN_TIME
+                ? giveBack(booking, CancelledBy.CUSTOMER) : null;
+        events.publishEvent(BookingCancelled.of(booking, returned == null ? null : returned.validUntil()));
+        return CustomerBookingView.from(booking, null, returned);
+    }
+
+    // What a session gives back when cancelled in time, or by the studio (guide 43, part 4.1). A card was already
+    // captured (a confirmed card session always is, D-063, D-065): nothing to ask Stripe, a new credit of 1. Valid
+    // single_credit_validity_days from today, read now: the validity of a NEW credit, not a rule the customer agreed
+    // to when booking (unlike the notice, guide 42, 8.4). A switch expression: a new way of paying does not compile
+    // until someone decides what its cancellation gives back
+    private ReturnedCredit giveBack(Booking booking, CancelledBy who) {
+        int days = practitioners.getSettings(booking.getPractitionerId()).singleCreditValidityDays();
+        return switch (booking.getPaidWith()) {
+            case CREDIT -> credits.restoreOnCancellation(booking.getId(), days, who);
+            case CARD -> credits.lotFromCancellation(booking.getCustomerId(), booking.getPractitionerId(),
+                    booking.getServiceId(), booking.getId(), days);
+            // nothing was paid (D-040)
+            case IN_STUDIO -> null;
+        };
     }
 
     // ***** PAYMENT *****
@@ -421,8 +467,11 @@ public class BookingService {
     @Transactional(readOnly = true)
     public List<CustomerBookingView> listForCustomer(long customerId) {
         Instant now = clock.instant();
-        return bookings.findByCustomerIdOrderByStartsAtDesc(customerId).stream()
-                .map(booking -> customerView(booking, now))
+        List<Booking> own = bookings.findByCustomerIdOrderByStartsAtDesc(customerId);
+        // what came back to each booking: one question for the whole list (D-029)
+        Map<Long, ReturnedCredit> returned = credits.returnedTo(own.stream().map(Booking::getId).toList());
+        return own.stream()
+                .map(booking -> customerView(booking, now, returned))
                 .toList();
     }
 
@@ -461,11 +510,12 @@ public class BookingService {
 
     // The payment page only while the slot is still held for the customer (guide 31, part 9). At most a few
     // such bookings per customer (the limit of future bookings), so one question each is fine
-    private CustomerBookingView customerView(Booking booking, Instant now) {
+    private CustomerBookingView customerView(Booking booking, Instant now, Map<Long, ReturnedCredit> returned) {
+        ReturnedCredit credit = returned.get(booking.getId());
         if (booking.getStatus() == BookingStatus.PENDING_PAYMENT && booking.holdsTimeAt(now)) {
-            return CustomerBookingView.from(booking, checkout.pageOf(booking.getId()).orElse(null));
+            return CustomerBookingView.from(booking, checkout.pageOf(booking.getId()).orElse(null), credit);
         }
-        return CustomerBookingView.from(booking);
+        return CustomerBookingView.from(booking, null, credit);
     }
 
     // The rows of a panel list with names and flags (guide 23, part 2). A fixed number of queries whatever

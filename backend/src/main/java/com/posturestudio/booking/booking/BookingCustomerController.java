@@ -11,6 +11,7 @@ import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
 
+import com.posturestudio.booking.auth.CurrentUser;
 import com.posturestudio.booking.customer.CurrentCustomer;
 
 import jakarta.validation.Valid;
@@ -26,10 +27,13 @@ class BookingCustomerController {
 
     private final BookingService bookings;
     private final CurrentCustomer current;
+    // the account that acts, for the trace of a cancellation (V16), as the concessions of the panel (D-073)
+    private final CurrentUser user;
 
-    BookingCustomerController(BookingService bookings, CurrentCustomer current) {
+    BookingCustomerController(BookingService bookings, CurrentCustomer current, CurrentUser user) {
         this.bookings = bookings;
         this.current = current;
+        this.user = user;
     }
 
     @PostMapping
@@ -54,5 +58,11 @@ class BookingCustomerController {
     @PostMapping("/{id}/withdraw")
     CustomerBookingView withdraw(@PathVariable long id) {
         return bookings.withdraw(current.id(), id);
+    }
+
+    // a confirmed session: in time the credit comes back, late it is lost (guide 43). Repeated, the same answer
+    @PostMapping("/{id}/cancel")
+    CustomerBookingView cancel(@PathVariable long id) {
+        return bookings.cancel(current.id(), user.id(), id);
     }
 }

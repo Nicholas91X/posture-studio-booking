@@ -10,6 +10,7 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Propagation;
 import org.springframework.transaction.annotation.Transactional;
 
 import com.posturestudio.booking.booking.BookingService;
@@ -97,23 +98,50 @@ class PaymentLinks {
                 StudioTime.inStudioZone(Instant.ofEpochSecond(expiresAt.getEpochSecond())));
     }
 
-    // Read first (as D-064): an open page is made to expire on Stripe; an expired one is only closed here; a page
-    // just PAID means the money is on its way, and no new link is made
+    // The session of this open link was cancelled (guide 43, part 5): its Stripe page must not be paid any more.
+    // Called AFTER the commit of the cancellation (PaymentLinkClosing), so the session is no longer locked, and only
+    // the payment is locked here: the order of the webhook (payment, then session), never crossed.
+    // REQUIRES_NEW, and not the default: the listener runs while Spring is still closing the finished transaction,
+    // which is still bound to the thread, and a plain @Transactional would JOIN it. That transaction takes no more
+    // work: the locked read fails with "No active transaction" (seen with the default, guide 43, part 13).
+    // A courtesy, not a rule (guide 43, 5.1): a payment that arrives anyway is released by the webhook, because the
+    // session is no longer to be paid in the studio. Stripe not answering throws, and the caller only logs it
+    @Transactional(propagation = Propagation.REQUIRES_NEW)
+    void closeAfterCancellation(long bookingId) {
+        payments.findLockedByBookingIdAndStatus(bookingId, PaymentStatus.PENDING).ifPresent(open -> {
+            if (expireOnStripe(open) == StripeGateway.CheckoutSessionStatus.COMPLETE) {
+                // paid a moment before the cancellation reached Stripe: the webhook is coming, and releases it
+                log.info("Payment link {} of cancelled booking {} was just paid: the webhook releases it", open.getId(),
+                        bookingId);
+                return;
+            }
+            open.expire();
+            log.info("Payment link {} of cancelled booking {} closed", open.getId(), bookingId);
+        });
+    }
+
+    // A page just PAID means the money is on its way, and no new link is made
     private void invalidate(Payment old) {
-        PaymentAccount account = accounts.of(old);
-        String sessionId = old.getStripeCheckoutSessionId();
+        if (expireOnStripe(old) == StripeGateway.CheckoutSessionStatus.COMPLETE) {
+            throw new BusinessRuleException(ErrorCode.PAYMENT_LINK_ALREADY_PAID,
+                    "The link of booking " + old.getBookingId() + " was paid a moment ago");
+        }
+        old.expire();
+        log.info("Payment link {} of booking {} invalidated by a new one", old.getId(), old.getBookingId());
+    }
+
+    // Read first (as D-064): an open page is made to expire on Stripe, the others are left as they are. Returns what
+    // the page is in the end: EXPIRED (by us, or already), or COMPLETE (paid). Stripe expires only an open session
+    private StripeGateway.CheckoutSessionStatus expireOnStripe(Payment payment) {
+        PaymentAccount account = accounts.of(payment);
+        String sessionId = payment.getStripeCheckoutSessionId();
         StripeGateway.CheckoutSessionStatus status = stripe.checkoutSessionStatus(account, sessionId);
         if (status == StripeGateway.CheckoutSessionStatus.OPEN
                 && !stripe.expireCheckoutSession(account, sessionId, "expire-" + sessionId)) {
             // paid (or expired) between our read and our expire: read again
             status = stripe.checkoutSessionStatus(account, sessionId);
         }
-        if (status == StripeGateway.CheckoutSessionStatus.COMPLETE) {
-            throw new BusinessRuleException(ErrorCode.PAYMENT_LINK_ALREADY_PAID,
-                    "The link of booking " + old.getBookingId() + " was paid a moment ago");
-        }
-        old.expire();
-        log.info("Payment link {} of booking {} invalidated by a new one", old.getId(), old.getBookingId());
+        return status;
     }
 
     private static Instant earlier(Instant a, Instant b) {
