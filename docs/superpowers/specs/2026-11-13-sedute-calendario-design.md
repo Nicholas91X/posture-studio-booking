@@ -38,7 +38,7 @@ La vista e il periodo stanno nell'indirizzo:
 - Senza `da` si vede la settimana (o il mese) di **oggi a Roma**.
 - Un `da` o un `giorno` che non è una data valida (`YYYY-MM-DD`) vale come assente. Un `vista` sconosciuto vale "prossime".
 - Schede, frecce, "Oggi" e caselle del mese sono **link** (`<Link>`) che cambiano la query: ricaricando, tornando indietro dalla pagina di una seduta o salvando il link si resta dove si era.
-- Sopra ogni griglia la riga di navigazione: `◂` **titolo del periodo** `▸`, e a destra un piccolo "Oggi" (pulsante secondario, pillola) che riporta al periodo corrente, **nascosto** quando ci si è già.
+- Sopra ogni griglia la riga di navigazione: a sinistra il **titolo del periodo**; a destra un piccolo "Oggi" (pillola indaco e pervinca: è orientamento, non azione) che riporta al periodo corrente, **nascosto** quando ci si è già, e le due frecce `‹` `›`. Il titolo sta a sinistra così non salta quando "Oggi" compare e scompare.
 
 Titoli: settimana "10 – 16 novembre 2026", a cavallo di mesi "27 ottobre – 2 novembre 2026", a cavallo di anni "29 dicembre 2025 – 4 gennaio 2026"; mese "Novembre 2026".
 
@@ -73,7 +73,7 @@ Una griglia CSS (`display: grid`):
 
 Griglia classica:
 
-- sette colonne lun–dom; cinque o sei righe secondo il mese (tutte le settimane che toccano il mese, da lunedì); i giorni dei mesi vicini **sbiaditi ma toccabili**;
+- sette colonne lun–dom; quattro, cinque o sei righe secondo il mese (tutte le settimane che toccano il mese, da lunedì: febbraio 2027 ne ha quattro, novembre 2026 sei); i giorni dei mesi vicini **sbiaditi ma toccabili**;
 - in ogni casella (un `<Link>` con `aria-label` "Giovedì 13 novembre, 2 sedute") il numero del giorno e un **puntino per seduta** nel colore dello stato, al massimo quattro, poi "+n";
 - **oggi**: il numero nel cerchio indaco; il **giorno scelto**: la casella piena d'indaco con il testo chiaro, come il giorno scelto nella pagina degli orari ("il blu è la scelta", D-086).
 
@@ -99,7 +99,7 @@ Giorno scelto di default: nel mese corrente **oggi**; negli altri mesi **nessuno
 
 | File | Cosa fa |
 |---|---|
-| `src/lib/calendar.ts` (nuovo) | Conti di calendario, funzioni pure senza React: `mondayOf(day)`, `weekOf(monday)` (7 giorni), `monthGridOf(firstOfMonth)` (35 o 42 giorni), `firstOfMonth(day)`, `addMonths`, `weekdayOf(day)`, `romeClock(instant)` (ora e minuto a Roma), `minutesBetween`, `lanesOf(intervals)` (corsie), `weekTitle`, `monthTitle`, `isDay(text)` (una data valida `YYYY-MM-DD`) |
+| `src/lib/calendar.ts` (nuovo) | Conti di calendario, funzioni pure senza React: `mondayOf(day)`, `weekOf(monday)` (7 giorni), `monthGridOf(firstOfMonth)` (28, 35 o 42 giorni), `firstOfMonth(day)`, `addMonths`, `weekdayOf(day)`, `romeClock(instant)` (ora e minuto a Roma), `minutesBetween`, `lanesOf(intervals)` (corsie), `weekTitle`, `monthTitle`, `isDay(text)` (una data valida `YYYY-MM-DD`) |
 | `src/lib/format.ts` | Aggiunte piccole se servono (es. il nome del mese) |
 | `src/components/calendar/WeekGrid.tsx` (nuovo) | La griglia settimanale: riceve le sedute della settimana (già filtrate), la mappa dei nomi e il lunedì; disegna |
 | `src/components/calendar/MonthGrid.tsx` (nuovo) | La griglia mensile e l'elenco del giorno scelto |
