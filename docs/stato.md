@@ -1,6 +1,6 @@
 # Stato del progetto
 
-Ultimo aggiornamento: 2026-11-13 (**passo 12 fatto**, D-083–D-087, unito in `main` con un merge (PR #9); dopo il merge: identità visiva del sito dello studio e "le mie sedute" a calendario; resta la prova manuale con Stripe dal sito; prossimo: passo 13, pannello)
+Ultimo aggiornamento: 2026-11-13 (**passo 12 fatto**, D-083–D-087, unito in `main` con un merge (PR #9); dopo il merge: documento di avvio in locale, identità visiva del sito dello studio e "le mie sedute" a calendario, uniti in `main` con il merge del branch `docs/local-startup`; resta la prova manuale con Stripe dal sito; prossimo: passo 13, pannello)
 
 ## Dove siamo
 
