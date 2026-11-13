@@ -12,6 +12,7 @@
     "api:types": "openapi-typescript openapi.json --output src/api/schema.d.ts",
     "api": "npm run api:contract && npm run api:types",
     "e2e": "playwright test",
+    "test:unit": "playwright test -c playwright.unit.config.ts",
     "e2e:install": "playwright install chromium"
   },
   "dependencies": {

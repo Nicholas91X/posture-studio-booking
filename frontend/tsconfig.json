@@ -39,6 +39,7 @@
     ".next/types/**/*.ts",
     "e2e/**/*.ts",
     "playwright.config.ts",
+    "playwright.unit.config.ts",
     "next.config.ts",
     ".next/dev/types/**/*.ts",
     ".next-e2e/types/**/*.ts",
