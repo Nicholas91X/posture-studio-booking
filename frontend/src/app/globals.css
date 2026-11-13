@@ -396,12 +396,16 @@ label {
 
 .tab {
   min-height: 40px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
   border: none;
   border-radius: 9px;
   background: transparent;
   color: var(--color-text-muted);
   font: inherit;
   font-weight: 600;
+  text-decoration: none;
   cursor: pointer;
 }
 
