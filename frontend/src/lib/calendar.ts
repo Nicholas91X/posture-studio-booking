@@ -42,3 +42,23 @@ export function mondayOf(day: Day): Day {
 export function weekOf(monday: Day): Day[] {
   return Array.from({ length: 7 }, (_, index) => addDays(monday, index));
 }
+
+/** "2026-11-13" → "2026-11-01" */
+export function firstOfMonth(day: Day): Day {
+  return `${day.slice(0, 7)}-01`;
+}
+
+/** The first of the month n months after (n < 0: before) the first of a month. */
+export function addMonths(first: Day, n: number): Day {
+  const [year, month] = partsOf(first);
+  return new Date(Date.UTC(year, month - 1 + n, 1)).toISOString().slice(0, 10);
+}
+
+/** The 28, 35 or 42 days of a month's grid: whole weeks from Monday, every week that touches the month. */
+export function monthGridOf(first: Day): Day[] {
+  const start = mondayOf(first);
+  const last = addDays(addMonths(first, 1), -1);
+  const end = addDays(mondayOf(last), 6);
+  const count = Math.round((utcOf(end).getTime() - utcOf(start).getTime()) / 86_400_000) + 1;
+  return Array.from({ length: count }, (_, index) => addDays(start, index));
+}
