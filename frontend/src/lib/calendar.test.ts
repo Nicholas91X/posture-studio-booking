@@ -1,7 +1,7 @@
 // The calendar maths (D-087). The process runs in New York's zone (playwright.unit.config.ts): nothing here may
 // depend on the clock of the computer.
 import { expect, test } from "@playwright/test";
-import { addMonths, firstOfMonth, hourRange, isDay, minutesBetween, mondayOf, monthGridOf, romeClock, romeMinutes, weekOf, weekdayOf } from "./calendar";
+import { addMonths, firstOfMonth, hourRange, isDay, lanesOf, minutesBetween, mondayOf, monthGridOf, romeClock, romeMinutes, weekOf, weekdayOf } from "./calendar";
 
 test("a valid day has the shape and exists", () => {
   expect(isDay("2026-11-13")).toBe(true);
@@ -90,4 +90,27 @@ test("the hours of the week grid: at least 9–19, wider when a session is outsi
   expect(hourRange([{ start: 510, end: 570 }])).toEqual({ from: 8, to: 19 }); // 8:30–9:30
   expect(hourRange([{ start: 1110, end: 1170 }])).toEqual({ from: 9, to: 20 }); // 18:30–19:30
   expect(hourRange([{ start: 1380, end: 1440 }])).toEqual({ from: 9, to: 24 }); // never past midnight
+});
+
+test("lanes: sessions that overlap stand side by side, the others take the whole width", () => {
+  expect(lanesOf([])).toEqual([]);
+
+  const alone = lanesOf([{ start: 600, end: 660 }]);
+  expect(alone).toEqual([{ item: { start: 600, end: 660 }, lane: 0, lanes: 1 }]);
+
+  // one after the other, touching: no overlap
+  const touching = lanesOf([{ start: 660, end: 720 }, { start: 600, end: 660 }]);
+  expect(touching.map((entry) => [entry.item.start, entry.lane, entry.lanes])).toEqual([[600, 0, 1], [660, 0, 1]]);
+
+  // two at the same time
+  const twins = lanesOf([{ start: 600, end: 660, id: "a" }, { start: 600, end: 660, id: "b" }]);
+  expect(twins.map((entry) => [entry.item.id, entry.lane, entry.lanes])).toEqual([["a", 0, 2], ["b", 1, 2]]);
+
+  // a long one with two short ones in a row beside it: the two short ones share the second lane
+  const chain = lanesOf([{ start: 600, end: 720, id: "long" }, { start: 630, end: 690, id: "first" }, { start: 690, end: 750, id: "second" }]);
+  expect(chain.map((entry) => [entry.item.id, entry.lane, entry.lanes])).toEqual([["long", 0, 2], ["first", 1, 2], ["second", 1, 2]]);
+
+  // a group of two, then one alone later in the day
+  const groups = lanesOf([{ start: 600, end: 660 }, { start: 600, end: 660 }, { start: 900, end: 960 }]);
+  expect(groups.map((entry) => entry.lanes)).toEqual([2, 2, 1]);
 });

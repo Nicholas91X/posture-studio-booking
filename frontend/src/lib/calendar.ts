@@ -96,3 +96,41 @@ export function hourRange(intervals: readonly Interval[]): { from: number; to: n
   }
   return { from: Math.max(from, 0), to: Math.min(to, 24) };
 }
+
+/** An interval with its lane (the first free one) and how many lanes its group of overlapping intervals needs. */
+export type Laned<T extends Interval> = { item: T; lane: number; lanes: number };
+
+/** The intervals of one day, sorted, side by side when they overlap: the width of a column is shared by `lanes`. */
+export function lanesOf<T extends Interval>(intervals: readonly T[]): Laned<T>[] {
+  const sorted = [...intervals].sort((a, b) => a.start - b.start || a.end - b.end);
+  const placed: Laned<T>[] = [];
+  let group: Laned<T>[] = [];
+  let laneEnds: number[] = []; // for each lane of the current group, when its last interval ends
+  let groupEnd = -Infinity;
+  const closeGroup = () => {
+    for (const entry of group) {
+      entry.lanes = laneEnds.length;
+    }
+    group = [];
+    laneEnds = [];
+  };
+  for (const item of sorted) {
+    if (item.start >= groupEnd) {
+      // nothing placed so far reaches this one: a new group
+      closeGroup();
+    }
+    let lane = laneEnds.findIndex((end) => end <= item.start);
+    if (lane === -1) {
+      lane = laneEnds.length;
+      laneEnds.push(item.end);
+    } else {
+      laneEnds[lane] = item.end;
+    }
+    const entry: Laned<T> = { item, lane, lanes: 0 };
+    group.push(entry);
+    placed.push(entry);
+    groupEnd = Math.max(groupEnd, item.end);
+  }
+  closeGroup();
+  return placed;
+}
