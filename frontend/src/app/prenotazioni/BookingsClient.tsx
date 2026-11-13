@@ -5,10 +5,12 @@ import { useSearchParams } from "next/navigation";
 import { useEffect, useMemo, useState } from "react";
 import { api, unwrap, type Schemas } from "@/api/client";
 import { BookingCard } from "@/components/BookingCard";
+import { PeriodNav } from "@/components/calendar/PeriodNav";
+import { WeekGrid } from "@/components/calendar/WeekGrid";
 import { ErrorNotice, Loading } from "@/components/Notice";
-import { firstOfMonth, isDay, mondayOf, type Day } from "@/lib/calendar";
-import { useDirectory } from "@/lib/directory";
-import { todayInRome } from "@/lib/format";
+import { firstOfMonth, isDay, mondayOf, weekOf, weekTitle, type Day } from "@/lib/calendar";
+import { useDirectory, type Directory } from "@/lib/directory";
+import { addDays, romeDay, todayInRome } from "@/lib/format";
 import { SHOWN_IN_CALENDAR } from "@/lib/labels";
 
 type Booking = Schemas["CustomerBookingView"];
@@ -73,9 +75,7 @@ export function BookingsClient() {
       {isCalendar ? <ErrorNotice error={allError} /> : null}
       {isCalendar && allError === null && (all === null || !directory.ready) ? <Loading /> : null}
       {view === "settimana" && all !== null && directory.ready ? (
-        <p className="muted">
-          Settimana di {mondayOf(anchor)}: {shown.length} sedute
-        </p>
+        <WeekView monday={mondayOf(anchor)} today={today} bookings={shown} directory={directory} />
       ) : null}
       {view === "mese" && all !== null && directory.ready ? (
         <p className="muted">
@@ -128,6 +128,29 @@ function BookingList({ period }: { period: Period }) {
         : bookings !== null && bookings.length > 0
           ? <Loading />
           : null}
+    </>
+  );
+}
+
+// the week of a Monday: the navigation, the grid with the sessions of those seven days, a word when there are none
+function WeekView({ monday, today, bookings, directory }: { monday: Day; today: Day; bookings: Booking[]; directory: Directory }) {
+  const days = weekOf(monday);
+  const inWeek = bookings.filter((booking) => days.includes(romeDay(booking.startsAt)));
+  return (
+    <>
+      <PeriodNav
+        unit="settimana"
+        title={weekTitle(monday)}
+        previous={`/prenotazioni?vista=settimana&da=${addDays(monday, -7)}`}
+        next={`/prenotazioni?vista=settimana&da=${addDays(monday, 7)}`}
+        today={monday === mondayOf(today) ? null : "/prenotazioni?vista=settimana"}
+      />
+      <WeekGrid days={days} today={today} bookings={inWeek} directory={directory} />
+      {inWeek.length === 0 ? (
+        <p className="muted">
+          Nessuna seduta questa settimana. <Link href="/">Prenotane una</Link>.
+        </p>
+      ) : null}
     </>
   );
 }
