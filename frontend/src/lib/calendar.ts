@@ -1,7 +1,7 @@
 // The calendar maths of the week and month views of "my sessions" (D-087). Pure functions, no React: the grids draw
 // only what these compute. A day is a string "2026-11-13", a day of the calendar in Rome (format.ts, D-069), never a
 // Date in the zone of the phone; a clock time is minutes since midnight on Rome's clock.
-import { addDays } from "./format";
+import { STUDIO_ZONE, addDays } from "./format";
 
 /** A day of the calendar, "2026-11-13". */
 export type Day = string;
@@ -61,4 +61,38 @@ export function monthGridOf(first: Day): Day[] {
   const end = addDays(mondayOf(last), 6);
   const count = Math.round((utcOf(end).getTime() - utcOf(start).getTime()) / 86_400_000) + 1;
   return Array.from({ length: count }, (_, index) => addDays(start, index));
+}
+
+/** Something that occupies minutes of a day, from start to end (minutes since midnight). */
+export type Interval = { start: number; end: number };
+
+// en-GB with h23 writes "09:05" and never "24:00"
+const clock = new Intl.DateTimeFormat("en-GB", { timeZone: STUDIO_ZONE, hour: "2-digit", minute: "2-digit", hourCycle: "h23" });
+
+/** Hour and minute of an instant on Rome's clock, whatever the zone of the phone. */
+export function romeClock(instant: string): { hour: number; minute: number } {
+  const [hour, minute] = clock.format(new Date(instant)).split(":").map(Number) as [number, number];
+  return { hour, minute };
+}
+
+/** Minutes since midnight on Rome's clock: 10:30 → 630. */
+export function romeMinutes(instant: string): number {
+  const { hour, minute } = romeClock(instant);
+  return hour * 60 + minute;
+}
+
+/** The minutes from one instant to another (elapsed time). */
+export function minutesBetween(start: string, end: string): number {
+  return Math.round((new Date(end).getTime() - new Date(start).getTime()) / 60_000);
+}
+
+/** The hours the week grid shows: from the first session to the last, at least 9–19 (an extent of the drawing, not a rule). */
+export function hourRange(intervals: readonly Interval[]): { from: number; to: number } {
+  let from = 9;
+  let to = 19;
+  for (const interval of intervals) {
+    from = Math.min(from, Math.floor(interval.start / 60));
+    to = Math.max(to, Math.ceil(interval.end / 60));
+  }
+  return { from: Math.max(from, 0), to: Math.min(to, 24) };
 }

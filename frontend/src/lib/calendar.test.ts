@@ -1,7 +1,7 @@
 // The calendar maths (D-087). The process runs in New York's zone (playwright.unit.config.ts): nothing here may
 // depend on the clock of the computer.
 import { expect, test } from "@playwright/test";
-import { addMonths, firstOfMonth, isDay, mondayOf, monthGridOf, weekOf, weekdayOf } from "./calendar";
+import { addMonths, firstOfMonth, hourRange, isDay, minutesBetween, mondayOf, monthGridOf, romeClock, romeMinutes, weekOf, weekdayOf } from "./calendar";
 
 test("a valid day has the shape and exists", () => {
   expect(isDay("2026-11-13")).toBe(true);
@@ -59,4 +59,35 @@ test("the grid of a month: whole weeks from Monday, as many as touch the month",
   expect(leap).toHaveLength(35);
   expect(leap[0]).toBe("2028-01-31");
   expect(leap[34]).toBe("2028-03-05");
+});
+
+test("the clock of Rome, whatever the zone of the process", () => {
+  // the process is in New York (playwright.unit.config.ts): 10:00 in Rome is 04:00 there
+  expect(romeClock("2026-11-16T10:00:00+01:00")).toEqual({ hour: 10, minute: 0 });
+  expect(romeClock("2026-11-16T09:30:00Z")).toEqual({ hour: 10, minute: 30 });
+  expect(romeMinutes("2026-11-16T10:30:00+01:00")).toBe(630);
+  expect(romeMinutes("2026-11-16T23:00:00Z")).toBe(0); // midnight in Rome: 0, never 24:00
+});
+
+test("the clock of Rome across the changes of the hour", () => {
+  // summer time begins on 2026-03-29 at 01:00 UTC: 09:00 UTC is 10:00 the day before, 11:00 from that day
+  expect(romeClock("2026-03-28T09:00:00Z")).toEqual({ hour: 10, minute: 0 });
+  expect(romeClock("2026-03-29T09:00:00Z")).toEqual({ hour: 11, minute: 0 });
+  expect(romeClock("2026-03-29T01:30:00Z")).toEqual({ hour: 3, minute: 30 });
+  // and ends on 2026-10-25 at 01:00 UTC
+  expect(romeClock("2026-10-24T09:00:00Z")).toEqual({ hour: 11, minute: 0 });
+  expect(romeClock("2026-10-25T09:00:00Z")).toEqual({ hour: 10, minute: 0 });
+});
+
+test("the minutes between two instants", () => {
+  expect(minutesBetween("2026-11-16T10:00:00+01:00", "2026-11-16T11:00:00+01:00")).toBe(60);
+  expect(minutesBetween("2026-11-16T10:00:00+01:00", "2026-11-16T10:30:00+01:00")).toBe(30);
+});
+
+test("the hours of the week grid: at least 9–19, wider when a session is outside", () => {
+  expect(hourRange([])).toEqual({ from: 9, to: 19 });
+  expect(hourRange([{ start: 600, end: 660 }])).toEqual({ from: 9, to: 19 });
+  expect(hourRange([{ start: 510, end: 570 }])).toEqual({ from: 8, to: 19 }); // 8:30–9:30
+  expect(hourRange([{ start: 1110, end: 1170 }])).toEqual({ from: 9, to: 20 }); // 18:30–19:30
+  expect(hourRange([{ start: 1380, end: 1440 }])).toEqual({ from: 9, to: 24 }); // never past midnight
 });
