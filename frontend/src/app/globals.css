@@ -658,6 +658,132 @@ label {
   }
 }
 
+/* the month: seven columns, a cell per day with a dot per session */
+.month {
+  display: grid;
+  grid-template-columns: repeat(7, minmax(0, 1fr));
+  gap: 2px;
+  background: var(--color-surface);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius);
+  padding: 0.5rem;
+  margin-bottom: 1rem;
+}
+
+.month-weekday {
+  padding-bottom: 0.25rem;
+  text-align: center;
+  font-size: 0.75rem;
+  color: var(--color-text-muted);
+}
+
+.month-day {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 0.2rem;
+  min-height: 52px;
+  padding: 0.3rem 0;
+  border-radius: var(--radius-small);
+  color: var(--color-text);
+  text-decoration: none;
+}
+
+.month-day:hover {
+  background: var(--color-periwinkle-tint);
+}
+
+.month-day.is-outside {
+  color: var(--color-text-muted);
+  opacity: 0.6;
+}
+
+.month-number {
+  display: inline-flex;
+  width: 1.7rem;
+  height: 1.7rem;
+  align-items: center;
+  justify-content: center;
+  border-radius: 50%;
+  font-weight: 600;
+}
+
+.month-day.is-today .month-number {
+  background: var(--color-indigo);
+  color: var(--color-on-indigo);
+}
+
+/* the chosen day: the whole cell in indigo, like the chosen day of the booking page */
+.month-day[aria-current="true"] {
+  background: var(--color-indigo);
+  color: var(--color-on-indigo);
+  opacity: 1;
+}
+
+.month-day[aria-current="true"] .month-number {
+  background: transparent;
+  color: inherit;
+}
+
+.month-dots {
+  display: flex;
+  align-items: center;
+  gap: 3px;
+  min-height: 6px;
+  font-size: 0.65rem;
+}
+
+.dot {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--color-text-muted);
+}
+
+.dot-success {
+  background: var(--color-success);
+}
+
+.dot-warning {
+  background: var(--color-warning);
+}
+
+.dot-danger {
+  background: var(--color-danger);
+}
+
+.month-day[aria-current="true"] .dot {
+  background: var(--color-on-indigo);
+}
+
+/* the sessions of the chosen day */
+.day-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+
+.day-row {
+  display: grid;
+  grid-template-columns: auto 1fr auto;
+  gap: 0.6rem;
+  align-items: center;
+  min-height: var(--tap);
+  padding: 0.5rem 0;
+  border-top: 1px solid var(--color-border);
+  color: var(--color-text);
+  text-decoration: none;
+}
+
+.day-row-time {
+  font-weight: 600;
+  white-space: nowrap;
+}
+
+.day-row-what {
+  min-width: 0;
+}
+
 /* ***** dialog ***** */
 
 .dialog-backdrop {

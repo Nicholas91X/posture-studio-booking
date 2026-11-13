@@ -5,10 +5,11 @@ import { useSearchParams } from "next/navigation";
 import { useEffect, useMemo, useState } from "react";
 import { api, unwrap, type Schemas } from "@/api/client";
 import { BookingCard } from "@/components/BookingCard";
+import { MonthGrid } from "@/components/calendar/MonthGrid";
 import { PeriodNav } from "@/components/calendar/PeriodNav";
 import { WeekGrid } from "@/components/calendar/WeekGrid";
 import { ErrorNotice, Loading } from "@/components/Notice";
-import { firstOfMonth, isDay, mondayOf, weekOf, weekTitle, type Day } from "@/lib/calendar";
+import { addMonths, firstOfMonth, isDay, mondayOf, monthGridOf, monthTitle, weekOf, weekTitle, type Day } from "@/lib/calendar";
 import { useDirectory, type Directory } from "@/lib/directory";
 import { addDays, romeDay, todayInRome } from "@/lib/format";
 import { SHOWN_IN_CALENDAR } from "@/lib/labels";
@@ -32,6 +33,7 @@ export function BookingsClient() {
   const today = todayInRome();
   const from = query.get("da");
   const anchor: Day = isDay(from) ? from : today;
+  const chosenParam = query.get("giorno");
   const isCalendar = view === "settimana" || view === "mese";
 
   // every session once, for the grids: read the first time a grid is shown, kept while the page is open
@@ -78,9 +80,7 @@ export function BookingsClient() {
         <WeekView monday={mondayOf(anchor)} today={today} bookings={shown} directory={directory} />
       ) : null}
       {view === "mese" && all !== null && directory.ready ? (
-        <p className="muted">
-          Mese di {firstOfMonth(anchor)}: {shown.length} sedute
-        </p>
+        <MonthView first={firstOfMonth(anchor)} chosenParam={chosenParam} today={today} bookings={shown} directory={directory} />
       ) : null}
     </>
   );
@@ -149,6 +149,43 @@ function WeekView({ monday, today, bookings, directory }: { monday: Day; today: 
       {inWeek.length === 0 ? (
         <p className="muted">
           Nessuna seduta questa settimana. <Link href="/">Prenotane una</Link>.
+        </p>
+      ) : null}
+    </>
+  );
+}
+
+// the month of a first day: the navigation, the grid, the chosen day (today in the current month, else none) listed
+function MonthView({
+  first,
+  chosenParam,
+  today,
+  bookings,
+  directory,
+}: {
+  first: Day;
+  chosenParam: string | null;
+  today: Day;
+  bookings: Booking[];
+  directory: Directory;
+}) {
+  const cells = monthGridOf(first);
+  const chosen = isDay(chosenParam) && cells.includes(chosenParam) ? chosenParam : first === firstOfMonth(today) ? today : null;
+  const inGrid = bookings.filter((booking) => cells.includes(romeDay(booking.startsAt)));
+  const inMonth = inGrid.some((booking) => romeDay(booking.startsAt).slice(0, 7) === first.slice(0, 7));
+  return (
+    <>
+      <PeriodNav
+        unit="mese"
+        title={monthTitle(first)}
+        previous={`/prenotazioni?vista=mese&da=${addMonths(first, -1)}`}
+        next={`/prenotazioni?vista=mese&da=${addMonths(first, 1)}`}
+        today={first === firstOfMonth(today) ? null : "/prenotazioni?vista=mese"}
+      />
+      <MonthGrid first={first} cells={cells} chosen={chosen} today={today} bookings={inGrid} directory={directory} />
+      {!inMonth ? (
+        <p className="muted">
+          Nessuna seduta in questo mese. <Link href="/">Prenotane una</Link>.
         </p>
       ) : null}
     </>
