@@ -122,3 +122,44 @@ Come le prove dei passi 9 e 10 (guida 32, parte 13.1; guida 37, parte 12.1), ma 
 
 ### Domanda 6: Come scrivi test end-to-end che non dipendano dai dati di chi li lancia?
 **Risposta modello.** Un backend dedicato su un'altra porta, con un database creato da zero a ogni giro e i valori sensibili fissati (admin dei test, nessun pagamento vero); indirizzi email diversi a ogni giro; i dati preparati con le API, come farebbe il pannello; i codici di accesso letti dalla casella di prova cercando per oggetto e per id, non per ora, perché gli orologi di container e computer possono non coincidere.
+
+## Dopo il passo: le viste a calendario (2026-11-13, D-087)
+
+### Cosa è stato costruito
+| File | Cosa fa |
+|---|---|
+| `src/lib/calendar.ts` + `calendar.test.ts` | I conti di calendario, funzioni pure: lunedì di un giorno, settimane, griglia del mese (28, 35 o 42 giorni), orologio di Roma di un istante, corsie per le sovrapposizioni, titoli. 13 prove senza server (`npm run test:unit`) |
+| `playwright.unit.config.ts` | Il runner di Playwright usato per le funzioni pure: `testDir: "src"`, nessun browser, processo nel fuso di New York |
+| `src/components/calendar/WeekGrid.tsx` | La settimana: griglia CSS con una riga ogni 5 minuti, blocchi-link nei colori dello stato, corsie, oggi e l'ora attuale |
+| `src/components/calendar/MonthGrid.tsx` | Il mese: caselle-link con i puntini, il giorno scelto elencato sotto |
+| `src/components/calendar/PeriodNav.tsx` | Titolo del periodo, "Oggi", frecce: tutti link |
+| `src/app/prenotazioni/BookingsClient.tsx` | Le quattro schede, `vista`/`da`/`giorno` dalla query string, il caricamento di tutte le sedute, i filtri per stato e periodo |
+| `src/lib/labels.ts` | `SHOWN_IN_CALENDAR`: quali stati le griglie disegnano |
+
+### Concetti chiave
+**Lo stato nell'indirizzo.** Vista e periodo stanno nella query string e si cambiano con link, non con uno stato nascosto nel componente: così il tasto indietro, il ricaricamento e un link salvato fanno la cosa giusta senza codice in più. In React si legge con `useSearchParams`, e la pagina si ricalcola da sola quando l'indirizzo cambia.
+
+**Griglia CSS con righe di 5 minuti.** `display: grid` con 8 colonne (ore + 7 giorni) e una riga per ogni 5 minuti (4 px): un blocco dichiara `grid-row: inizio / fine` e il browser lo mette e lo dimensiona da solo, per qualsiasi durata. Le righe delle ore sono un `repeating-linear-gradient` sulle colonne, non 70 elementi. Elementi diversi possono occupare le stesse celle: le colonne sotto, i blocchi sopra (`z-index`).
+
+**Giorni di calendario come stringhe.** Un giorno è `"2026-11-13"`, e per contare giorni e settimane si usa `Date.UTC` a mezzanotte UTC: nessun fuso, nessun cambio dell'ora. Ora e minuto di un istante si leggono con `Intl.DateTimeFormat` e `timeZone: "Europe/Rome"`: la stessa seduta è alle 10:00 anche per un cliente all'estero. I test girano con il processo nel fuso di New York per provarlo.
+
+**Funzioni pure provate da sole.** I conti stanno in un modulo senza React e senza rete; il runner di Playwright, che il progetto già ha, li esegue in pochi secondi con una seconda configurazione senza `webServer`. Nessuna dipendenza nuova.
+
+**Partizione degli intervalli (corsie).** Per sedute sovrapposte: ordinate per inizio, a ognuna la prima corsia il cui ultimo intervallo è già finito; quando nessuna seduta già messa arriva alla prossima, il gruppo si chiude e tutti i suoi membri sanno quante corsie dividono.
+
+### Decisioni
+- D-087: le viste a calendario di "le mie sedute".
+
+### Errori fatti e come sono stati corretti
+1. **Il disegno diceva "cinque o sei righe" per il mese.** Febbraio 2027 inizia di lunedì e ha 28 giorni: quattro righe esatte. Trovato scrivendo i casi di prova, prima del codice; corretto il documento e provato con un test.
+2. **Un esempio con il giorno sbagliato.** Negli esempi del disegno il 13 novembre 2026 era "giovedì": è venerdì. I fatti di calendario usati nelle prove sono stati verificati uno per uno prima di scriverle (e il test `formatDayWithWeekday("2026-11-13") → "Venerdì 13 novembre"` lo fissa).
+
+### Domande da colloquio
+### Domanda 1: Perché la vista e il periodo stanno nella query string e non in uno `useState`?
+**Risposta modello.** Perché sono stato di navigazione, non di interazione: l'utente si aspetta che indietro, ricarica e link salvato lo riportino alla stessa settimana. Con lo stato nell'indirizzo lo fa il browser; con uno `useState` dovrei ricostruirlo a mano, e perderei il link condivisibile.
+
+### Domanda 2: Come disegni un blocco dalle 10:30 alle 11:15 in una griglia CSS?
+**Risposta modello.** Scelgo un'unità di riga (5 minuti, 4 px) e dichiaro `grid-row: r(630) / r(675)`, dove `r` converte i minuti dalla prima ora mostrata in un indice di riga. Il browser calcola posizione e altezza; io non faccio aritmetica di pixel. Due sedute sovrapposte ottengono una corsia e una larghezza in percentuale.
+
+### Domanda 3: Perché i conti di calendario non usano `new Date(anno, mese, giorno)`?
+**Risposta modello.** Perché quel costruttore lavora nel fuso del dispositivo: a mezzanotte di un cambio dell'ora, o su un telefono all'estero, "aggiungi un giorno" può sbagliare. Uso `Date.UTC` solo per contare, e `Intl` con `Europe/Rome` solo per leggere ore e minuti di un istante: due strumenti, ciascuno per il suo compito.
