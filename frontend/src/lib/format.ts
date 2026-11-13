@@ -65,11 +65,28 @@ export function addDays(day: string, n: number): string {
 }
 
 const calendarDay = new Intl.DateTimeFormat("it-IT", { timeZone: "UTC", day: "numeric", month: "long", year: "numeric" });
+const calendarWeekday = new Intl.DateTimeFormat("it-IT", { timeZone: "UTC", weekday: "short" });
+const calendarDayLong = new Intl.DateTimeFormat("it-IT", { timeZone: "UTC", weekday: "long", day: "numeric", month: "long" });
+
+/** A day of the calendar at midnight UTC, formatted in UTC: the words of that day, whatever the zone of the phone. */
+function utcOf(day: string): Date {
+  const [year, month, date] = day.split("-").map(Number) as [number, number, number];
+  return new Date(Date.UTC(year, month - 1, date));
+}
 
 /** A day of the calendar as it is: "2027-02-09" → "9 febbraio 2027", whatever the zone of the phone. */
 export function formatCalendarDay(day: string): string {
-  const [year, month, date] = day.split("-").map(Number) as [number, number, number];
-  return calendarDay.format(new Date(Date.UTC(year, month - 1, date)));
+  return calendarDay.format(utcOf(day));
+}
+
+/** "2026-11-09" → "lun" */
+export function formatWeekday(day: string): string {
+  return calendarWeekday.format(utcOf(day));
+}
+
+/** "2026-11-13" → "Venerdì 13 novembre" */
+export function formatDayWithWeekday(day: string): string {
+  return capitalize(calendarDayLong.format(utcOf(day)));
 }
 
 /** "Anna Rossi" */

@@ -1,7 +1,23 @@
 // The calendar maths (D-087). The process runs in New York's zone (playwright.unit.config.ts): nothing here may
 // depend on the clock of the computer.
 import { expect, test } from "@playwright/test";
-import { addMonths, firstOfMonth, hourRange, isDay, lanesOf, minutesBetween, mondayOf, monthGridOf, romeClock, romeMinutes, weekOf, weekdayOf } from "./calendar";
+import {
+  addMonths,
+  firstOfMonth,
+  hourRange,
+  isDay,
+  lanesOf,
+  minutesBetween,
+  mondayOf,
+  monthGridOf,
+  monthTitle,
+  romeClock,
+  romeMinutes,
+  weekOf,
+  weekTitle,
+  weekdayOf,
+} from "./calendar";
+import { formatDayWithWeekday, formatWeekday } from "./format";
 
 test("a valid day has the shape and exists", () => {
   expect(isDay("2026-11-13")).toBe(true);
@@ -113,4 +129,19 @@ test("lanes: sessions that overlap stand side by side, the others take the whole
   // a group of two, then one alone later in the day
   const groups = lanesOf([{ start: 600, end: 660 }, { start: 600, end: 660 }, { start: 900, end: 960 }]);
   expect(groups.map((entry) => entry.lanes)).toEqual([2, 2, 1]);
+});
+
+test("the titles of a week and of a month", () => {
+  expect(weekTitle("2026-11-09")).toBe("9 – 15 novembre 2026");
+  expect(weekTitle("2026-10-26")).toBe("26 ottobre – 1 novembre 2026");
+  expect(weekTitle("2025-12-29")).toBe("29 dicembre 2025 – 4 gennaio 2026");
+  expect(monthTitle("2026-11-01")).toBe("Novembre 2026");
+  expect(monthTitle("2027-01-01")).toBe("Gennaio 2027");
+});
+
+test("a day of the calendar in words, whatever the zone of the process", () => {
+  expect(formatWeekday("2026-11-09")).toBe("lun");
+  expect(formatWeekday("2026-11-15")).toBe("dom");
+  expect(formatDayWithWeekday("2026-11-13")).toBe("Venerdì 13 novembre");
+  expect(formatDayWithWeekday("2026-11-01")).toBe("Domenica 1 novembre");
 });

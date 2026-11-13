@@ -134,3 +134,27 @@ export function lanesOf<T extends Interval>(intervals: readonly T[]): Laned<T>[]
   closeGroup();
   return placed;
 }
+
+const monthName = new Intl.DateTimeFormat("it-IT", { timeZone: "UTC", month: "long" });
+const monthAndYear = new Intl.DateTimeFormat("it-IT", { timeZone: "UTC", month: "long", year: "numeric" });
+
+/** "9 – 15 novembre 2026"; across months "26 ottobre – 1 novembre 2026"; across years "29 dicembre 2025 – 4 gennaio 2026". */
+export function weekTitle(monday: Day): string {
+  const sunday = addDays(monday, 6);
+  const [fromYear, fromMonth, fromDate] = partsOf(monday);
+  const [toYear, toMonth, toDate] = partsOf(sunday);
+  const to = `${toDate} ${monthName.format(utcOf(sunday))} ${toYear}`;
+  if (fromYear !== toYear) {
+    return `${fromDate} ${monthName.format(utcOf(monday))} ${fromYear} – ${to}`;
+  }
+  if (fromMonth !== toMonth) {
+    return `${fromDate} ${monthName.format(utcOf(monday))} – ${to}`;
+  }
+  return `${fromDate} – ${to}`;
+}
+
+/** "Novembre 2026" */
+export function monthTitle(first: Day): string {
+  const text = monthAndYear.format(utcOf(first));
+  return text.charAt(0).toUpperCase() + text.slice(1);
+}
