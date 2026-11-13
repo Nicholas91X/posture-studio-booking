@@ -91,7 +91,7 @@ p {
   font-weight: 600;
   font-size: 1.05rem;
   letter-spacing: 0.01em;
-  color: var(--color-heading);
+  color: var(--color-indigo); /* the name in the colour of the mark beside it */
   text-decoration: none;
   white-space: nowrap;
 }
@@ -113,10 +113,15 @@ p {
   text-decoration: none;
 }
 
+/* where you are: in the indigo of the logo, with a thin line on the phone's bar */
 .top-nav a[aria-current="page"],
 .bottom-nav a[aria-current="page"] {
-  color: var(--color-primary);
+  color: var(--color-indigo);
   font-weight: 600;
+}
+
+.bottom-nav a[aria-current="page"] {
+  box-shadow: inset 0 3px 0 var(--color-indigo);
 }
 
 main {
@@ -322,6 +327,7 @@ label {
 
 .notice {
   border-radius: var(--radius-small);
+  border-left: 4px solid var(--color-periwinkle); /* a stripe in the tone of the message */
   padding: 0.75rem 1rem;
   margin-bottom: 1rem;
   background: var(--color-info-bg);
@@ -329,16 +335,19 @@ label {
 
 .notice-error {
   background: var(--color-danger-bg);
+  border-left-color: var(--color-danger);
   color: var(--color-danger);
 }
 
 .notice-warning {
   background: var(--color-warning-bg);
+  border-left-color: var(--color-warning);
   color: var(--color-warning);
 }
 
 .notice-success {
   background: var(--color-success-bg);
+  border-left-color: var(--color-success);
   color: var(--color-success);
 }
 
@@ -398,7 +407,7 @@ label {
 
 .tab[aria-selected="true"] {
   background: var(--color-surface);
-  color: var(--color-text);
+  color: var(--color-indigo);
   box-shadow: var(--shadow);
 }
 
@@ -431,10 +440,11 @@ label {
   line-height: 1.2;
 }
 
+/* what you chose is indigo, what you do (the brown button) stays the colour of the site's "Prenota" */
 .day[aria-pressed="true"] {
-  border-color: var(--color-primary);
-  background: var(--color-primary);
-  color: var(--color-on-primary);
+  border-color: var(--color-indigo);
+  background: var(--color-indigo);
+  color: var(--color-on-indigo);
 }
 
 .slots {
@@ -445,18 +455,23 @@ label {
 
 .slot {
   min-height: var(--tap);
-  border: 1px solid var(--color-primary);
+  border: 1px solid var(--color-periwinkle);
   border-radius: var(--radius-small);
   background: var(--color-surface);
-  color: var(--color-primary);
+  color: var(--color-indigo);
   font: inherit;
   font-weight: 600;
   cursor: pointer;
 }
 
+.slot:hover {
+  background: var(--color-periwinkle-tint);
+}
+
 .slot[aria-pressed="true"] {
-  background: var(--color-primary);
-  color: var(--color-on-primary);
+  border-color: var(--color-indigo);
+  background: var(--color-indigo);
+  color: var(--color-on-indigo);
 }
 
 /* ***** dialog ***** */

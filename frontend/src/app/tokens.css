@@ -1,6 +1,7 @@
 /* The look of the site in one place (step 12): colours, type, radii. Taken from the studio's own site
-   (centroposturaleapuano.com, D-086): cream and sand backgrounds, the warm brown of its buttons, the slate blue of
-   its calm sections, Playfair Display for the headings. Only these values change, never the pages.
+   (centroposturaleapuano.com, D-086): cream and sand backgrounds, the warm brown of its buttons, Playfair Display
+   for the headings, and the indigo and periwinkle of its logo for the details. Only these values change, never the
+   pages.
    Dark mode follows the phone's setting: the site has none, so it is the same palette turned down. */
 :root {
   --color-bg: #f8f1e6; /* sand, between the site's cream #fefbee and its sand #f1e7db */
@@ -15,15 +16,19 @@
   --color-primary-hover: #855e4c;
   --color-on-primary: #ffffff;
   --color-link: #6b4423; /* the deeper brown of the site, readable on cream */
-  --color-accent: #6e91a5; /* the slate blue of the site's calm sections */
+  /* the two colours of the logo, for the details: the name, where you are, what you chose, the focus */
+  --color-indigo: #383870;
+  --color-on-indigo: #ffffff;
+  --color-periwinkle: #a0b8f0;
+  --color-periwinkle-tint: #eaf0fc;
   --color-success: #3a6b3f;
   --color-success-bg: #e6efe2;
   --color-warning: #8a5a00;
   --color-warning-bg: #f8ecd2;
   --color-danger: #a1261b;
   --color-danger-bg: #f6e2dd;
-  --color-info-bg: #e4edf1; /* a tint of the slate blue */
-  --color-focus: #6e91a5;
+  --color-info-bg: var(--color-periwinkle-tint);
+  --color-focus: var(--color-indigo);
 
   --font-body: system-ui, -apple-system, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
   --font-display: var(--font-playfair), "Playfair Display", Georgia, "Times New Roman", serif;
@@ -49,15 +54,19 @@
     --color-primary-hover: #d7b5a4;
     --color-on-primary: #231a14;
     --color-link: #d7b5a4;
-    --color-accent: #9fbfd0;
+    /* in the dark the periwinkle takes the place of the indigo, which would sink into the background */
+    --color-indigo: #a0b8f0;
+    --color-on-indigo: #1b1b3a;
+    --color-periwinkle: #5c6aa8;
+    --color-periwinkle-tint: #262a44;
     --color-success: #9ccf9f;
     --color-success-bg: #1f3524;
     --color-warning: #f0c36a;
     --color-warning-bg: #3b2d15;
     --color-danger: #f0a097;
     --color-danger-bg: #3d201c;
-    --color-info-bg: #243139;
-    --color-focus: #9fbfd0;
+    --color-info-bg: var(--color-periwinkle-tint);
+    --color-focus: var(--color-indigo);
     --shadow: none;
   }
 }
