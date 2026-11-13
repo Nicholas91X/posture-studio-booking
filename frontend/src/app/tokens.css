@@ -1,51 +1,72 @@
-/* The look of the site in one place (step 12): colours, type, radii. Neutral until the studio sends its own;
-   then only these values change, never the pages. Dark mode follows the phone's setting. */
+/* The look of the site in one place (step 12): colours, type, radii. Taken from the studio's own site
+   (centroposturaleapuano.com, D-086): cream and sand backgrounds, the warm brown of its buttons, Playfair Display
+   for the headings, and the indigo and periwinkle of its logo for the details. Only these values change, never the
+   pages.
+   Dark mode follows the phone's setting: the site has none, so it is the same palette turned down. */
 :root {
-  --color-bg: #f6f6f4;
-  --color-surface: #ffffff;
-  --color-surface-muted: #efefec;
-  --color-text: #1d1f21;
-  --color-text-muted: #5d6166;
-  --color-border: #dcddd8;
-  --color-primary: #2f5d62;
-  --color-primary-hover: #244a4e;
+  --color-bg: #f8f1e6; /* sand, between the site's cream #fefbee and its sand #f1e7db */
+  --color-bg-top: #fdf9f1; /* the cream, at the top of every page */
+  --color-surface: #fffdf8; /* warm white: the cards of the site */
+  --color-surface-muted: #f1e7db; /* the site's sand */
+  --color-text: #2d2d2d; /* the site's text */
+  --color-text-muted: #6f5f52;
+  --color-heading: #5a3a1e; /* the site's headings */
+  --color-border: #e3d5c4;
+  --color-primary: #966c58; /* the site's buttons */
+  --color-primary-hover: #855e4c;
   --color-on-primary: #ffffff;
-  --color-success: #2e6b3a;
-  --color-success-bg: #e6f2e8;
+  --color-link: #6b4423; /* the deeper brown of the site, readable on cream */
+  /* the two colours of the logo, for the details: the name, where you are, what you chose, the focus */
+  --color-indigo: #383870;
+  --color-on-indigo: #ffffff;
+  --color-periwinkle: #a0b8f0;
+  --color-periwinkle-tint: #eaf0fc;
+  --color-success: #3a6b3f;
+  --color-success-bg: #e6efe2;
   --color-warning: #8a5a00;
-  --color-warning-bg: #fbf1dc;
+  --color-warning-bg: #f8ecd2;
   --color-danger: #a1261b;
-  --color-danger-bg: #fbe7e5;
-  --color-info-bg: #e7eff0;
-  --color-focus: #4b8a90;
+  --color-danger-bg: #f6e2dd;
+  --color-info-bg: var(--color-periwinkle-tint);
+  --color-focus: var(--color-indigo);
 
   --font-body: system-ui, -apple-system, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
-  --radius: 12px;
-  --radius-small: 8px;
-  --shadow: 0 1px 2px rgb(0 0 0 / 0.06), 0 1px 8px rgb(0 0 0 / 0.04);
+  --font-display: var(--font-playfair), "Playfair Display", Georgia, "Times New Roman", serif;
+  --radius: 16px;
+  --radius-small: 12px;
+  --radius-pill: 999px;
+  --shadow: 0 6px 20px rgb(107 68 35 / 0.1); /* the soft brown shadow of the site's cards */
   --page-width: 40rem;
   --tap: 44px; /* the smallest target for a finger */
 }
 
 @media (prefers-color-scheme: dark) {
   :root {
-    --color-bg: #151718;
-    --color-surface: #1f2224;
-    --color-surface-muted: #2a2d30;
-    --color-text: #eceeef;
-    --color-text-muted: #a3a8ad;
-    --color-border: #363a3e;
-    --color-primary: #6fb3b9;
-    --color-primary-hover: #8cc5ca;
-    --color-on-primary: #0f1a1b;
-    --color-success: #8fd19e;
-    --color-success-bg: #1d3323;
+    --color-bg: #1b1714;
+    --color-bg-top: #211c18;
+    --color-surface: #262019;
+    --color-surface-muted: #332a22;
+    --color-text: #f3ece2;
+    --color-text-muted: #b8aa9a;
+    --color-heading: #e9d6c3;
+    --color-border: #3f352b;
+    --color-primary: #c9a28f;
+    --color-primary-hover: #d7b5a4;
+    --color-on-primary: #231a14;
+    --color-link: #d7b5a4;
+    /* in the dark the periwinkle takes the place of the indigo, which would sink into the background */
+    --color-indigo: #a0b8f0;
+    --color-on-indigo: #1b1b3a;
+    --color-periwinkle: #5c6aa8;
+    --color-periwinkle-tint: #262a44;
+    --color-success: #9ccf9f;
+    --color-success-bg: #1f3524;
     --color-warning: #f0c36a;
-    --color-warning-bg: #3a2f17;
-    --color-danger: #f19a91;
-    --color-danger-bg: #3d1f1c;
-    --color-info-bg: #1d2e30;
-    --color-focus: #8cc5ca;
+    --color-warning-bg: #3b2d15;
+    --color-danger: #f0a097;
+    --color-danger-bg: #3d201c;
+    --color-info-bg: var(--color-periwinkle-tint);
+    --color-focus: var(--color-indigo);
     --shadow: none;
   }
 }

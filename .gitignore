@@ -37,3 +37,6 @@ Thumbs.db
 test-results/
 playwright-report/
 *.tsbuildinfo
+
+# screenshots and pages saved by the Playwright browser of Claude Code
+.playwright-mcp/

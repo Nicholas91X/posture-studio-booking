@@ -110,11 +110,16 @@ export function settings(changes: Partial<Schemas["PractitionerSettings"]> = {})
   };
 }
 
+const romeDay = new Intl.DateTimeFormat("en-CA", { timeZone: "Europe/Rome", year: "numeric", month: "2-digit", day: "2-digit" });
+
+/** The day in Rome of an instant, "2026-11-16". */
+export function dayInRome(instant: string): string {
+  return romeDay.format(new Date(instant));
+}
+
 /** Today in Rome, 2026-11-12. */
 export function todayInRome(): string {
-  return new Intl.DateTimeFormat("en-CA", { timeZone: "Europe/Rome", year: "numeric", month: "2-digit", day: "2-digit" }).format(
-    new Date(),
-  );
+  return romeDay.format(new Date());
 }
 
 /** Signs a customer in through the pages, as a person does: email, code from the email, and names the first time. */

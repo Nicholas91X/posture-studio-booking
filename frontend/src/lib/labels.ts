@@ -24,6 +24,24 @@ export const BOOKING_STATUS: Record<BookingStatus, { text: string; tone: Tone }>
   WITHDRAWN: { text: "Ritirata da te", tone: "neutral" },
 };
 
+// Which states the week and month views draw (D-087): a session that is no longer an appointment is not an entry in a
+// calendar. What a view shows, not a rule: the states are the backend's, and the list shows them all. Record<...>:
+// a new state in the contract must be decided here
+export const SHOWN_IN_CALENDAR: Record<BookingStatus, boolean> = {
+  PENDING_PAYMENT: true,
+  PENDING_APPROVAL: true,
+  CONFIRMED: true,
+  COMPLETED: true,
+  NO_SHOW: true,
+  CANCELLED_IN_TIME: false,
+  CANCELLED_LATE: false,
+  CANCELLED_BY_STUDIO: false,
+  EXPIRED: false,
+  REJECTED: false,
+  APPROVAL_EXPIRED: false,
+  WITHDRAWN: false,
+};
+
 export const PAID_WITH: Record<PaidWith, string> = {
   CARD: "Pagata con carta",
   CREDIT: "Pagata con un credito",

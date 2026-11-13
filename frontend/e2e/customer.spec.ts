@@ -2,7 +2,7 @@
 // the admin creates Anna, Anna sets a service, her hours and three credits for Maria (through the APIs, the panel is
 // step 13); then Maria uses the site, and a new customer signs in for the first time.
 import { devices, expect, test, type Browser, type BrowserContext, type Page } from "@playwright/test";
-import { Actor, email, expectFitsTheScreen, settings, signInThroughThePages, todayInRome, type Schemas } from "./support";
+import { Actor, dayInRome, email, expectFitsTheScreen, settings, signInThroughThePages, todayInRome, type Schemas } from "./support";
 import { FRONTEND_URL } from "./urls";
 
 test.describe.configure({ mode: "serial" });
@@ -90,6 +90,20 @@ test("un cliente nuovo accede con il codice, dà nome e cognome, torna dove era 
 
   await page.goto("/crediti");
   await expect(page).toHaveURL(/\/accedi\?torna=%2Fcrediti/);
+});
+
+// found by Nicholas on 2026-11-12: the admin on the customer's site had no way out, "Esci" was only in the profile
+test("l'admin sul sito dei clienti legge che non è la sua sezione, e può uscire", async ({ page }) => {
+  await page.goto("/profilo");
+  await signInThroughThePages(page, "admin@e2e.local");
+
+  await expect(page).toHaveURL(`${FRONTEND_URL}/profilo`);
+  await expect(page.getByText("Questa sezione è per i clienti")).toBeVisible();
+  await page.getByRole("button", { name: "Esci" }).click();
+  await expect(page).toHaveURL(`${FRONTEND_URL}/`);
+
+  await page.goto("/profilo");
+  await expect(page).toHaveURL(/\/accedi\?torna=%2Fprofilo/);
 });
 
 test("il sito dice prima che con Anna non si paga online, e mostra i crediti di Maria", async () => {
@@ -209,6 +223,34 @@ test("un codice d'errore sconosciuto diventa una frase generica, mai un testo te
   }
 });
 
+test("la settimana e il mese mostrano la seduta confermata, non quelle annullate, e portano alla sua pagina", async () => {
+  const { page } = maria;
+  await chooseTheFirstFreeSlot(page);
+  await page.getByRole("button", { name: "Prenota" }).click();
+  await expect(page.getByText("Seduta confermata: hai usato un tuo credito.")).toBeVisible();
+  const id = /\/prenotazioni\/(\d+)/.exec(page.url())?.[1];
+  expect(id).toBeDefined();
+  const upcoming = (await (await page.request.get("/api/customer/bookings?period=upcoming")).json()) as Schemas["CustomerBookingView"][];
+  const confirmed = upcoming.find((booking) => booking.id === Number(id));
+  expect(confirmed).toBeDefined();
+  const day = dayInRome(confirmed?.startsAt ?? "");
+
+  // the week: the confirmed session is a block; the ones cancelled and withdrawn before are not drawn
+  await page.goto(`/prenotazioni?vista=settimana&da=${day}`);
+  const block = page.getByRole("link", { name: /Seduta posturale con Anna Rossi, Confermata$/ });
+  await expect(block).toHaveCount(1);
+  await expect(page.getByRole("link", { name: /Cancellata|Ritirata/ })).toHaveCount(0);
+  await expectFitsTheScreen(page);
+  await block.click();
+  await expect(page).toHaveURL(`${FRONTEND_URL}/prenotazioni/${id}`);
+
+  // the month: a dot on its day, and the row below the grid
+  await page.goto(`/prenotazioni?vista=mese&da=${day}&giorno=${day}`);
+  await expect(page.getByRole("link", { name: /, 1 seduta$/ })).toHaveCount(1);
+  await expect(page.getByRole("link", { name: /Seduta posturale con Anna Rossi/ })).toBeVisible();
+  await expectFitsTheScreen(page);
+});
+
 test("ogni pagina sta nello schermo del telefono", async ({ browser }) => {
   const { page } = maria;
   const shots = test.info().outputPath();
@@ -228,6 +270,8 @@ test("ogni pagina sta nello schermo del telefono", async ({ browser }) => {
   await visit("/prenotazioni", "05-sedute", "Le mie sedute");
   await page.getByRole("tab", { name: "Passate" }).click();
   await expectFitsTheScreen(page);
+  await visit("/prenotazioni?vista=settimana", "05b-settimana", /^\d+ .* \d{4}$/);
+  await visit("/prenotazioni?vista=mese", "05c-mese", /^[A-Z][a-zù]+ \d{4}$/);
   // one of Maria's sessions, asked through the site with her own session
   const mine = (await (await page.request.get("/api/customer/bookings")).json()) as Schemas["CustomerBookingView"][];
   expect(mine.length).toBeGreaterThan(0);
