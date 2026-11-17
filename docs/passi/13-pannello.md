@@ -1,6 +1,6 @@
 # Passo 13 — Il pannello
 
-> **Stato: in revisione** (2026-11-17), branch `feat/step-13-panel`, PR #10. 1137 test del backend, 15 test end-to-end e 16 prove unitarie del frontend verdi. Push vera ricevuta in sviluppo dal Chrome del computer (Nicholas, 2026-11-17). La prova su iPhone e Android veri è un criterio del passo 14.
+> **Stato: chiuso** (2026-11-17). Unito in `main` con un merge (PR #10, branch `feat/step-13-panel`). 1137 test del backend, 15 test end-to-end e 16 prove unitarie del frontend verdi. Push vera ricevuta in sviluppo dal Chrome del computer (Nicholas, 2026-11-17). La prova su iPhone e Android veri è un criterio del passo 14.
 
 ## Obiettivo
 
