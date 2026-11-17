@@ -5,6 +5,7 @@ import { PanelPage } from "@/components/panel/PanelPage";
 import { useSession } from "@/lib/session";
 
 const PRACTITIONER_SECTIONS = [
+  { href: "/pannello/agende", title: "Agende a confronto", text: "Occupato e libero di tutti, e gli orari liberi insieme per le sedute di coppia." },
   { href: "/pannello/orari", title: "Orari e assenze", text: "Le versioni settimanali degli orari, ferie e assenze." },
   { href: "/pannello/catalogo", title: "Servizi e pacchetti", text: "Cosa offri, a che prezzo, quali servizi sono valutazioni." },
   { href: "/pannello/impostazioni", title: "Impostazioni e notifiche", text: "Approvazione, preavvisi, crediti, le notifiche su questo telefono." },

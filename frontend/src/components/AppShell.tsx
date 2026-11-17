@@ -41,7 +41,7 @@ function isCurrent(pathname: string, href: string): boolean {
     return pathname === "/" || pathname.startsWith("/professionisti");
   }
   if (href === "/pannello") {
-    return pathname === "/pannello" || pathname.startsWith("/pannello/sedute");
+    return pathname === "/pannello" || pathname.startsWith("/pannello/sedute") || pathname.startsWith("/pannello/agende");
   }
   if (href === "/pannello/altro") {
     return pathname === href || UNDER_ALTRO.some((section) => pathname.startsWith(section));
