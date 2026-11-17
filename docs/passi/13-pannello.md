@@ -1,6 +1,6 @@
 # Passo 13 — Il pannello
 
-> **Stato: in revisione** (2026-11-17), branch `feat/step-13-panel`. 1137 test del backend, 15 test end-to-end e 16 prove unitarie del frontend verdi. Manca la prova della push vera dal Chrome normale del computer (procedura qui sotto). La prova su iPhone e Android veri è un criterio del passo 14.
+> **Stato: in revisione** (2026-11-17), branch `feat/step-13-panel`, PR #10. 1137 test del backend, 15 test end-to-end e 16 prove unitarie del frontend verdi. Push vera ricevuta in sviluppo dal Chrome del computer (Nicholas, 2026-11-17). La prova su iPhone e Android veri è un criterio del passo 14.
 
 ## Obiettivo
 
@@ -12,7 +12,7 @@ Il codice del frontend l'ha scritto Claude. Le tre API mancanti le ha scritte Cl
 
 - [x] **I sei pezzi funzionano da telefono (simulato)**: 5 test end-to-end su un Pixel 7 simulato. In più, un giro di schermate di tutte le pagine (non versionato), guardate una per una, con il controllo "niente più largo dello schermo".
 - [x] **Le frasi dei codici d'errore del pannello sono nel dizionario**: `errors.ts`, nessun "Operazione non possibile" rimasto. In più `PANEL_WORDING` per i codici che il professionista deve leggere in un altro modo rispetto al cliente.
-- [ ] **Push ricevuta in sviluppo dal browser del computer**: la catena è provata a pezzi (sotto), ma la push vera da Chrome è **da fare a mano** (procedura sotto). Il Chrome avviato da Playwright non si collega al servizio push di Google.
+- [x] **Push ricevuta in sviluppo dal browser del computer**: **fatta da Nicholas il 2026-11-17** con il suo Chrome, come Anna, su `http://127.0.0.1:3000` (errore 8): popup, permesso, notifica di prova arrivata. "Funziona tutto perfettamente". Prima, la catena era stata provata a pezzi (sotto), perché il Chrome avviato da Playwright non si collega al servizio push di Google.
 - [x] **Test end-to-end verdi; suite completa verde**: 15 su 15 (10 del cliente, 5 del pannello); 1137 test del backend; 16 prove unitarie.
 - [x] **stato.md aggiornato** (prova su iPhone e Android al passo 14); PR verso main; riepilogo.
 
@@ -54,16 +54,16 @@ Test: 2 in `BookingPanelApiTest` per il cliente creato, 4 per la stanza, 4 in `P
 | `next.config.ts` | `sw.js` mai in cache, il tipo del manifest |
 | `e2e/panel.spec.ts` | I 5 percorsi del brief |
 
-## Prova della push in sviluppo (da fare a mano)
+## Prova della push in sviluppo (fatta il 2026-11-17)
 
 **Già provato**, a pezzi:
 - il backend manda la push di prova e la cifra come vuole un browser: `PushSubscriptionApiTest`, decifrata dal browser finto dei test;
 - il service worker la mostra con titolo, testo, icona e indirizzo giusti: push consegnata a Chrome con il protocollo di debug (`ServiceWorker.deliverPushMessage`), notifica letta con `getNotifications()`;
 - popup, permesso concesso, registrazione del service worker: provati in un Chrome avviato da Playwright, che però non riceve una sottoscrizione da Google e resta in attesa (da qui il limite di 20 secondi, errore 4).
 
-**Procedura**, con il Chrome o l'Edge normale del computer:
+**Procedura**, con il Chrome o l'Edge normale del computer (esito: tutto come previsto):
 1. Backend con il codice di questo branch (`.\mvnw.cmd spring-boot:run`), frontend (`npm run dev`), database e Mailpit accesi.
-2. `http://localhost:3000/pannello`, accedi come professionista (codice da Mailpit).
+2. `http://127.0.0.1:3000/pannello` (o `localhost`, se i suoi cookie non sono troppi: errore 8), accedi come professionista: in sviluppo Anna Rossi, `anna@example.com`, codice da Mailpit. L'account di `ADMIN_EMAIL` è l'admin, che non ha notifiche.
 3. Nel popup "Attiva le notifiche": **Attiva**, poi **Consenti** nella domanda del browser.
 4. Altro › Impostazioni e notifiche › **Manda una notifica di prova**: la pagina dice "Notifica di prova inviata" e compare la notifica di Windows "Notifiche attive".
 5. Toccandola si apre il pannello.
@@ -101,6 +101,7 @@ Test: 2 in `BookingPanelApiTest` per il cliente creato, 4 per la stanza, 4 in `P
 5. **"Conto di incasso" fermo su "Caricamento…"** per un professionista senza conto. Il 404 diventava `null`, e `useApi` usa `null` per "non ancora caricato". Visto nelle schermate; ora la risposta è `{ account: null }`.
 6. **Il test dell'admin falliva solo nella suite completa.** L'admin chiedeva il quarto codice in un minuto: il limite di D-050 è 3 ogni 15 minuti per indirizzo, quindi il backend risponde 202 e non manda niente, apposta. Ora l'admin entra una volta sola dal browser, e la preparazione usa la stessa sessione per le API (`Actor.of`).
 7. **La vista giorno nascondeva i nomi** nei blocchi: la regola del passo 12 li toglie sul telefono, pensata per sette colonne strette. Con una colonna sola c'è spazio: `week-single`.
+8. **Il sito non faceva accedere: 400 a ogni chiamata** (trovato da Nicholas nella prova della push). Il browser manda a `localhost` i cookie di tutti i progetti aperti su `localhost`, qualunque porta; insieme superavano gli 8 KB di intestazioni che Tomcat accetta, e Tomcat risponde 400 prima di arrivare all'applicazione. Riprodotto con `curl` (9 KB di cookie: 400; 3 KB: 200). Non è un difetto del codice, e in produzione il dominio ha solo i suoi cookie: in sviluppo si usa `127.0.0.1`, che per il browser è un altro sito (`avvio.md`, problemi già incontrati). Prima ancora, il backend nuovo non partiva perché quello vecchio, acceso da giorni, teneva la 8080.
 
 ## Domande da colloquio
 
