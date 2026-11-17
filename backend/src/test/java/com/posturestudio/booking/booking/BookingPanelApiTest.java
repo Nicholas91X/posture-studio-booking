@@ -120,11 +120,26 @@ public class BookingPanelApiTest {
         assertThat(result).bodyJson().extractingPath("$.status").isEqualTo("CONFIRMED");
         // the practitioner sees at once how it is paid (guide 39, part 5)
         assertThat(result).bodyJson().extractingPath("$.paidWith").isEqualTo("IN_STUDIO");
+        // nobody had this email: the panel asks to check it (D-088)
+        assertThat(result).bodyJson().extractingPath("$.customerCreated").isEqualTo(true);
         assertThat(mvc.get().uri("/api/panel/bookings/" + id).with(sessions.practitioner(anna)))
                 .hasStatusOk()
                 .bodyJson().extractingPath("$.startsAt").isEqualTo("2026-11-10T09:00:00+01:00");
         // 404 and not 403 for someone else's booking
         assertThat(mvc.get().uri("/api/panel/bookings/" + id).with(sessions.practitioner(marco))).hasStatus(HttpStatus.NOT_FOUND);
+    }
+
+    // the email of an existing customer: not created, and nothing else about them in the answer (D-066, D-088)
+    @Test
+    void anExistingCustomerIsNotCreated() throws Exception {
+        data.weekdays(Long.parseLong(anna), "2026-11-02");
+
+        MvcTestResult result = bookFromPanel(anna, "cliente@example.com");
+
+        assertThat(result).hasStatus(HttpStatus.CREATED);
+        assertThat(result).bodyJson().extractingPath("$.customerCreated").isEqualTo(false);
+        assertThat(result).bodyJson().extractingPath("$.customerId").isEqualTo((int) customerOf(waiting));
+        assertThat(result.getResponse().getContentAsString()).doesNotContain("firstName", "lastName", "email");
     }
 
     @Test
@@ -171,6 +186,54 @@ public class BookingPanelApiTest {
         assertThat(body).doesNotContain("Segreto", "segreto@example.com", "\"id\":" + marcosBooking + ",");
     }
 
+    // ***** the room before booking (D-088) *****
+
+    // the same flag as the lists, for a slot not booked yet: only the shared times, nothing about Marco's customer
+    @Test
+    void theRoomCheckShowsTheEvaluationOfTheOtherPractitioner() throws Exception {
+        long marcoId = Long.parseLong(marco);
+        long segreto = data.customer("segreto@example.com", "Segreto", "Cliente");
+        long marcosBooking = data.booking(marcoId, data.evaluation(marcoId), segreto,
+                "2026-11-10T09:30+01:00", "2026-11-10T10:00+01:00", "CONFIRMED");
+        long annasBookings = countBookingsOf(anna);
+
+        MvcTestResult result = roomCheck(anna, serviceOf(waiting), "2026-11-10T09:00:00+01:00");
+
+        assertThat(result).hasStatusOk();
+        // Anna's 60 minutes from 9:00 share 9:30-10:00 with the evaluation
+        assertThat(result).bodyJson().isStrictlyEqualTo("""
+                [{"start": "2026-11-10T09:30:00+01:00", "end": "2026-11-10T10:00:00+01:00"}]""");
+        assertThat(result.getResponse().getContentAsString()).doesNotContain("Segreto", String.valueOf(marcosBooking));
+        // a question, not a booking: nothing written
+        assertThat(countBookingsOf(anna)).isEqualTo(annasBookings);
+    }
+
+    // a session of Marco that is not an evaluation, next to Anna's that is not one either: no flag
+    @Test
+    void theRoomCheckIgnoresTwoOrdinarySessions() {
+        long marcoId = Long.parseLong(marco);
+        data.booking(marcoId, data.service(marcoId, 60), data.customer("altro@example.com"),
+                "2026-11-10T09:00+01:00", "2026-11-10T10:00+01:00", "CONFIRMED");
+
+        assertThat(roomCheck(anna, serviceOf(waiting), "2026-11-10T09:00:00+01:00"))
+                .hasStatusOk()
+                .bodyJson().isStrictlyEqualTo("[]");
+    }
+
+    // Marco's service is not Anna's: 404, as everything of someone else
+    @Test
+    void theRoomCheckOfAnotherPractitionersServiceIsNotFound() {
+        long marcosService = data.service(Long.parseLong(marco), 60);
+
+        assertThat(roomCheck(anna, marcosService, "2026-11-10T09:00:00+01:00")).hasStatus(HttpStatus.NOT_FOUND);
+    }
+
+    @Test
+    void theRoomCheckWithoutTheStartAnswers400() {
+        assertThat(mvc.get().uri("/api/panel/bookings/room-overlaps?serviceId=" + serviceOf(waiting))
+                .with(sessions.practitioner(anna))).hasStatus(HttpStatus.BAD_REQUEST);
+    }
+
     @Test
     void theRequestsListShowsTheWaitingRequest() {
         assertThat(mvc.get().uri("/api/panel/bookings/requests").with(sessions.practitioner(anna)))
@@ -206,6 +269,19 @@ public class BookingPanelApiTest {
                          "customer": {"email": "%s", "firstName": "Mario", "lastName": "Rossi"}}
                         """.formatted(serviceOf(waiting), email))
                 .exchange();
+    }
+
+    private MvcTestResult roomCheck(String practitioner, long serviceId, String startsAt) {
+        return mvc.get().uri("/api/panel/bookings/room-overlaps")
+                .queryParam("serviceId", String.valueOf(serviceId))
+                .queryParam("startsAt", startsAt)
+                .with(sessions.practitioner(practitioner))
+                .exchange();
+    }
+
+    private long countBookingsOf(String practitioner) {
+        return jdbc.queryForObject("select count(*) from booking where practitioner_id = ?", Long.class,
+                Long.parseLong(practitioner));
     }
 
     private long customerOf(long booking) {

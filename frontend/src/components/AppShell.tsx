@@ -5,24 +5,59 @@ import Link from "next/link";
 import { usePathname } from "next/navigation";
 import type { ReactNode } from "react";
 import { brand } from "@/brand";
-import { useSession } from "@/lib/session";
+import { useSession, type Role } from "@/lib/session";
 
-const LINKS = [
+type NavLink = { href: string; label: string };
+
+// the customer's site (step 12)
+const SITE: readonly NavLink[] = [
   { href: "/", label: "Prenota" },
   { href: "/prenotazioni", label: "Le mie sedute" },
   { href: "/crediti", label: "Crediti" },
   { href: "/profilo", label: "Profilo" },
-] as const;
+];
+
+// the panel (step 13): what each role sees. Hidden is not forbidden: the backend decides (D-051)
+const PANEL: Record<Exclude<Role, "CUSTOMER">, readonly NavLink[]> = {
+  PRACTITIONER: [
+    { href: "/pannello", label: "Agenda" },
+    { href: "/pannello/richieste", label: "Richieste" },
+    { href: "/pannello/prenota", label: "Prenota" },
+    { href: "/pannello/clienti", label: "Clienti" },
+    { href: "/pannello/altro", label: "Altro" },
+  ],
+  ADMIN: [
+    { href: "/pannello/professionisti", label: "Professionisti" },
+    { href: "/pannello/conti", label: "Conti" },
+    { href: "/pannello/altro", label: "Altro" },
+  ],
+};
+
+// the sections of "Altro" light it up too
+const UNDER_ALTRO = ["/pannello/orari", "/pannello/catalogo", "/pannello/impostazioni"];
 
 function isCurrent(pathname: string, href: string): boolean {
-  return href === "/" ? pathname === "/" || pathname.startsWith("/professionisti") : pathname.startsWith(href);
+  if (href === "/") {
+    return pathname === "/" || pathname.startsWith("/professionisti");
+  }
+  if (href === "/pannello") {
+    return pathname === "/pannello" || pathname.startsWith("/pannello/sedute");
+  }
+  if (href === "/pannello/altro") {
+    return pathname === href || UNDER_ALTRO.some((section) => pathname.startsWith(section));
+  }
+  return pathname.startsWith(href);
 }
 
 export function AppShell({ children }: { children: ReactNode }) {
   const pathname = usePathname();
   const { session } = useSession();
+  const inPanel = pathname.startsWith("/pannello");
+  const panelRole = session.state === "signed-in" && session.role !== "CUSTOMER" ? session.role : null;
+  // in the panel, the links of the role that is signed in; none while the session is unknown or for a customer
+  const items = inPanel ? (panelRole === null ? [] : PANEL[panelRole]) : SITE;
 
-  const links = LINKS.map((link) => (
+  const links = items.map((link) => (
     <Link key={link.href} href={link.href} aria-current={isCurrent(pathname, link.href) ? "page" : undefined}>
       {link.label}
     </Link>
@@ -32,9 +67,9 @@ export function AppShell({ children }: { children: ReactNode }) {
     <>
       <header className="app-header">
         <div className="app-header-inner">
-          <Link href="/" className="brand">
+          <Link href={inPanel ? "/pannello" : "/"} className="brand">
             <Image src="/logo-mark.png" alt="" width={36} height={36} priority />
-            <span>{brand.name}</span>
+            <span>{inPanel ? "Pannello" : brand.name}</span>
           </Link>
           <nav className="top-nav" aria-label="Sezioni">
             {links}
@@ -47,9 +82,11 @@ export function AppShell({ children }: { children: ReactNode }) {
         </div>
       </header>
       <main>{children}</main>
-      <nav className="bottom-nav" aria-label="Sezioni">
-        {links}
-      </nav>
+      {items.length > 0 ? (
+        <nav className="bottom-nav" aria-label="Sezioni">
+          {links}
+        </nav>
+      ) : null}
     </>
   );
 }

@@ -130,7 +130,7 @@ Stampa `Your webhook signing secret is whsec_...`: deve essere uguale a `STRIPE_
 ## Usare il sistema in locale
 
 - **Cliente**: dal sito, "Accedi" con un'email qualsiasi (anche inventata): il codice arriva in Mailpit. Al primo accesso il sito chiede nome e cognome.
-- **Admin e professionisti**: il loro pannello web è del passo 13. Fino ad allora si usano le API da PowerShell con `tools/api.ps1`, che tiene una sessione per persona e manda il gettone CSRF:
+- **Admin e professionisti**: il **pannello**, `http://localhost:3000/pannello` (dal passo 13). Si accede come sul sito, con l'email (l'admin con `ADMIN_EMAIL`, solo email, D-056); la home del sito manda da sola un professionista al pannello e l'admin all'elenco dei professionisti. Le API restano usabili da PowerShell con `tools/api.ps1`, che tiene una sessione per persona e manda il gettone CSRF:
 
   ```powershell
   . .\tools\api.ps1
@@ -141,6 +141,7 @@ Stampa `Your webhook signing secret is whsec_...`: deve essere uguale a `STRIPE_
   ```
 
   `ApiForget admin` dimentica la sessione. Un professionista entra allo stesso modo con la sua email (`Api anna ...`).
+- **Notifiche push in locale** (passo 13): `localhost` vale come indirizzo sicuro, quindi bastano Chrome o Edge **normali** sul computer (non quello avviato da Playwright, che non si collega al servizio push di Google). Entra nel pannello come professionista, "Attiva" nel popup (o Altro › Impostazioni e notifiche › Attiva le notifiche), consenti, poi "Manda una notifica di prova": deve comparire "Notifiche attive". Serve che il backend esca su Internet in HTTPS verso `fcm.googleapis.com`. Per vedere di nuovo il popup dopo "Più tardi": negli strumenti per sviluppatori, Application › Local storage › togli `pannello.notifiche.piu-tardi`.
 - **Carte di prova di Stripe**: `4242 4242 4242 4242`, una data futura qualsiasi, un CVC qualsiasi. La procedura completa della prova dal sito è in `passi/12-frontend-cliente.md`.
 
 ---
@@ -163,7 +164,8 @@ I due file generati si committano (D-083).
 | Test | Da dove | Comando | Note |
 |---|---|---|---|
 | Backend (tutti) | `backend/` | `.\mvnw.cmd clean test` | Testcontainers avvia un PostgreSQL suo: serve solo Docker acceso |
-| End-to-end del sito | `frontend/` | `npm run e2e` | avviano da soli un backend sulla **8081** (database `posture_studio_e2e`, cancellato e ricreato a ogni giro) e un sito sulla **3001**, accanto a quelli di sviluppo; servono il PostgreSQL e il Mailpit di Compose accesi e il `.env`; le schermate del telefono restano in `frontend/test-results/` (non versionata) |
+| Prove unitarie del frontend | `frontend/` | `npm run test:unit` | funzioni pure (calendario, date e prezzi dei moduli), senza server |
+| End-to-end del sito e del pannello | `frontend/` | `npm run e2e` | avviano da soli un backend sulla **8081** (database `posture_studio_e2e`, cancellato e ricreato a ogni giro) e un sito sulla **3001**, accanto a quelli di sviluppo; servono il PostgreSQL e il Mailpit di Compose accesi e il `.env`; le schermate del telefono restano in `frontend/test-results/` (non versionata) |
 
 ---
 
@@ -185,4 +187,6 @@ I due file generati si committano (D-083).
 | L'accesso con SMS non compare nel sito | `SMS_TO_MAILPIT` non è `true` | aggiungerlo e riavviare il backend |
 | `npm run api` fallisce con 404 | il contratto è spento | `OPENAPI_ENABLED=true` e riavviare il backend |
 | Dopo il pagamento il sito resta su "Pagamento in verifica" e poi dice che la conferma non è arrivata | `stripe listen` spento, o il suo `whsec_` diverso da quello del `.env` | accenderlo; se il segreto è cambiato, aggiornare il `.env`, riavviare il backend e `stripe events resend <evt>` |
+| Ogni chiamata al backend dal browser risponde 400, anche "Mandami il codice"; da `curl` funziona | i cookie di tutti i progetti aperti su `localhost` (qualunque porta) superano gli 8 KB di intestazioni che il backend accetta (trovato il 2026-11-17) | aprire il sito su `http://127.0.0.1:3000`, che ha i suoi cookie; oppure cancellare i cookie di `localhost` (F12 › Application › Cookies) |
+| `Port 8080 was already in use` all'avvio del backend | un backend di prima è ancora acceso, magari in un altro terminale | Ctrl+C in quel terminale, o `Stop-Process -Id <pid>` (il pid con `Get-NetTCPConnection -LocalPort 8080`) |
 | Da un telefono vero nella stessa rete l'accesso non resta | il cookie di sessione è `Secure`: funziona solo su `localhost` o in HTTPS | provare con la simulazione del telefono nel browser; HTTPS vero al passo 14 |

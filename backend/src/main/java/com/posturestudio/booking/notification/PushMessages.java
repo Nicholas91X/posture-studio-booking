@@ -40,6 +40,7 @@ class PushMessages {
 
     // news, not a request with a deadline: a phone off for a day still gets it, after that it is old
     static final Duration SOLD_PACKAGE_TTL = Duration.ofDays(1);
+    static final Duration TEST_TTL = Duration.ofMinutes(10);
 
     private final String appUrl;
 
@@ -87,6 +88,14 @@ class PushMessages {
             case CreditExtended extended -> Optional.empty();
             case CreditAdjusted adjusted -> Optional.empty();
         };
+    }
+
+    // The test push of the panel (D-088): no booking, nothing private. Ten minutes: a phone off longer than that
+    // does not need to show it later
+    PushMessage test() {
+        return new PushMessage(new PushPayload("Notifiche attive",
+                "Questa è una notifica di prova: le richieste da approvare arriveranno così.", appUrl, "test"),
+                TEST_TTL);
     }
 
     // after the deadline the request is closed, and a push saying "answer by 22:00" at 23:00 is noise:

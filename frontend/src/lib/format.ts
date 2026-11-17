@@ -112,3 +112,57 @@ export function creditsText(count: number): string {
 function capitalize(text: string): string {
   return text.charAt(0).toUpperCase() + text.slice(1);
 }
+
+/** The offset of Rome's clock at an instant, in minutes: 60 in winter, 120 in summer. */
+function romeOffsetMinutes(at: Date): number {
+  const name = new Intl.DateTimeFormat("en-US", { timeZone: STUDIO_ZONE, timeZoneName: "longOffset" })
+    .formatToParts(at)
+    .find((part) => part.type === "timeZoneName")?.value;
+  const match = /GMT([+-])(\d{2}):(\d{2})/.exec(name ?? "");
+  if (match === null) {
+    return 0;
+  }
+  const minutes = Number(match[2]) * 60 + Number(match[3]);
+  return match[1] === "-" ? -minutes : minutes;
+}
+
+const two = (value: number) => String(value).padStart(2, "0");
+
+/**
+ * A day and a time on Rome's clock, as the practitioner types them, as the instant the backend wants:
+ * ("2026-11-10", "09:30") → "2026-11-10T09:30:00+01:00", ("2026-07-10", "09:30") → "…+02:00". Only a conversion
+ * (step 13): whether that time can be booked is the backend's answer.
+ */
+export function romeDateTime(day: string, clockTime: string): string {
+  const [year, month, date] = day.split("-").map(Number) as [number, number, number];
+  const [hour, minute] = clockTime.split(":").map(Number) as [number, number];
+  const asIfUtc = Date.UTC(year, month - 1, date, hour, minute);
+  // the offset at the guessed instant, then again at the corrected one: right also on the days the clock changes
+  let offset = romeOffsetMinutes(new Date(asIfUtc));
+  offset = romeOffsetMinutes(new Date(asIfUtc - offset * 60_000));
+  const sign = offset < 0 ? "-" : "+";
+  const absolute = Math.abs(offset);
+  return `${day}T${two(hour)}:${two(minute)}:00${sign}${two(Math.floor(absolute / 60))}:${two(absolute % 60)}`;
+}
+
+/** An instant as Rome's clock time for an input, "09:30". */
+export function romeClockTime(instant: string): string {
+  return new Intl.DateTimeFormat("en-GB", { timeZone: STUDIO_ZONE, hour: "2-digit", minute: "2-digit", hourCycle: "h23" }).format(
+    new Date(instant),
+  );
+}
+
+/** "30,00" or "30" or "30.5" → 3000 or 3050 cents; null when it is not an amount. Typing only: the price is the backend's. */
+export function parseEuro(text: string): number | null {
+  const clean = text.trim().replace(/\s|€/g, "").replace(",", ".");
+  if (!/^\d+(\.\d{1,2})?$/.test(clean)) {
+    return null;
+  }
+  const [units, decimals = ""] = clean.split(".") as [string, string?];
+  return Number(units) * 100 + Number(decimals.padEnd(2, "0"));
+}
+
+/** 3050 → "30,50", for an input to edit. */
+export function euroInput(cents: number): string {
+  return `${Math.floor(cents / 100)},${two(cents % 100)}`;
+}

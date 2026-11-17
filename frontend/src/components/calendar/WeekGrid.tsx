@@ -1,28 +1,40 @@
 import Link from "next/link";
 import type { CSSProperties } from "react";
-import type { Schemas } from "@/api/client";
 import { hourRange, lanesOf, minutesBetween, romeMinutes, type Day } from "@/lib/calendar";
-import type { Directory } from "@/lib/directory";
 import { formatDayWithWeekday, formatTime, formatWeekday, romeDay } from "@/lib/format";
-import { BOOKING_STATUS } from "@/lib/labels";
+import type { Tone } from "@/lib/labels";
 
-type Booking = Schemas["CustomerBookingView"];
+/** One block of the grid: a session of the customer (step 12) or of the practitioner (step 13). */
+export type GridEvent = {
+  key: number;
+  startsAt: string;
+  endsAt: string;
+  href: string;
+  tone: Tone;
+  // what the block says, e.g. "Seduta con Anna Rossi" or "Mario Bianchi"
+  what: string;
+  // the state in words, for the screen reader
+  status: string;
+  // a mark on the block: the panel's flags (outside working hours, evaluation in the room, D-049)
+  flag?: string;
+};
 
 const UNIT_MINUTES = 5; // one grid row
 const ROW_PX = 4; // 48 px per hour
 const HEAD_ROWS = 1; // the first grid row is the day names
 
-// The week as the phone's calendar shows it (D-087): seven columns, one grid row per five minutes, every session a
-// block from its start to its end on Rome's clock. Only drawing: which sessions, and of which days, is decided before
-export function WeekGrid({ days, today, bookings, directory }: { days: Day[]; today: Day; bookings: Booking[]; directory: Directory }) {
+// The week (or a single day) as the phone's calendar shows it (D-087): one column per day, one grid row per five
+// minutes, every session a block from its start to its end on Rome's clock. Only drawing: which sessions, of which
+// days, with which words, is decided by the page
+export function WeekGrid({ days, today, events }: { days: Day[]; today: Day; events: GridEvent[] }) {
   const placed = days.map((day) =>
     lanesOf(
-      bookings
-        .filter((booking) => romeDay(booking.startsAt) === day)
-        .map((booking) => {
-          const start = romeMinutes(booking.startsAt);
+      events
+        .filter((event) => romeDay(event.startsAt) === day)
+        .map((event) => {
+          const start = romeMinutes(event.startsAt);
           // never past the bottom of its column (a session over midnight does not exist in the studio's hours)
-          return { booking, start, end: Math.min(start + minutesBetween(booking.startsAt, booking.endsAt), 24 * 60) };
+          return { event, start, end: Math.min(start + minutesBetween(event.startsAt, event.endsAt), 24 * 60) };
         }),
     ),
   );
@@ -32,10 +44,13 @@ export function WeekGrid({ days, today, bookings, directory }: { days: Day[]; to
   const hours = Array.from({ length: range.to - range.from }, (_, index) => range.from + index);
   const todayIndex = days.indexOf(today);
   const now = todayIndex === -1 ? null : romeMinutes(new Date().toISOString());
-  const style: CSSProperties = { gridTemplateRows: `auto repeat(${rows}, ${ROW_PX}px)` };
+  const style: CSSProperties = {
+    gridTemplateRows: `auto repeat(${rows}, ${ROW_PX}px)`,
+    gridTemplateColumns: `2.6rem repeat(${days.length}, minmax(0, 1fr))`,
+  };
 
   return (
-    <div className="week" style={style}>
+    <div className={days.length === 1 ? "week week-single" : "week"} style={style}>
       <div className="week-corner" aria-hidden="true" />
       {days.map((day, index) => (
         <div key={day} className={day === today ? "week-head is-today" : "week-head"} style={{ gridColumn: index + 2 }}>
@@ -52,21 +67,23 @@ export function WeekGrid({ days, today, bookings, directory }: { days: Day[]; to
       ))}
       {days.map((day, index) =>
         (placed[index] ?? []).map(({ item, lane, lanes }) => {
-          const { booking } = item;
-          const status = BOOKING_STATUS[booking.status];
-          const what = `${directory.serviceName(booking.practitionerId, booking.serviceId)} con ${directory.practitionerName(booking.practitionerId)}`;
+          const { event } = item;
           const startRow = rowOf(item.start);
           const endRow = Math.max(startRow + 1, rowOf(item.end));
+          const flag = event.flag === undefined ? "" : `, ${event.flag}`;
           return (
             <Link
-              key={booking.id}
-              href={`/prenotazioni/${booking.id}`}
-              className={`event event-${status.tone}`}
+              key={event.key}
+              href={event.href}
+              className={`event event-${event.tone}${event.flag === undefined ? "" : " event-flagged"}`}
               style={{ gridColumn: index + 2, gridRow: `${startRow} / ${endRow}`, left: `${(lane / lanes) * 100}%`, width: `calc(${100 / lanes}% - 2px)` }}
-              aria-label={`${formatDayWithWeekday(day)}, ${formatTime(booking.startsAt)}–${formatTime(booking.endsAt)}, ${what}, ${status.text}`}
+              aria-label={`${formatDayWithWeekday(day)}, ${formatTime(event.startsAt)}–${formatTime(event.endsAt)}, ${event.what}, ${event.status}${flag}`}
             >
-              <span className="event-time">{formatTime(booking.startsAt)}</span>
-              <span className="event-what">{what}</span>
+              <span className="event-time">
+                {event.flag === undefined ? null : <span aria-hidden="true">⚠ </span>}
+                {formatTime(event.startsAt)}
+              </span>
+              <span className="event-what">{event.what}</span>
             </Link>
           );
         }),

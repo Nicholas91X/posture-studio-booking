@@ -3081,15 +3081,15 @@
           "required": true
         },
         "responses": {
-          "200": {
+          "201": {
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/PanelBookingView"
+                  "$ref": "#/components/schemas/PanelBookingCreated"
                 }
               }
             },
-            "description": "OK"
+            "description": "Created"
           },
           "400": {
             "content": {
@@ -3188,6 +3188,129 @@
                   "type": "array",
                   "items": {
                     "$ref": "#/components/schemas/PanelBookingRow"
+                  }
+                }
+              }
+            },
+            "description": "OK"
+          },
+          "400": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiProblem"
+                }
+              }
+            },
+            "description": "Invalid request: wrong format, or invalid fields (errors)"
+          },
+          "401": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiProblem"
+                }
+              }
+            },
+            "description": "Nobody is signed in, or a wrong or expired access code (code)"
+          },
+          "403": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiProblem"
+                }
+              }
+            },
+            "description": "Not allowed for this account, a missing CSRF token, or a deactivated account (code)"
+          },
+          "404": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiProblem"
+                }
+              }
+            },
+            "description": "Not found, or someone else's: the same answer"
+          },
+          "409": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiProblem"
+                }
+              }
+            },
+            "description": "A business rule forbids it now (code)"
+          },
+          "429": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiProblem"
+                }
+              }
+            },
+            "description": "Too many requests: Retry-After says in how many seconds"
+          },
+          "500": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiProblem"
+                }
+              }
+            },
+            "description": "Unexpected error"
+          },
+          "503": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiProblem"
+                }
+              }
+            },
+            "description": "A service the request needs did not answer (code, when known)"
+          }
+        },
+        "tags": [
+          "booking-panel-controller"
+        ]
+      }
+    },
+    "/api/panel/bookings/room-overlaps": {
+      "get": {
+        "operationId": "roomOverlaps",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "serviceId",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "format": "int64"
+            }
+          },
+          {
+            "in": "query",
+            "name": "startsAt",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "date-time"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/RoomOverlap"
                   }
                 }
               }
@@ -5306,6 +5429,106 @@
         },
         "responses": {
           "200": {
+            "description": "OK"
+          },
+          "400": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiProblem"
+                }
+              }
+            },
+            "description": "Invalid request: wrong format, or invalid fields (errors)"
+          },
+          "401": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiProblem"
+                }
+              }
+            },
+            "description": "Nobody is signed in, or a wrong or expired access code (code)"
+          },
+          "403": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiProblem"
+                }
+              }
+            },
+            "description": "Not allowed for this account, a missing CSRF token, or a deactivated account (code)"
+          },
+          "404": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiProblem"
+                }
+              }
+            },
+            "description": "Not found, or someone else's: the same answer"
+          },
+          "409": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiProblem"
+                }
+              }
+            },
+            "description": "A business rule forbids it now (code)"
+          },
+          "429": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiProblem"
+                }
+              }
+            },
+            "description": "Too many requests: Retry-After says in how many seconds"
+          },
+          "500": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiProblem"
+                }
+              }
+            },
+            "description": "Unexpected error"
+          },
+          "503": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiProblem"
+                }
+              }
+            },
+            "description": "A service the request needs did not answer (code, when known)"
+          }
+        },
+        "tags": [
+          "push-subscription-controller"
+        ]
+      }
+    },
+    "/api/panel/push-subscriptions/test": {
+      "post": {
+        "operationId": "test",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PushTestView"
+                }
+              }
+            },
             "description": "OK"
           },
           "400": {
@@ -9055,6 +9278,75 @@
           }
         }
       },
+      "PanelBookingCreated": {
+        "required": [
+          "approvalDeadline",
+          "customerCreated",
+          "customerId",
+          "endsAt",
+          "id",
+          "paidWith",
+          "serviceId",
+          "startsAt",
+          "status"
+        ],
+        "type": "object",
+        "properties": {
+          "approvalDeadline": {
+            "type": "string",
+            "format": "date-time",
+            "nullable": true
+          },
+          "customerCreated": {
+            "type": "boolean"
+          },
+          "customerId": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "endsAt": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "id": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "paidWith": {
+            "type": "string",
+            "enum": [
+              "CARD",
+              "IN_STUDIO",
+              "CREDIT"
+            ]
+          },
+          "serviceId": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "startsAt": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "status": {
+            "type": "string",
+            "enum": [
+              "PENDING_PAYMENT",
+              "PENDING_APPROVAL",
+              "CONFIRMED",
+              "EXPIRED",
+              "REJECTED",
+              "APPROVAL_EXPIRED",
+              "WITHDRAWN",
+              "CANCELLED_IN_TIME",
+              "CANCELLED_LATE",
+              "CANCELLED_BY_STUDIO",
+              "COMPLETED",
+              "NO_SHOW"
+            ]
+          }
+        }
+      },
       "PanelBookingRow": {
         "required": [
           "approvalDeadline",
@@ -9566,6 +9858,17 @@
           "start": {
             "type": "string",
             "format": "date-time"
+          }
+        }
+      },
+      "PushTestView": {
+        "required": [
+          "delivered"
+        ],
+        "type": "object",
+        "properties": {
+          "delivered": {
+            "type": "boolean"
           }
         }
       },

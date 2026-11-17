@@ -44,15 +44,16 @@ public class CustomerService {
                 .orElseThrow(() -> new NotFoundException("Customer " + customerId + " not found"));
     }
 
-    // The customer of this email, found or created with these names (D-024, guide 22, part 3); its id.
-    // An existing customer keeps their own names. Joins the caller's transaction: if the booking then
-    // fails, account and customer created here are rolled back with it
+    // The customer of this email, found or created with these names (D-024, guide 22, part 3): its id, and
+    // whether it was created now (D-088). An existing customer keeps their own names. Joins the caller's
+    // transaction: if the booking then fails, account and customer created here are rolled back with it
     @Transactional
-    public long findOrCreate(CustomerDetails details) {
+    public FoundCustomer findOrCreate(CustomerDetails details) {
         long userId = accounts.customerAccountFor(details.email());
         return repository.findByUserId(userId)
-                .orElseGet(() -> repository.save(new Customer(userId, details.firstName(), details.lastName())))
-                .getId();
+                .map(existing -> new FoundCustomer(existing.getId(), false))
+                .orElseGet(() -> new FoundCustomer(
+                        repository.save(new Customer(userId, details.firstName(), details.lastName())).getId(), true));
     }
 
     // The profile of the customer of this account (guide 25, 7.3); 409 PROFILE_INCOMPLETE before the names

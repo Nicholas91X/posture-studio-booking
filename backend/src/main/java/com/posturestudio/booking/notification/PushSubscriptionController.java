@@ -27,6 +27,10 @@ class PushSubscriptionController {
     record Unsubscribe(@NotBlank String endpoint) {
     }
 
+    // delivered: at least one device of the practitioner took the test push (D-088)
+    record PushTestView(boolean delivered) {
+    }
+
     private final PushSubscriptionService service;
     private final CurrentPractitioner currentPractitioner;
 
@@ -53,5 +57,12 @@ class PushSubscriptionController {
     ResponseEntity<Void> unsubscribe(@Valid @RequestBody Unsubscribe request) {
         service.unsubscribe(currentPractitioner.id(), request.endpoint());
         return ResponseEntity.noContent().build();
+    }
+
+    // a test push to the practitioner's own devices (D-088): 200 with whether one took it, never an error for
+    // "no devices", which is an answer the panel shows
+    @PostMapping("/test")
+    PushTestView test() {
+        return new PushTestView(service.sendTest(currentPractitioner.id()));
     }
 }

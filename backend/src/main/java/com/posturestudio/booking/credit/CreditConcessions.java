@@ -59,7 +59,7 @@ class CreditConcessions {
         ValidUntil validUntil = request.validUntil() != null ? new ValidUntil(request.validUntil())
                 : ValidUntil.daysAfter(now, practitioners.getSettings(practitionerId).singleCreditValidityDays());
         requireNotInThePast(validUntil.lastDay(), now);
-        long customerId = customers.findOrCreate(request.customer());
+        long customerId = customers.findOrCreate(request.customer()).id();
         CreditLot lot = lots.save(CreditLot.grant(customerId, practitionerId, service.id(), userId, request.note(),
                 validUntil, now));
         movements.save(CreditMovement.lotCreated(lot.getId(), request.credits(), now));
