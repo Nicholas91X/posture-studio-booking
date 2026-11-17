@@ -130,7 +130,7 @@ Stampa `Your webhook signing secret is whsec_...`: deve essere uguale a `STRIPE_
 ## Usare il sistema in locale
 
 - **Cliente**: dal sito, "Accedi" con un'email qualsiasi (anche inventata): il codice arriva in Mailpit. Al primo accesso il sito chiede nome e cognome.
-- **Admin e professionisti**: il loro pannello web è del passo 13. Fino ad allora si usano le API da PowerShell con `tools/api.ps1`, che tiene una sessione per persona e manda il gettone CSRF:
+- **Admin e professionisti**: il **pannello**, `http://localhost:3000/pannello` (dal passo 13). Si accede come sul sito, con l'email (l'admin con `ADMIN_EMAIL`, solo email, D-056); la home del sito manda da sola un professionista al pannello e l'admin all'elenco dei professionisti. Le API restano usabili da PowerShell con `tools/api.ps1`, che tiene una sessione per persona e manda il gettone CSRF:
 
   ```powershell
   . .\tools\api.ps1
@@ -141,6 +141,7 @@ Stampa `Your webhook signing secret is whsec_...`: deve essere uguale a `STRIPE_
   ```
 
   `ApiForget admin` dimentica la sessione. Un professionista entra allo stesso modo con la sua email (`Api anna ...`).
+- **Notifiche push in locale** (passo 13): `localhost` vale come indirizzo sicuro, quindi bastano Chrome o Edge **normali** sul computer (non quello avviato da Playwright, che non si collega al servizio push di Google). Entra nel pannello come professionista, "Attiva" nel popup (o Altro › Impostazioni e notifiche › Attiva le notifiche), consenti, poi "Manda una notifica di prova": deve comparire "Notifiche attive". Serve che il backend esca su Internet in HTTPS verso `fcm.googleapis.com`. Per vedere di nuovo il popup dopo "Più tardi": negli strumenti per sviluppatori, Application › Local storage › togli `pannello.notifiche.piu-tardi`.
 - **Carte di prova di Stripe**: `4242 4242 4242 4242`, una data futura qualsiasi, un CVC qualsiasi. La procedura completa della prova dal sito è in `passi/12-frontend-cliente.md`.
 
 ---
@@ -163,7 +164,8 @@ I due file generati si committano (D-083).
 | Test | Da dove | Comando | Note |
 |---|---|---|---|
 | Backend (tutti) | `backend/` | `.\mvnw.cmd clean test` | Testcontainers avvia un PostgreSQL suo: serve solo Docker acceso |
-| End-to-end del sito | `frontend/` | `npm run e2e` | avviano da soli un backend sulla **8081** (database `posture_studio_e2e`, cancellato e ricreato a ogni giro) e un sito sulla **3001**, accanto a quelli di sviluppo; servono il PostgreSQL e il Mailpit di Compose accesi e il `.env`; le schermate del telefono restano in `frontend/test-results/` (non versionata) |
+| Prove unitarie del frontend | `frontend/` | `npm run test:unit` | funzioni pure (calendario, date e prezzi dei moduli), senza server |
+| End-to-end del sito e del pannello | `frontend/` | `npm run e2e` | avviano da soli un backend sulla **8081** (database `posture_studio_e2e`, cancellato e ricreato a ogni giro) e un sito sulla **3001**, accanto a quelli di sviluppo; servono il PostgreSQL e il Mailpit di Compose accesi e il `.env`; le schermate del telefono restano in `frontend/test-results/` (non versionata) |
 
 ---
 
