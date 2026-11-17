@@ -83,7 +83,7 @@ export function AppShell({ children }: { children: ReactNode }) {
       </header>
       <main>{children}</main>
       {items.length > 0 ? (
-        <nav className="bottom-nav" aria-label="Sezioni" style={{ gridTemplateColumns: `repeat(${items.length}, 1fr)` }}>
+        <nav className="bottom-nav" aria-label="Sezioni">
           {links}
         </nav>
       ) : null}
