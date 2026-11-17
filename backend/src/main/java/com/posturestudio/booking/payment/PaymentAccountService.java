@@ -82,4 +82,13 @@ class PaymentAccountService {
                 .orElseGet(() -> assignments.save(new PaymentAccountAssignment(practitionerId, account, clock.instant())));
         return AssignedAccountView.from(assignment);
     }
+
+    // The account taken away (D-089): from now on the practitioner's customers pay in the studio. The payments
+    // already made or in progress keep the account they were made on (D-057): they never read the assignment.
+    // Idempotent: no account, nothing to remove
+    @Transactional
+    void unassign(long practitionerId) {
+        practitioners.requireExists(practitionerId);
+        assignments.findById(practitionerId).ifPresent(assignments::delete);
+    }
 }

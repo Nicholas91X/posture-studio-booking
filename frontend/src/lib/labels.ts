@@ -59,6 +59,7 @@ export const LOT_SOURCE: Record<LotSource, string> = {
   PACKAGE: "Pacchetto acquistato",
   GRANT: "Omaggio dello studio",
   CANCELLATION: "Da una seduta cancellata",
+  STUDIO_SALE: "Pacchetto acquistato in studio",
 };
 
 export const ENTRY_KIND: Record<EntryKind, string> = {

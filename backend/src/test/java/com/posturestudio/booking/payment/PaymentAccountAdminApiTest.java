@@ -107,6 +107,22 @@ public class PaymentAccountAdminApiTest {
                 .hasStatus(HttpStatus.NOT_FOUND);
     }
 
+    // D-089: the account taken away, then the practitioner works in the studio. Twice is the same; and a payment
+    // already made keeps its own account, which never reads the assignment (D-057)
+    @Test
+    void theAdminTakesTheAccountAway() {
+        assign(anna, "alpha");
+
+        assertThat(mvc.delete().uri("/api/admin/practitioners/" + anna + "/payment-account").with(sessions.user(admin)))
+                .hasStatus(HttpStatus.NO_CONTENT);
+        assertThat(mvc.get().uri("/api/admin/practitioners/" + anna + "/payment-account").with(sessions.user(admin)))
+                .hasStatus(HttpStatus.NOT_FOUND);
+        assertThat(mvc.delete().uri("/api/admin/practitioners/" + anna + "/payment-account").with(sessions.user(admin)))
+                .hasStatus(HttpStatus.NO_CONTENT);
+        assertThat(mvc.delete().uri("/api/admin/practitioners/" + anna + "/payment-account").with(sessions.practitioner(anna)))
+                .hasStatus(HttpStatus.FORBIDDEN);
+    }
+
     // only the admin: the rule of /api/admin/** (D-051)
     @Test
     void aPractitionerOrACustomerIsForbiddenAndAnonymousIsUnauthorized() {

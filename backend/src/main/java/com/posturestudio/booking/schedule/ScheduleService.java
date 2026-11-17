@@ -106,6 +106,25 @@ public class ScheduleService {
                 .collect(Collectors.toSet());
     }
 
+    // For the agendas compared (D-091): when each of these practitioners works in these days, and when they are away.
+    // Only times: the reason of an absence stays here. One query of versions and one of absences per practitioner,
+    // a handful of practitioners
+    @Transactional(readOnly = true)
+    public Map<Long, WorkingTime> workingTimeOf(Collection<Long> practitionerIds, LocalDate from, LocalDate to) {
+        Instant periodStart = from.atStartOfDay(StudioTime.ZONE).toInstant();
+        Instant periodEnd = to.plusDays(1).atStartOfDay(StudioTime.ZONE).toInstant();
+        Map<Long, WorkingTime> result = new java.util.LinkedHashMap<>();
+        for (long practitionerId : practitionerIds) {
+            List<TimeRange> absences = unavailabilities
+                    .findByPractitionerIdAndStartsAtBeforeAndEndsAtAfter(practitionerId, periodEnd, periodStart).stream()
+                    .map(absence -> new TimeRange(absence.getStartsAt(), absence.getEndsAt()))
+                    .sorted(java.util.Comparator.comparing(TimeRange::start))
+                    .toList();
+            result.put(practitionerId, new WorkingTime(WorkingIntervals.of(versionsOf(practitionerId), from, to), absences));
+        }
+        return result;
+    }
+
     // The glue shared by the two methods above
     private List<TimeRange> compute(long practitionerId, int durationMinutes, LocalDate from, LocalDate to, Instant now) {
         PractitionerSettings settings = practitioners.getSettings(practitionerId);

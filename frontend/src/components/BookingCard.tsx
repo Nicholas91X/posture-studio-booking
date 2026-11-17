@@ -115,7 +115,9 @@ export function BookingCard({
           <p>
             {booking.paidWith === "CREDIT"
               ? "Il credito che avevi usato ti torna disponibile."
-              : "Non ti viene addebitato niente: l'importo bloccato sulla carta si sblocca."}
+              : booking.paidWith === "IN_STUDIO"
+                ? "Non avevi pagato niente: la richiesta si ritira e basta."
+                : "Non ti viene addebitato niente: l'importo bloccato sulla carta si sblocca."}
           </p>
           <ErrorNotice error={error} />
           <div className="dialog-actions">
@@ -173,5 +175,7 @@ function withdrawalResult(booking: Booking): string {
   }
   return booking.paidWith === "CREDIT"
     ? "Richiesta ritirata. Il credito che avevi usato è di nuovo disponibile."
-    : "Richiesta ritirata. Non ti è stato addebitato niente.";
+    : booking.paidWith === "IN_STUDIO"
+      ? "Richiesta ritirata."
+      : "Richiesta ritirata. Non ti è stato addebitato niente.";
 }

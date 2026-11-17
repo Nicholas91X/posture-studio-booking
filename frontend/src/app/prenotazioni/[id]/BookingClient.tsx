@@ -116,6 +116,7 @@ function ArrivalMessage({ booking, payment, isNew }: { booking: Booking; payment
     return null;
   }
   const credit = booking.paidWith === "CREDIT";
+  const inStudio = booking.paidWith === "IN_STUDIO";
   switch (booking.status) {
     case "PENDING_APPROVAL":
       return (
@@ -123,7 +124,9 @@ function ArrivalMessage({ booking, payment, isNew }: { booking: Booking; payment
           <p>
             {credit
               ? "Richiesta inviata: hai usato un tuo credito."
-              : "Pagamento ricevuto: l'importo è bloccato sulla carta e viene addebitato solo se il professionista approva."}
+              : inStudio
+                ? "Richiesta inviata: se il professionista la approva, la seduta si paga in studio."
+                : "Pagamento ricevuto: l'importo è bloccato sulla carta e viene addebitato solo se il professionista approva."}
             {booking.approvalDeadline !== null ? ` La risposta arriva entro ${formatDateTime(booking.approvalDeadline)}.` : ""}
           </p>
         </Notice>
@@ -131,7 +134,13 @@ function ArrivalMessage({ booking, payment, isNew }: { booking: Booking; payment
     case "CONFIRMED":
       return (
         <Notice tone="success">
-          <p>{credit ? "Seduta confermata: hai usato un tuo credito." : "Pagamento ricevuto: la seduta è confermata."}</p>
+          <p>
+            {credit
+              ? "Seduta confermata: hai usato un tuo credito."
+              : inStudio
+                ? "Seduta confermata: la paghi in studio, il giorno della seduta."
+                : "Pagamento ricevuto: la seduta è confermata."}
+          </p>
         </Notice>
       );
     case "EXPIRED":

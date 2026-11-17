@@ -13,6 +13,9 @@ import org.springframework.web.bind.annotation.RestController;
 import com.posturestudio.booking.auth.CurrentUser;
 import com.posturestudio.booking.practitioner.CurrentPractitioner;
 
+import io.swagger.v3.oas.annotations.media.Content;
+import io.swagger.v3.oas.annotations.media.Schema;
+import io.swagger.v3.oas.annotations.responses.ApiResponse;
 import jakarta.validation.Valid;
 
 /**
@@ -26,13 +29,15 @@ import jakarta.validation.Valid;
 class CreditPanelController {
 
     private final CreditConcessions concessions;
+    private final StudioSales sales;
     private final CreditViews views;
     private final CurrentPractitioner practitioner;
     private final CurrentUser user;
 
-    CreditPanelController(CreditConcessions concessions, CreditViews views, CurrentPractitioner practitioner,
-                          CurrentUser user) {
+    CreditPanelController(CreditConcessions concessions, StudioSales sales, CreditViews views,
+                          CurrentPractitioner practitioner, CurrentUser user) {
         this.concessions = concessions;
+        this.sales = sales;
         this.views = views;
         this.practitioner = practitioner;
         this.user = user;
@@ -41,6 +46,15 @@ class CreditPanelController {
     @PostMapping("/credit-grants")
     ResponseEntity<PanelCreditLotView> grant(@Valid @RequestBody NewCreditGrant request) {
         PanelCreditLotView lot = concessions.grant(practitioner.id(), user.id(), request);
+        return ResponseEntity.created(URI.create("/api/panel/credit-lots/" + lot.id())).body(lot);
+    }
+
+    // a package sold in the studio (D-089): the lot of its credits, 201 as a gift
+    @PostMapping("/package-sales")
+    @ApiResponse(responseCode = "201", description = "Created",
+            content = @Content(schema = @Schema(implementation = PanelCreditLotView.class)))
+    ResponseEntity<PanelCreditLotView> sell(@Valid @RequestBody NewStudioSale request) {
+        PanelCreditLotView lot = sales.sell(practitioner.id(), user.id(), request);
         return ResponseEntity.created(URI.create("/api/panel/credit-lots/" + lot.id())).body(lot);
     }
 

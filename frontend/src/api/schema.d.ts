@@ -126,7 +126,7 @@ export interface paths {
         get: operations["assigned"];
         put: operations["assign"];
         post?: never;
-        delete?: never;
+        delete: operations["unassign"];
         options?: never;
         head?: never;
         patch?: never;
@@ -308,6 +308,38 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/panel/agendas": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get: operations["agendas"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/panel/agendas/free-together": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get: operations["freeTogether"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/panel/bookings": {
         parameters: {
             query?: never;
@@ -318,6 +350,22 @@ export interface paths {
         get: operations["list"];
         put?: never;
         post: operations["book"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/panel/bookings/credit-check": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get: operations["creditCheck"];
+        put?: never;
+        post?: never;
         delete?: never;
         options?: never;
         head?: never;
@@ -558,6 +606,22 @@ export interface paths {
         get: operations["creditsOf"];
         put?: never;
         post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/panel/package-sales": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post: operations["sell"];
         delete?: never;
         options?: never;
         head?: never;
@@ -982,6 +1046,15 @@ export interface components {
             id: number;
             lastName: string;
         };
+        AgendaView: {
+            absences: components["schemas"]["TimeSpan"][];
+            busy: components["schemas"]["TimeSpan"][];
+            firstName: string;
+            lastName: string;
+            /** Format: int64 */
+            practitionerId: number;
+            working: components["schemas"]["TimeSpan"][];
+        };
         ApiFieldError: {
             /** @description The violated constraint, e.g. NotBlank */
             constraint: string;
@@ -1023,7 +1096,7 @@ export interface components {
             /** Format: date */
             oldValidUntil: string | null;
             /** @enum {string|null} */
-            source: "PACKAGE" | "GRANT" | "CANCELLATION" | null;
+            source: "PACKAGE" | "GRANT" | "CANCELLATION" | "STUDIO_SALE" | null;
         };
         CreditLotDetail: {
             history: components["schemas"]["CreditEntry"][];
@@ -1039,7 +1112,7 @@ export interface components {
             /** Format: int64 */
             serviceId: number;
             /** @enum {string} */
-            source: "PACKAGE" | "GRANT" | "CANCELLATION";
+            source: "PACKAGE" | "GRANT" | "CANCELLATION" | "STUDIO_SALE";
             /** @enum {string} */
             status: "USABLE" | "USED_UP" | "EXPIRED" | "PRACTITIONER_UNAVAILABLE";
             /** Format: date */
@@ -1136,6 +1209,7 @@ export interface components {
         };
         NewPanelBooking: {
             customer: components["schemas"]["CustomerDetails"];
+            inStudio?: boolean;
             /** Format: int64 */
             serviceId: number;
             /** Format: date-time */
@@ -1149,6 +1223,11 @@ export interface components {
         NewPushSubscription: {
             endpoint: string;
             keys: components["schemas"]["Keys"];
+        };
+        NewStudioSale: {
+            customer: components["schemas"]["CustomerDetails"];
+            /** Format: int64 */
+            packageOfferId: number;
         };
         NewUnavailability: {
             /** Format: date-time */
@@ -1296,6 +1375,11 @@ export interface components {
             booking: components["schemas"]["PanelBookingView"];
             returnedCredit: components["schemas"]["ReturnedCredit"] | null;
         };
+        PanelCreditCheck: {
+            usableCredit: boolean;
+            /** Format: date */
+            validUntil: string | null;
+        };
         PanelCreditLotView: {
             /** Format: int64 */
             balance: number;
@@ -1306,7 +1390,7 @@ export interface components {
             /** Format: int64 */
             serviceId: number;
             /** @enum {string} */
-            source: "PACKAGE" | "GRANT" | "CANCELLATION";
+            source: "PACKAGE" | "GRANT" | "CANCELLATION" | "STUDIO_SALE";
             /** Format: date */
             validUntil: string;
         };
@@ -1381,7 +1465,8 @@ export interface components {
             /** Format: int64 */
             id: number;
             lastName: string;
-            onlineBooking: boolean;
+            /** @enum {string} */
+            paymentMode: "CARD" | "IN_STUDIO";
         };
         PublicSlot: {
             /** Format: date-time */
@@ -1453,6 +1538,12 @@ export interface components {
         SignInRequest: {
             code: string;
             email: string;
+        };
+        TimeSpan: {
+            /** Format: date-time */
+            end: string;
+            /** Format: date-time */
+            start: string;
         };
         UnavailabilityView: {
             /** Format: date-time */
@@ -2637,6 +2728,98 @@ export interface operations {
                 content: {
                     "application/json": components["schemas"]["AssignedAccountView"];
                 };
+            };
+            /** @description Invalid request: wrong format, or invalid fields (errors) */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ApiProblem"];
+                };
+            };
+            /** @description Nobody is signed in, or a wrong or expired access code (code) */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ApiProblem"];
+                };
+            };
+            /** @description Not allowed for this account, a missing CSRF token, or a deactivated account (code) */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ApiProblem"];
+                };
+            };
+            /** @description Not found, or someone else's: the same answer */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ApiProblem"];
+                };
+            };
+            /** @description A business rule forbids it now (code) */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ApiProblem"];
+                };
+            };
+            /** @description Too many requests: Retry-After says in how many seconds */
+            429: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ApiProblem"];
+                };
+            };
+            /** @description Unexpected error */
+            500: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ApiProblem"];
+                };
+            };
+            /** @description A service the request needs did not answer (code, when known) */
+            503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ApiProblem"];
+                };
+            };
+        };
+    };
+    unassign: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
             };
             /** @description Invalid request: wrong format, or invalid fields (errors) */
             400: {
@@ -4029,6 +4212,198 @@ export interface operations {
             };
         };
     };
+    agendas: {
+        parameters: {
+            query: {
+                from: string;
+                to: string;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AgendaView"][];
+                };
+            };
+            /** @description Invalid request: wrong format, or invalid fields (errors) */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ApiProblem"];
+                };
+            };
+            /** @description Nobody is signed in, or a wrong or expired access code (code) */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ApiProblem"];
+                };
+            };
+            /** @description Not allowed for this account, a missing CSRF token, or a deactivated account (code) */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ApiProblem"];
+                };
+            };
+            /** @description Not found, or someone else's: the same answer */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ApiProblem"];
+                };
+            };
+            /** @description A business rule forbids it now (code) */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ApiProblem"];
+                };
+            };
+            /** @description Too many requests: Retry-After says in how many seconds */
+            429: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ApiProblem"];
+                };
+            };
+            /** @description Unexpected error */
+            500: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ApiProblem"];
+                };
+            };
+            /** @description A service the request needs did not answer (code, when known) */
+            503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ApiProblem"];
+                };
+            };
+        };
+    };
+    freeTogether: {
+        parameters: {
+            query: {
+                from: string;
+                to: string;
+                durationMinutes: number;
+                practitionerIds: number[];
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["TimeSpan"][];
+                };
+            };
+            /** @description Invalid request: wrong format, or invalid fields (errors) */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ApiProblem"];
+                };
+            };
+            /** @description Nobody is signed in, or a wrong or expired access code (code) */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ApiProblem"];
+                };
+            };
+            /** @description Not allowed for this account, a missing CSRF token, or a deactivated account (code) */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ApiProblem"];
+                };
+            };
+            /** @description Not found, or someone else's: the same answer */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ApiProblem"];
+                };
+            };
+            /** @description A business rule forbids it now (code) */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ApiProblem"];
+                };
+            };
+            /** @description Too many requests: Retry-After says in how many seconds */
+            429: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ApiProblem"];
+                };
+            };
+            /** @description Unexpected error */
+            500: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ApiProblem"];
+                };
+            };
+            /** @description A service the request needs did not answer (code, when known) */
+            503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ApiProblem"];
+                };
+            };
+        };
+    };
     list: {
         parameters: {
             query: {
@@ -4144,6 +4519,102 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["PanelBookingCreated"];
+                };
+            };
+            /** @description Invalid request: wrong format, or invalid fields (errors) */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ApiProblem"];
+                };
+            };
+            /** @description Nobody is signed in, or a wrong or expired access code (code) */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ApiProblem"];
+                };
+            };
+            /** @description Not allowed for this account, a missing CSRF token, or a deactivated account (code) */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ApiProblem"];
+                };
+            };
+            /** @description Not found, or someone else's: the same answer */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ApiProblem"];
+                };
+            };
+            /** @description A business rule forbids it now (code) */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ApiProblem"];
+                };
+            };
+            /** @description Too many requests: Retry-After says in how many seconds */
+            429: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ApiProblem"];
+                };
+            };
+            /** @description Unexpected error */
+            500: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ApiProblem"];
+                };
+            };
+            /** @description A service the request needs did not answer (code, when known) */
+            503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ApiProblem"];
+                };
+            };
+        };
+    };
+    creditCheck: {
+        parameters: {
+            query: {
+                serviceId: number;
+                startsAt: string;
+                email: string;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["PanelCreditCheck"];
                 };
             };
             /** @description Invalid request: wrong format, or invalid fields (errors) */
@@ -5561,6 +6032,102 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["CreditLotSummary"][];
+                };
+            };
+            /** @description Invalid request: wrong format, or invalid fields (errors) */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ApiProblem"];
+                };
+            };
+            /** @description Nobody is signed in, or a wrong or expired access code (code) */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ApiProblem"];
+                };
+            };
+            /** @description Not allowed for this account, a missing CSRF token, or a deactivated account (code) */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ApiProblem"];
+                };
+            };
+            /** @description Not found, or someone else's: the same answer */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ApiProblem"];
+                };
+            };
+            /** @description A business rule forbids it now (code) */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ApiProblem"];
+                };
+            };
+            /** @description Too many requests: Retry-After says in how many seconds */
+            429: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ApiProblem"];
+                };
+            };
+            /** @description Unexpected error */
+            500: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ApiProblem"];
+                };
+            };
+            /** @description A service the request needs did not answer (code, when known) */
+            503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ApiProblem"];
+                };
+            };
+        };
+    };
+    sell: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["NewStudioSale"];
+            };
+        };
+        responses: {
+            /** @description Created */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["PanelCreditLotView"];
                 };
             };
             /** @description Invalid request: wrong format, or invalid fields (errors) */

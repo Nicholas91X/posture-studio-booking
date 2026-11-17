@@ -107,20 +107,20 @@ class BookingCreditConcurrencyTest {
         assertThat(checkout.started).hasSize(1);
     }
 
-    // the same race with no card account: the one without the credit is refused, readably
+    // the same race with no card account (D-089): the one without the credit is paid in the studio. One credit,
+    // used once
     @Test
-    void withoutACardAccountTheSecondRequestIsRefused() throws Exception {
+    void withoutACardAccountTheSecondRequestIsInTheStudio() throws Exception {
         checkout.withoutAccount.add(anna);
 
         List<Object> outcomes = together(() -> inOpenTransaction(() -> request(MONDAY_9)),
                 () -> inOpenTransaction(() -> request(TUESDAY_9)));
 
-        assertThat(outcomes).filteredOn(CustomerBookingView.class::isInstance).singleElement()
-                .extracting(outcome -> ((CustomerBookingView) outcome).paidWith()).isEqualTo(PaidWith.CREDIT);
-        assertThat(outcomes).filteredOn(Throwable.class::isInstance).singleElement()
-                .isInstanceOfSatisfying(com.posturestudio.booking.shared.BusinessRuleException.class,
-                        e -> assertThat(e.getCode()).isEqualTo(com.posturestudio.booking.shared.ErrorCode.CARD_PAYMENTS_UNAVAILABLE));
+        assertThat(outcomes).allMatch(CustomerBookingView.class::isInstance);
+        assertThat(outcomes).extracting(outcome -> ((CustomerBookingView) outcome).paidWith())
+                .containsExactlyInAnyOrder(PaidWith.CREDIT, PaidWith.IN_STUDIO);
         assertThat(data.balance(lot)).isZero();
+        assertThat(checkout.started).isEmpty();
     }
 
     // ***** helpers *****

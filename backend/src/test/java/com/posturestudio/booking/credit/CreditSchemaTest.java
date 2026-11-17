@@ -70,14 +70,17 @@ class CreditSchemaTest {
     }
 
     // a lot comes from a package if and only if it has its payment (Nicholas, 2026-11-10)
-    // without package and price too: only this rule is broken (PostgreSQL checks the constraints in
-    // alphabetical order, and credit_lot_package_columns_ck would answer first)
+    // with package and price: only this rule is broken (PostgreSQL checks the constraints in alphabetical order,
+    // and credit_lot_package_columns_ck would answer first; since V17 it wants them for a PACKAGE, D-089)
     @Test
     void aPackageLotWithoutItsPaymentIsRejected() {
+        long offer = data.packageOffer(anna, seduta);
+
         assertRefused("credit_lot_payment_ck", () -> jdbc.update("""
-                insert into credit_lot (customer_id, practitioner_id, service_id, source, valid_until, created_at)
-                values (?, ?, ?, 'PACKAGE', '2027-02-08', now())
-                """, customer, anna, seduta));
+                insert into credit_lot (customer_id, practitioner_id, service_id, source, package_offer_id, price_cents,
+                                        valid_until, created_at)
+                values (?, ?, ?, 'PACKAGE', ?, 12000, '2027-02-08', now())
+                """, customer, anna, seduta, offer));
     }
 
     @Test
@@ -85,11 +88,12 @@ class CreditSchemaTest {
         long offer = data.packageOffer(anna, seduta);
         long payment = data.packagePayment(customer, offer);
 
+        // without package and price: since V17 a gift must not have them (D-089), so only this rule is broken
         assertRefused("credit_lot_payment_ck", () -> jdbc.update("""
-                insert into credit_lot (customer_id, practitioner_id, service_id, source, payment_id, package_offer_id,
-                                        price_cents, granted_by, note, valid_until, created_at)
-                values (?, ?, ?, 'GRANT', ?, ?, 12000, ?, 'Omaggio', '2027-02-08', now())
-                """, customer, anna, seduta, payment, offer, annasUser));
+                insert into credit_lot (customer_id, practitioner_id, service_id, source, payment_id, granted_by, note,
+                                        valid_until, created_at)
+                values (?, ?, ?, 'GRANT', ?, ?, 'Omaggio', '2027-02-08', now())
+                """, customer, anna, seduta, payment, annasUser));
     }
 
     @Test

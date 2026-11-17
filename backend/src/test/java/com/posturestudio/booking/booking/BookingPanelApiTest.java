@@ -186,6 +186,66 @@ public class BookingPanelApiTest {
         assertThat(body).doesNotContain("Segreto", "segreto@example.com", "\"id\":" + marcosBooking + ",");
     }
 
+    // ***** credit or studio, chosen by the practitioner (D-090) *****
+
+    @Test
+    void theCreditCheckSaysWhetherACreditWouldPayAndUntilWhen() {
+        long cliente = customerOf(waiting);
+        long annasService = serviceOf(waiting);
+        data.creditLot(Long.parseLong(anna), annasService, cliente, "2026-12-31", 3);
+
+        assertThat(creditCheck(anna, annasService, "Cliente@Example.com"))
+                .hasStatusOk()
+                .bodyJson().isStrictlyEqualTo("{\"usableCredit\": true, \"validUntil\": \"2026-12-31\"}");
+    }
+
+    // an email nobody has: no credit, and nobody is created by asking
+    @Test
+    void theCreditCheckOfAnUnknownEmailCreatesNobody() {
+        assertThat(creditCheck(anna, serviceOf(waiting), "nessuno@example.com"))
+                .hasStatusOk()
+                .bodyJson().isStrictlyEqualTo("{\"usableCredit\": false, \"validUntil\": null}");
+        assertThat(jdbc.queryForObject("select count(*) from app_user where email = 'nessuno@example.com'", Long.class))
+                .isZero();
+    }
+
+    // a credit with Marco is not a credit with Anna: Anna learns nothing about it (D-066)
+    @Test
+    void theCreditCheckIgnoresTheOtherPractitionersCredits() {
+        long marcoId = Long.parseLong(marco);
+        data.creditLot(marcoId, data.service(marcoId, 60), customerOf(waiting), "2026-12-31", 3);
+
+        assertThat(creditCheck(anna, serviceOf(waiting), "cliente@example.com"))
+                .bodyJson().extractingPath("$.usableCredit").isEqualTo(false);
+    }
+
+    @Test
+    void theCreditCheckWithoutTheEmailAnswers400() {
+        assertThat(mvc.get().uri("/api/panel/bookings/credit-check")
+                .queryParam("serviceId", String.valueOf(serviceOf(waiting)))
+                .queryParam("startsAt", "2026-11-10T09:00:00+01:00")
+                .with(sessions.practitioner(anna)))
+                .hasStatus(HttpStatus.BAD_REQUEST)
+                .bodyJson().extractingPath("$.errors[*].field").asArray().containsExactly("email");
+    }
+
+    // the practitioner chooses the studio: the credit stays where it is
+    @Test
+    void inStudioKeepsTheCreditOfTheCustomer() throws Exception {
+        data.weekdays(Long.parseLong(anna), "2026-11-02");
+        long lot = data.creditLot(Long.parseLong(anna), serviceOf(waiting), customerOf(waiting), "2026-12-31", 3);
+
+        MvcTestResult inStudio = bookFromPanel(anna, "cliente@example.com", "2026-11-10T09:00:00+01:00", true);
+        assertThat(inStudio).hasStatus(HttpStatus.CREATED);
+        assertThat(inStudio).bodyJson().extractingPath("$.paidWith").isEqualTo("IN_STUDIO");
+        assertThat(data.balance(lot)).isEqualTo(3);
+
+        // without the choice, as before: the credit pays (D-072)
+        MvcTestResult withCredit = bookFromPanel(anna, "cliente@example.com", "2026-11-10T11:00:00+01:00", null);
+        assertThat(withCredit).bodyJson().extractingPath("$.paidWith").isEqualTo("CREDIT");
+        assertThat(data.balance(lot)).isEqualTo(2);
+    }
+
     // ***** the room before booking (D-088) *****
 
     // the same flag as the lists, for a slot not booked yet: only the shared times, nothing about Marco's customer
@@ -268,6 +328,25 @@ public class BookingPanelApiTest {
                         {"serviceId": %d, "startsAt": "2026-11-10T09:00:00+01:00",
                          "customer": {"email": "%s", "firstName": "Mario", "lastName": "Rossi"}}
                         """.formatted(serviceOf(waiting), email))
+                .exchange();
+    }
+
+    private MvcTestResult creditCheck(String practitioner, long serviceId, String email) {
+        return mvc.get().uri("/api/panel/bookings/credit-check")
+                .queryParam("serviceId", String.valueOf(serviceId))
+                .queryParam("startsAt", "2026-11-10T09:00:00+01:00")
+                .queryParam("email", email)
+                .with(sessions.practitioner(practitioner))
+                .exchange();
+    }
+
+    private MvcTestResult bookFromPanel(String practitioner, String email, String startsAt, Boolean inStudio) {
+        return mvc.post().uri("/api/panel/bookings").with(sessions.practitioner(practitioner))
+                .contentType(MediaType.APPLICATION_JSON)
+                .content("""
+                        {"serviceId": %d, "startsAt": "%s", "inStudio": %s,
+                         "customer": {"email": "%s", "firstName": "Mario", "lastName": "Rossi"}}
+                        """.formatted(serviceOf(waiting), startsAt, inStudio, email))
                 .exchange();
     }
 

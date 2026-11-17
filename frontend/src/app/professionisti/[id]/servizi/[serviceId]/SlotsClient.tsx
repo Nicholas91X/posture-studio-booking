@@ -211,10 +211,10 @@ export function SlotsClient() {
             {formatDateTime(chosen.start)} – {formatTime(chosen.end)}
           </p>
           <p className="small">
-            {practitioner.onlineBooking
+            {practitioner.paymentMode === "CARD"
               ? `Se hai un credito valido per questa seduta si usa quello e non paghi niente; altrimenti paghi ${formatPrice(service.priceCents)} con carta sulla pagina sicura di Stripe.`
-              : "Si usa un tuo credito valido per questa seduta: non c'è niente da pagare."}
-            {practitioner.bookingApproval === "MANUAL" && practitioner.onlineBooking
+              : `Se hai un credito valido per questa seduta si usa quello; altrimenti pagherai ${formatPrice(service.priceCents)} in studio, il giorno della seduta. Online non paghi niente.`}
+            {practitioner.bookingApproval === "MANUAL" && practitioner.paymentMode === "CARD"
               ? " Con la carta l'importo è solo bloccato: lo addebitiamo quando il professionista approva."
               : ""}
           </p>

@@ -37,8 +37,8 @@ public class BookingTest {
         Instant sundayNine = Instant.parse("2026-11-08T08:00:00Z");
 
         assertThat(requested().getFreeCancellationUntil()).isEqualTo(sundayNine);
-        assertThat(Booking.requestedWithCredit(1L, 2L, 3L, MONDAY_9, 3000, REQUESTED, Duration.ofHours(12),
-                Duration.ofHours(24)).getFreeCancellationUntil()).isEqualTo(sundayNine);
+        assertThat(Booking.requestedWithoutCard(1L, 2L, 3L, MONDAY_9, 3000, REQUESTED, Duration.ofHours(12),
+                Duration.ofHours(24), PaidWith.CREDIT).getFreeCancellationUntil()).isEqualTo(sundayNine);
         assertThat(Booking.bookedFromPanel(1L, 2L, 3L, MONDAY_9, 3000, REQUESTED, PaidWith.IN_STUDIO,
                 Duration.ofHours(48)).getFreeCancellationUntil()).isEqualTo(Instant.parse("2026-11-07T08:00:00Z"));
     }

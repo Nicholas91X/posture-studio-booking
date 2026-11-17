@@ -76,7 +76,7 @@ class OpenApiContractTest {
                 "$.components.schemas.CustomerBookingView.properties.returnedCredit.allOf[0].$ref"))
                 .isEqualTo("#/components/schemas/ReturnedCredit");
         List<String> practitioner = JsonPath.read(contract, "$.components.schemas.PublicPractitioner.required");
-        assertThat(practitioner).contains("onlineBooking", "bookingApproval", "approvalWindowHours");
+        assertThat(practitioner).contains("paymentMode", "bookingApproval", "approvalWindowHours");
     }
 
     // a request body keeps what Bean Validation says, not "everything required"

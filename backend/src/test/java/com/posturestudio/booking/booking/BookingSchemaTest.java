@@ -209,10 +209,22 @@ public class BookingSchemaTest {
         assertViolates("booking_booked_by_ck", () -> insertWith("CONFIRMED", "ADMIN", "CARD", 3000, null));
     }
 
+    // D-089 (V17): a customer of a practitioner without an account books to pay in the studio; but nothing paid in
+    // the studio ever waits for an online payment
     @Test
-    void customerCannotChooseToPayInTheStudio() {
-        // paying in the studio is a choice of the practitioner from the panel (D-024, D-040)
-        assertViolates("booking_in_studio_ck", () -> insertWith("CONFIRMED", "CUSTOMER", "IN_STUDIO", 3000, null));
+    void aCustomersRequestCanBePaidInTheStudio() {
+        Assertions.assertDoesNotThrow(() -> insertWith("CONFIRMED", "CUSTOMER", "IN_STUDIO", 3000, null));
+    }
+
+    @Test
+    void inTheStudioIsNeverWaitingForPayment() {
+        // with its hold, so that only this rule is broken
+        assertViolates("booking_in_studio_no_hold_ck", () -> jdbc.update("""
+                insert into booking (customer_id, practitioner_id, service_id, starts_at, ends_at, status,
+                                     booked_by, paid_with, price_cents, hold_expires_at, free_cancellation_until)
+                values (?, ?, ?, ?, ?, 'PENDING_PAYMENT', 'CUSTOMER', 'IN_STUDIO', 3000, ?, ?)
+                """, customer, anna, annasService, at(MONDAY_9), at(MONDAY_10), at(BookingTestData.LATER),
+                BookingTestData.noticeBefore(MONDAY_9)));
     }
 
     @Test

@@ -136,14 +136,18 @@ export function PractitionerClient() {
                 </div>
                 <span className="price">{formatPrice(offer.priceCents)}</span>
               </div>
-              <button
-                type="button"
-                className="button button-secondary button-block"
-                disabled={!practitioner.onlineBooking || buying !== null}
-                onClick={() => void buy(offer.id)}
-              >
-                {buying === offer.id ? "Apertura del pagamento…" : customer ? "Acquista" : "Accedi per acquistare"}
-              </button>
+              {practitioner.paymentMode === "CARD" ? (
+                <button
+                  type="button"
+                  className="button button-secondary button-block"
+                  disabled={buying !== null}
+                  onClick={() => void buy(offer.id)}
+                >
+                  {buying === offer.id ? "Apertura del pagamento…" : customer ? "Acquista" : "Accedi per acquistare"}
+                </button>
+              ) : (
+                <p className="small">Acquistabile in studio: i crediti compaiono qui appena il professionista lo registra.</p>
+              )}
             </div>
           ))}
         </>
