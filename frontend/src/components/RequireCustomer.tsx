@@ -1,9 +1,10 @@
 "use client";
 
+import Link from "next/link";
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import { useEffect, type ReactNode } from "react";
 import { signInPath } from "@/lib/navigation";
-import { isCustomer, useSession } from "@/lib/session";
+import { homeOf, isCustomer, useSession } from "@/lib/session";
 import { Loading, Notice } from "./Notice";
 
 // The pages of a signed-in customer: whoever is not signed in goes to the sign-in, and then comes back here, with
@@ -32,10 +33,15 @@ export function RequireCustomer({ children }: { children: ReactNode }) {
   if (!isCustomer(session)) {
     return (
       <Notice tone="warning">
-        <p>Questa sezione è per i clienti. Il tuo account è di un professionista o dell&apos;amministrazione: il pannello arriverà presto.</p>
-        <button type="button" className="button button-secondary" onClick={() => void signOut()}>
-          Esci
-        </button>
+        <p>Questa sezione è per i clienti. Il tuo account è di un professionista o dell&apos;amministrazione.</p>
+        <div className="row">
+          <Link href={session.state === "signed-in" ? homeOf(session.role) : "/pannello"} className="button">
+            Vai al pannello
+          </Link>
+          <button type="button" className="button button-secondary" onClick={() => void signOut()}>
+            Esci
+          </button>
+        </div>
       </Notice>
     );
   }

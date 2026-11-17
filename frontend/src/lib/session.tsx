@@ -66,11 +66,16 @@ export function SessionProvider({ children }: { children: ReactNode }) {
   // customers only is left open to send to the sign-in (found by the end-to-end test of the sign-out)
   const signOut = useCallback(async () => {
     try {
+      // a practitioner's phone stops receiving their pushes once they are out (D-054): before the session goes
+      if (session.state === "signed-in" && session.role === "PRACTITIONER") {
+        const { disablePush } = await import("./push");
+        await disablePush().catch(() => undefined);
+      }
       await unwrap(api.DELETE("/api/public/auth/session"));
     } finally {
       window.location.assign("/");
     }
-  }, []);
+  }, [session]);
 
   useEffect(() => {
     void refresh();
@@ -86,6 +91,18 @@ export function useSession(): SessionContextValue {
     throw new Error("useSession outside SessionProvider");
   }
   return value;
+}
+
+/** Where a signed-in account starts: the site for a customer, the panel for a practitioner or the admin (step 13). */
+export function homeOf(role: Role): string {
+  switch (role) {
+    case "CUSTOMER":
+      return "/";
+    case "PRACTITIONER":
+      return "/pannello";
+    case "ADMIN":
+      return "/pannello/professionisti";
+  }
 }
 
 /** A customer with a complete profile: the pages of "my sessions", credits, profile. */

@@ -1,18 +1,35 @@
 "use client";
 
 import Link from "next/link";
+import { useRouter } from "next/navigation";
 import { useEffect, useState } from "react";
 import { ErrorNotice, Loading } from "@/components/Notice";
 import { loadPractitioners, type PublicPractitioner } from "@/lib/directory";
 import { fullName } from "@/lib/format";
+import { homeOf, useSession } from "@/lib/session";
 
 export function HomeClient() {
   const [practitioners, setPractitioners] = useState<PublicPractitioner[] | null>(null);
   const [error, setError] = useState<unknown>(null);
+  const { session } = useSession();
+  const router = useRouter();
+  // a practitioner or the admin starts from the panel (step 13): after the sign-in, and from the link of a push,
+  // which is the address of the site (D-088). The panel hides what is not theirs; the backend decides
+  const staff = session.state === "signed-in" && session.role !== "CUSTOMER";
+
+  useEffect(() => {
+    if (session.state === "signed-in" && session.role !== "CUSTOMER") {
+      router.replace(homeOf(session.role));
+    }
+  }, [session, router]);
 
   useEffect(() => {
     loadPractitioners().then(setPractitioners, setError);
   }, []);
+
+  if (staff || session.state === "loading") {
+    return <Loading />;
+  }
 
   return (
     <>

@@ -11,6 +11,20 @@ const config: NextConfig = {
   // the end-to-end tests run their own server next to the developer's: each in its own folder (playwright.config.ts)
   distDir: process.env.NEXT_DIST_DIR ?? ".next",
   poweredByHeader: false,
+  // The service worker of the panel (step 13): never cached by the browser, so a new version arrives at the next
+  // visit; and the manifest with its type, for the "add to Home screen" of the phones
+  async headers() {
+    return [
+      {
+        source: "/sw.js",
+        headers: [
+          { key: "Content-Type", value: "application/javascript; charset=utf-8" },
+          { key: "Cache-Control", value: "no-cache, no-store, must-revalidate" },
+        ],
+      },
+      { source: "/pannello.webmanifest", headers: [{ key: "Content-Type", value: "application/manifest+json" }] },
+    ];
+  },
   async rewrites() {
     return [{ source: "/api/:path*", destination: `${backend}/api/:path*` }];
   },

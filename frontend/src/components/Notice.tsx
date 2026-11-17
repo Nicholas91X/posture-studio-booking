@@ -1,4 +1,5 @@
 import type { ReactNode } from "react";
+import type { ApiErrorCode } from "@/api/client";
 import { messageFor } from "@/api/errors";
 
 type Tone = "info" | "error" | "warning" | "success";
@@ -13,13 +14,13 @@ export function Notice({ tone = "info", children }: { tone?: Tone; children: Rea
 }
 
 /** Any error, as a sentence from the dictionary (errors.ts): never a technical text. */
-export function ErrorNotice({ error }: { error: unknown }) {
+export function ErrorNotice({ error, wording }: { error: unknown; wording?: Partial<Record<ApiErrorCode, string>> }) {
   if (error == null) {
     return null;
   }
   return (
     <Notice tone="error">
-      <p>{messageFor(error)}</p>
+      <p>{messageFor(error, wording)}</p>
     </Notice>
   );
 }

@@ -1,0 +1,17 @@
+{
+  "name": "Pannello · Centro Posturale Apuano",
+  "short_name": "Pannello",
+  "description": "Il pannello dei professionisti: agenda, richieste, clienti e notifiche.",
+  "id": "/pannello",
+  "start_url": "/pannello",
+  "scope": "/",
+  "display": "standalone",
+  "lang": "it",
+  "background_color": "#f8f1e6",
+  "theme_color": "#fffdf8",
+  "icons": [
+    { "src": "/icons/panel-192.png", "sizes": "192x192", "type": "image/png", "purpose": "any" },
+    { "src": "/icons/panel-512.png", "sizes": "512x512", "type": "image/png", "purpose": "any" },
+    { "src": "/icons/panel-maskable-512.png", "sizes": "512x512", "type": "image/png", "purpose": "maskable" }
+  ]
+}

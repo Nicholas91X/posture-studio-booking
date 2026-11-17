@@ -12,7 +12,7 @@ import { ErrorNotice, Loading } from "@/components/Notice";
 import { addMonths, firstOfMonth, isDay, mondayOf, monthGridOf, monthTitle, weekOf, weekTitle, type Day } from "@/lib/calendar";
 import { useDirectory, type Directory } from "@/lib/directory";
 import { addDays, romeDay, todayInRome } from "@/lib/format";
-import { SHOWN_IN_CALENDAR } from "@/lib/labels";
+import { BOOKING_STATUS, SHOWN_IN_CALENDAR } from "@/lib/labels";
 
 type Booking = Schemas["CustomerBookingView"];
 type Period = "upcoming" | "past";
@@ -145,7 +145,19 @@ function WeekView({ monday, today, bookings, directory }: { monday: Day; today: 
         next={`/prenotazioni?vista=settimana&da=${addDays(monday, 7)}`}
         today={monday === mondayOf(today) ? null : "/prenotazioni?vista=settimana"}
       />
-      <WeekGrid days={days} today={today} bookings={inWeek} directory={directory} />
+      <WeekGrid
+        days={days}
+        today={today}
+        events={inWeek.map((booking) => ({
+          key: booking.id,
+          startsAt: booking.startsAt,
+          endsAt: booking.endsAt,
+          href: `/prenotazioni/${booking.id}`,
+          tone: BOOKING_STATUS[booking.status].tone,
+          what: `${directory.serviceName(booking.practitionerId, booking.serviceId)} con ${directory.practitionerName(booking.practitionerId)}`,
+          status: BOOKING_STATUS[booking.status].text,
+        }))}
+      />
       {inWeek.length === 0 ? (
         <p className="muted">
           Nessuna seduta questa settimana. <Link href="/">Prenotane una</Link>.

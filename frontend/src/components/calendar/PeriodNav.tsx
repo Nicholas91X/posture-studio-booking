@@ -1,6 +1,7 @@
 import Link from "next/link";
 
 const LABELS = {
+  giorno: { previous: "Giorno precedente", next: "Giorno successivo" },
   settimana: { previous: "Settimana precedente", next: "Settimana successiva" },
   mese: { previous: "Mese precedente", next: "Mese successivo" },
 } as const;
