@@ -1,5 +1,7 @@
 # Passo 12 — Frontend del cliente
 
+> **Stato: chiuso** (2026-11-17). Prova manuale con Stripe dal sito fatta il 2026-11-17, con l'approvazione automatica e con quella manuale. 1128 test del backend verdi (`mvnw clean test`), 10 test end-to-end e 13 prove unitarie del frontend verdi. Unito in `main` con un merge (PR #9); dopo il merge, l'uscita per admin e professionisti, l'identità visiva dello studio (D-086) e le viste a calendario (D-087), unite con il merge del branch `docs/local-startup`.
+
 ## Obiettivo
 
 Il sito dei clienti: accesso, scelta di professionista, servizio e orario, pagamento con Stripe o con un credito, "le mie sedute" con ritiro e cancellazione, crediti e pacchetti, profilo. Tutte le regole restano nel backend: il frontend mostra e invia, non decide (D-005). Prima, il contratto OpenAPI da cui il frontend genera i suoi tipi.
@@ -10,7 +12,7 @@ Il codice l'ha scritto Claude (D-005, percorso). Al posto delle guide di studio,
 
 - [x] **Contratto OpenAPI generato; tipi del frontend generati, nessuno a mano** — `frontend/openapi.json` e `frontend/src/api/schema.d.ts`, da `npm run api` (D-083). Gli unici tipi scritti nel frontend sono interni alle pagine (stati di una pagina, "in attesa"/"scaduto"), mai una forma delle API.
 - [x] **"Prenotabile online" nell'API pubblica e nel sito** — `PublicPractitioner.onlineBooking` (D-084), l'avviso nell'elenco e sulla pagina del professionista prima di scegliere l'orario; provato in `PublicApiTest` e nei test end-to-end.
-- [ ] **Un cliente nuovo accede, prenota, paga in modalità di prova, vede la seduta confermata dopo l'approvazione** — **prova manuale da fare** (Nicholas, con la Stripe CLI e il conto di prova): procedura qui sotto. Il codice c'è; i test automatici non parlano con Stripe.
+- [x] **Un cliente nuovo accede, prenota, paga in modalità di prova, vede la seduta confermata dopo l'approvazione** — **prova manuale fatta il 2026-11-17** (Nicholas, con la Stripe CLI e il conto di prova), con l'approvazione automatica e con quella manuale: esito nella sezione qui sotto. I test automatici non parlano con Stripe.
 - [x] **Prenotazione con credito, ritiro, cancellazione in tempo e tardiva con la frase giusta prima della conferma** — test end-to-end 3, 4, 5.
 - [x] **Crediti e acquisto di un pacchetto** — pagina dei crediti e storia di un lotto (test end-to-end 8); l'acquisto apre Stripe e torna a `/crediti?acquisto=...`, da provare a mano con la stessa procedura.
 - [x] **Nessun errore tecnico mostrato al cliente; codice sconosciuto gestito** — un solo dizionario (`errors.ts`), test end-to-end 6 (orario preso nel frattempo) e 7 (codice inventato e `detail` tecnico: compare solo la frase generica).
@@ -59,9 +61,16 @@ Il codice l'ha scritto Claude (D-005, percorso). Al posto delle guide di studio,
 
 `frontend/e2e/`: `start-backend.mjs` (backend sulla 8081 con il database `posture_studio_e2e` ricreato a ogni giro, admin dei test, nessun conto Stripe), `support.ts` (codici da Mailpit, attori che chiamano le API con sessione e CSRF), `customer.spec.ts` (9 test), `playwright.config.ts` (Pixel 7, frontend sulla 3001 in `.next-e2e`).
 
-## Prova manuale con Stripe (da fare)
+## Prova manuale con Stripe (fatta il 2026-11-17)
 
-Come le prove dei passi 9 e 10 (guida 32, parte 13.1; guida 37, parte 12.1), ma dal sito.
+**Esito.** Fatta da Nicholas il 2026-11-17, dal sito, in entrambe le modalità di approvazione. Tutto come previsto.
+
+- **Approvazione automatica**: pagamento su Stripe, poi la seduta **confermata** e l'importo **incassato** subito.
+- **Approvazione manuale**: pagamento su Stripe, poi "importo bloccato" con la scadenza della risposta; approvazione da Anna con `tools/api.ps1`; la seduta **confermata**, e in `stripe listen` `payment_intent.succeeded → 200`.
+
+L'esito annotato copre i passi 1–6 della procedura. Le varianti 7–9 (pagamento annullato, webhook in ritardo, acquisto di un pacchetto dal sito) non vi compaiono; l'acquisto di un pacchetto con Stripe era già stato provato a mano al passo 10, il 2026-11-11, chiamando le API.
+
+**Procedura**, come le prove dei passi 9 e 10 (guida 32, parte 13.1; guida 37, parte 12.1), ma dal sito.
 
 1. `.env` con il conto `prova` (`PAYMENT_ACCOUNTS=prova` e le sue due chiavi) e `OPENAPI_ENABLED=true`; database e Mailpit su.
 2. Backend: da `backend/`, `.\mvnw.cmd spring-boot:run`. Frontend: da `frontend/`, `npm run dev`. Stripe: `stripe listen --events checkout.session.completed,checkout.session.expired,payment_intent.succeeded,payment_intent.canceled --forward-to localhost:8080/api/webhooks/stripe/prova` (il `whsec_` che stampa è `STRIPE_PROVA_WEBHOOK_SECRET`).
