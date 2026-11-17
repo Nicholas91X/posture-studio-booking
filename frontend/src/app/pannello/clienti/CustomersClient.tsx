@@ -5,6 +5,7 @@ import { useState } from "react";
 import { api, unwrap } from "@/api/client";
 import { ErrorNotice, Loading, Notice } from "@/components/Notice";
 import { GrantDialog } from "@/components/panel/GrantDialog";
+import { StudioSaleDialog } from "@/components/panel/StudioSaleDialog";
 import { creditsText, formatCalendarDay, fullName } from "@/lib/format";
 import { loadOwnServices, serviceNameIn, useApi } from "@/lib/panel";
 
@@ -15,6 +16,7 @@ export function CustomersClient() {
   const services = useApi(() => loadOwnServices(), []);
   const [search, setSearch] = useState("");
   const [granting, setGranting] = useState(false);
+  const [selling, setSelling] = useState(false);
   const [granted, setGranted] = useState<string | null>(null);
 
   const words = search.trim().toLowerCase();
@@ -25,9 +27,14 @@ export function CustomersClient() {
   return (
     <>
       <h1>I miei clienti</h1>
-      <button type="button" className="button button-block" disabled={services.data === null} onClick={() => setGranting(true)}>
-        Regala sedute a un cliente
-      </button>
+      <div className="stack">
+        <button type="button" className="button button-block" onClick={() => setSelling(true)}>
+          Registra un pacchetto venduto in studio
+        </button>
+        <button type="button" className="button button-secondary button-block" disabled={services.data === null} onClick={() => setGranting(true)}>
+          Regala sedute a un cliente
+        </button>
+      </div>
       {granted !== null ? (
         <Notice tone="success">
           <p>{granted}</p>
@@ -52,6 +59,19 @@ export function CustomersClient() {
           </div>
         </Link>
       ))}
+      {selling ? (
+        <StudioSaleDialog
+          customer={null}
+          onClose={() => setSelling(false)}
+          onSold={(lot) => {
+            setSelling(false);
+            setGranted(
+              `Vendita registrata: ${creditsText(Number(lot.balance))} per ${serviceNameIn(services.data, lot.serviceId)}, validi fino al ${formatCalendarDay(lot.validUntil)}.`,
+            );
+            customers.reload();
+          }}
+        />
+      ) : null}
       {granting && services.data !== null ? (
         <GrantDialog
           services={services.data}

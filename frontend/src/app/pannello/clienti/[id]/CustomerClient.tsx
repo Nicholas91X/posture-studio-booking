@@ -7,6 +7,7 @@ import { api, unwrap, type Schemas } from "@/api/client";
 import { Dialog } from "@/components/Dialog";
 import { ErrorNotice, Loading, Notice } from "@/components/Notice";
 import { GrantDialog } from "@/components/panel/GrantDialog";
+import { StudioSaleDialog } from "@/components/panel/StudioSaleDialog";
 import { creditsText, formatCalendarDay, formatDateTime, fullName, todayInRome } from "@/lib/format";
 import { badgeClass, ENTRY_KIND, LOT_SOURCE, LOT_STATUS } from "@/lib/labels";
 import { loadOwnServices, serviceNameIn, useAction, useApi, type ServiceOffer } from "@/lib/panel";
@@ -23,6 +24,7 @@ export function CustomerClient() {
   const lots = useApi(() => unwrap(api.GET("/api/panel/customers/{customerId}/credits", { params: { path: { customerId: id } } })), [id]);
   const services = useApi(() => loadOwnServices(), []);
   const [granting, setGranting] = useState(false);
+  const [selling, setSelling] = useState(false);
   const [done, setDone] = useState<string | null>(null);
   const customer = customers.data?.find((one) => one.id === id) ?? null;
 
@@ -56,6 +58,9 @@ export function CustomerClient() {
         <Link href={bookHere} className="button">
           Prenota per questo cliente
         </Link>
+        <button type="button" className="button button-secondary" onClick={() => setSelling(true)}>
+          Pacchetto venduto in studio
+        </button>
         <button type="button" className="button button-secondary" disabled={services.data === null} onClick={() => setGranting(true)}>
           Regala sedute
         </button>
@@ -74,6 +79,16 @@ export function CustomerClient() {
         <LotCard key={lot.id} lot={lot} services={services.data} onChanged={changed} />
       ))}
 
+      {selling ? (
+        <StudioSaleDialog
+          customer={customer}
+          onClose={() => setSelling(false)}
+          onSold={(lot) => {
+            setSelling(false);
+            changed(`Vendita registrata: ${creditsText(Number(lot.balance))}, validi fino al ${formatCalendarDay(lot.validUntil)}.`);
+          }}
+        />
+      ) : null}
       {granting && services.data !== null ? (
         <GrantDialog
           services={services.data}
