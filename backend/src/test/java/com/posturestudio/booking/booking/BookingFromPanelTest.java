@@ -75,7 +75,7 @@ public class BookingFromPanelTest {
         long later = data.creditLot(anna, seduta, mario, "2027-01-31", 5);
         long sooner = data.creditLot(anna, seduta, mario, "2026-12-31", 5);
 
-        PanelBookingView booked = book("2026-11-09T09:00+01:00", MARIO);
+        PanelBookingCreated booked = book("2026-11-09T09:00+01:00", MARIO);
 
         assertThat(booked.status()).isEqualTo(BookingStatus.CONFIRMED);
         assertThat(booked.paidWith()).isEqualTo(PaidWith.CREDIT);
@@ -93,7 +93,7 @@ public class BookingFromPanelTest {
     void theNoticeOfCancellationIsPhotographedFromThePanel() {
         jdbc.update("update practitioner set cancellation_notice_hours = 48 where id = ?", anna);
 
-        PanelBookingView booked = book("2026-11-09T09:00+01:00", MARIO);
+        PanelBookingCreated booked = book("2026-11-09T09:00+01:00", MARIO);
         entityManager.flush();
         jdbc.update("update practitioner set cancellation_notice_hours = 72 where id = ?", anna);
 
@@ -144,7 +144,7 @@ public class BookingFromPanelTest {
 
     @Test
     void aBookingForANewCustomerIsConfirmedAndPaidInTheStudio() {
-        PanelBookingView booked = book("2026-11-09T09:00+01:00", MARIO);
+        PanelBookingCreated booked = book("2026-11-09T09:00+01:00", MARIO);
 
         assertThat(booked.status()).isEqualTo(BookingStatus.CONFIRMED);
         entityManager.flush();
@@ -247,7 +247,7 @@ public class BookingFromPanelTest {
 
     // ***** helpers *****
 
-    private PanelBookingView book(String startsAt, CustomerDetails customer) {
+    private PanelBookingCreated book(String startsAt, CustomerDetails customer) {
         return service.bookFromPanel(anna, new NewPanelBooking(seduta, OffsetDateTime.parse(startsAt), customer));
     }
 

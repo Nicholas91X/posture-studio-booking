@@ -340,6 +340,22 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/panel/bookings/room-overlaps": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get: operations["roomOverlaps"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/panel/bookings/{id}": {
         parameters: {
             query?: never;
@@ -622,6 +638,22 @@ export interface paths {
         get?: never;
         put?: never;
         post: operations["register"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/panel/push-subscriptions/test": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post: operations["test"];
         delete?: never;
         options?: never;
         head?: never;
@@ -1199,6 +1231,25 @@ export interface components {
             /** Format: int32 */
             validityDays: number;
         };
+        PanelBookingCreated: {
+            /** Format: date-time */
+            approvalDeadline: string | null;
+            customerCreated: boolean;
+            /** Format: int64 */
+            customerId: number;
+            /** Format: date-time */
+            endsAt: string;
+            /** Format: int64 */
+            id: number;
+            /** @enum {string} */
+            paidWith: "CARD" | "IN_STUDIO" | "CREDIT";
+            /** Format: int64 */
+            serviceId: number;
+            /** Format: date-time */
+            startsAt: string;
+            /** @enum {string} */
+            status: "PENDING_PAYMENT" | "PENDING_APPROVAL" | "CONFIRMED" | "EXPIRED" | "REJECTED" | "APPROVAL_EXPIRED" | "WITHDRAWN" | "CANCELLED_IN_TIME" | "CANCELLED_LATE" | "CANCELLED_BY_STUDIO" | "COMPLETED" | "NO_SHOW";
+        };
         PanelBookingRow: {
             /** Format: date-time */
             approvalDeadline: string | null;
@@ -1337,6 +1388,9 @@ export interface components {
             end: string;
             /** Format: date-time */
             start: string;
+        };
+        PushTestView: {
+            delivered: boolean;
         };
         ReturnedCredit: {
             /** Format: int64 */
@@ -4083,13 +4137,13 @@ export interface operations {
             };
         };
         responses: {
-            /** @description OK */
-            200: {
+            /** @description Created */
+            201: {
                 headers: {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["PanelBookingView"];
+                    "application/json": components["schemas"]["PanelBookingCreated"];
                 };
             };
             /** @description Invalid request: wrong format, or invalid fields (errors) */
@@ -4182,6 +4236,101 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["PanelBookingRow"][];
+                };
+            };
+            /** @description Invalid request: wrong format, or invalid fields (errors) */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ApiProblem"];
+                };
+            };
+            /** @description Nobody is signed in, or a wrong or expired access code (code) */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ApiProblem"];
+                };
+            };
+            /** @description Not allowed for this account, a missing CSRF token, or a deactivated account (code) */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ApiProblem"];
+                };
+            };
+            /** @description Not found, or someone else's: the same answer */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ApiProblem"];
+                };
+            };
+            /** @description A business rule forbids it now (code) */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ApiProblem"];
+                };
+            };
+            /** @description Too many requests: Retry-After says in how many seconds */
+            429: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ApiProblem"];
+                };
+            };
+            /** @description Unexpected error */
+            500: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ApiProblem"];
+                };
+            };
+            /** @description A service the request needs did not answer (code, when known) */
+            503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ApiProblem"];
+                };
+            };
+        };
+    };
+    roomOverlaps: {
+        parameters: {
+            query: {
+                serviceId: number;
+                startsAt: string;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["RoomOverlap"][];
                 };
             };
             /** @description Invalid request: wrong format, or invalid fields (errors) */
@@ -5981,6 +6130,98 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content?: never;
+            };
+            /** @description Invalid request: wrong format, or invalid fields (errors) */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ApiProblem"];
+                };
+            };
+            /** @description Nobody is signed in, or a wrong or expired access code (code) */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ApiProblem"];
+                };
+            };
+            /** @description Not allowed for this account, a missing CSRF token, or a deactivated account (code) */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ApiProblem"];
+                };
+            };
+            /** @description Not found, or someone else's: the same answer */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ApiProblem"];
+                };
+            };
+            /** @description A business rule forbids it now (code) */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ApiProblem"];
+                };
+            };
+            /** @description Too many requests: Retry-After says in how many seconds */
+            429: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ApiProblem"];
+                };
+            };
+            /** @description Unexpected error */
+            500: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ApiProblem"];
+                };
+            };
+            /** @description A service the request needs did not answer (code, when known) */
+            503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ApiProblem"];
+                };
+            };
+        };
+    };
+    test: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["PushTestView"];
+                };
             };
             /** @description Invalid request: wrong format, or invalid fields (errors) */
             400: {

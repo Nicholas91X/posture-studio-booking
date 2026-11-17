@@ -1,13 +1,18 @@
 package com.posturestudio.booking.notification;
 
 import static com.posturestudio.booking.notification.PushEncryptionTest.AUTH;
+import static com.posturestudio.booking.notification.PushEncryptionTest.BROWSER_PRIVATE;
 import static com.posturestudio.booking.notification.PushEncryptionTest.BROWSER_PUBLIC;
 import static com.posturestudio.booking.notification.PushEncryptionTest.SERVER_PUBLIC;
+import static com.posturestudio.booking.notification.PushEncryptionTest.bytes;
+import static java.nio.charset.StandardCharsets.UTF_8;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.springframework.security.test.web.servlet.request.SecurityMockMvcRequestPostProcessors.csrf;
 
 import java.util.Map;
 
+import org.junit.jupiter.api.AfterAll;
+import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -44,11 +49,24 @@ class PushSubscriptionApiTest {
     @Autowired
     JdbcTemplate jdbc;
 
+    private static FakePushService pushService;
+
     private long anna;
     private long marco;
 
+    @BeforeAll
+    static void startThePushService() throws Exception {
+        pushService = new FakePushService();
+    }
+
+    @AfterAll
+    static void stopThePushService() {
+        pushService.close();
+    }
+
     @BeforeEach
     void insertPractitioners() {
+        pushService.clear();
         anna = insertPractitioner("push-anna@example.com");
         marco = insertPractitioner("push-marco@example.com");
     }
@@ -162,7 +180,67 @@ class PushSubscriptionApiTest {
         assertThat(jdbc.queryForObject("select count(*) from push_subscription", Long.class)).isZero();
     }
 
+    // ***** the test push (D-088) *****
+
+    // to Anna's devices only, decrypted as her browser would; the answer says it arrived
+    @Test
+    void theTestPushReachesOnlyOwnDevices() {
+        aDevice(anna, "anna-phone");
+        aDevice(marco, "marco-phone");
+
+        assertThat(mvc.post().uri("/api/panel/push-subscriptions/test").with(sessions.practitioner(anna)))
+                .hasStatusOk()
+                .bodyJson().isStrictlyEqualTo("{\"delivered\": true}");
+
+        assertThat(pushService.received()).extracting(FakePushService.Received::device).containsExactly("anna-phone");
+        FakePushService.Received push = pushService.received().getFirst();
+        assertThat(push.headers().get("ttl")).isEqualTo("600");
+        String payload = new String(FakeBrowser.decrypt(push.body(), bytes(BROWSER_PRIVATE), bytes(BROWSER_PUBLIC), bytes(AUTH)), UTF_8);
+        assertThat(payload).isEqualTo("""
+                {"title":"Notifiche attive",\
+                "body":"Questa è una notifica di prova: le richieste da approvare arriveranno così.",\
+                "url":"http://localhost:3000","tag":"test"}""");
+    }
+
+    // no devices: an answer for the panel, not an error
+    @Test
+    void withoutADeviceTheTestPushIsNotDelivered() {
+        assertThat(mvc.post().uri("/api/panel/push-subscriptions/test").with(sessions.practitioner(anna)))
+                .hasStatusOk()
+                .bodyJson().isStrictlyEqualTo("{\"delivered\": false}");
+    }
+
+    // a device the browser dropped is not delivered, and deleted, as with every push
+    @Test
+    void aDroppedDeviceIsNotDeliveredAndGoes() {
+        aDevice(anna, "gone");
+        pushService.answer("gone", 410);
+
+        assertThat(mvc.post().uri("/api/panel/push-subscriptions/test").with(sessions.practitioner(anna)))
+                .hasStatusOk()
+                .bodyJson().isStrictlyEqualTo("{\"delivered\": false}");
+        // gone: a second test does not even try it (seen from outside; the delete is still in JPA's queue here)
+        mvc.post().uri("/api/panel/push-subscriptions/test").with(sessions.practitioner(anna)).exchange();
+        assertThat(pushService.received()).hasSize(1);
+    }
+
+    @Test
+    void theTestPushIsForPractitionersOnly() {
+        Long customer = jdbc.queryForObject(
+                "insert into app_user (role, email) values ('CUSTOMER', 'push-test-cliente@example.com') returning id", Long.class);
+
+        assertThat(mvc.post().uri("/api/panel/push-subscriptions/test").with(csrf())).hasStatus(HttpStatus.UNAUTHORIZED);
+        assertThat(mvc.post().uri("/api/panel/push-subscriptions/test").with(sessions.user(customer)))
+                .hasStatus(HttpStatus.FORBIDDEN);
+    }
+
     // ***** helpers *****
+
+    // a device on the fake push service: inserted with SQL, because @PushEndpoint refuses localhost, as it must
+    private void aDevice(long practitioner, String name) {
+        jdbc.update("insert into push_subscription (practitioner_id, endpoint, p256dh, auth) values (?, ?, ?, ?)",
+                practitioner, pushService.endpoint(name), BROWSER_PUBLIC, AUTH);
+    }
 
     private MvcTestResult register(long practitioner, String endpoint, String auth) {
         return mvc.post().uri("/api/panel/push-subscriptions").with(sessions.practitioner(practitioner))

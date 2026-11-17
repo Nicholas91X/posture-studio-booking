@@ -6,6 +6,7 @@ import java.time.Clock;
 import java.time.Duration;
 import java.time.Instant;
 import java.time.LocalDate;
+import java.time.OffsetDateTime;
 import java.util.Comparator;
 import java.util.HashSet;
 import java.util.List;
@@ -34,6 +35,7 @@ import com.posturestudio.booking.credit.CreditService;
 import com.posturestudio.booking.credit.ReturnedCredit;
 import com.posturestudio.booking.customer.CustomerName;
 import com.posturestudio.booking.customer.CustomerService;
+import com.posturestudio.booking.customer.FoundCustomer;
 import com.posturestudio.booking.practitioner.PractitionerService;
 import com.posturestudio.booking.practitioner.PractitionerSettings;
 import com.posturestudio.booking.schedule.ScheduleService;
@@ -371,14 +373,15 @@ public class BookingService {
     // Working bands and absences apply; grid, notice, horizon, limit and approval do not (guide 22, part 2).
     // Customer found or created by email in this same transaction: a failed booking leaves no new customer
     @Transactional
-    public PanelBookingView bookFromPanel(long practitionerId, NewPanelBooking request) {
+    public PanelBookingCreated bookFromPanel(long practitionerId, NewPanelBooking request) {
         Instant now = clock.instant();
         // the lock against a deactivation in flight, first (guide 45, part 4); the practitioner acting here is signed
         // in, but a deactivation may be committing in this very moment
         practitioners.lockForBooking(practitionerId);
         // an own active service, or 404
         ServiceOnSale service = catalog.serviceOnSale(practitionerId, request.serviceId());
-        long customerId = customers.findOrCreate(request.customer());
+        FoundCustomer customer = customers.findOrCreate(request.customer());
+        long customerId = customer.id();
         // it does not respect the limit, but it counts in it: same lock as the customer's request (D-045)
         customers.lockForBooking(customerId);
 
@@ -401,7 +404,28 @@ public class BookingService {
         // used at once: no request that a rejection could give back; only a cancellation in time will (step 11)
         lot.ifPresent(lotId -> credits.commit(lotId, booking.getId()));
         events.publishEvent(BookingConfirmed.of(booking));
-        return PanelBookingView.from(booking);
+        return PanelBookingCreated.of(PanelBookingView.from(booking), customer.created());
+    }
+
+    // Before booking from the panel (D-088): the room flag of D-049 for a session not booked yet. The intervals
+    // the slot would share with the other practitioners' bookings that hold the time, when one of the two is an
+    // evaluation. Same query and same rule as the lists: only service and times of the others are read.
+    // An own active service, or 404; nothing is locked or written, the booking itself decides later
+    @Transactional(readOnly = true)
+    public List<RoomOverlap> roomOverlapsForPanel(long practitionerId, long serviceId, OffsetDateTime startsAt) {
+        Instant now = clock.instant();
+        ServiceOnSale service = catalog.serviceOnSale(practitionerId, serviceId);
+        Instant start = startsAt.toInstant();
+        TimeRange slot = new TimeRange(start, start.plus(Duration.ofMinutes(service.durationMinutes())));
+        List<BookedRange> others = bookings.findOthersHolding(practitionerId, slot.start(), slot.end(),
+                now, BookingStatus.HOLDS_TIME, BookingStatus.PENDING_PAYMENT);
+        if (others.isEmpty()) {
+            return List.of();
+        }
+        Set<Long> serviceIds = new HashSet<>();
+        serviceIds.add(service.id());
+        others.forEach(other -> serviceIds.add(other.serviceId()));
+        return evaluationOverlaps(service.id(), slot, others, catalog.evaluationsAmong(serviceIds));
     }
 
     @Transactional(readOnly = true)
@@ -669,16 +693,17 @@ public class BookingService {
                     boolean holds = booking.holdsTimeAt(now);
                     return PanelBookingRow.from(booking, names.get(booking.getCustomerId()),
                             holds && outside.contains(booking.range()),
-                            holds ? evaluationOverlaps(booking, others, evaluations) : List.of());
+                            holds ? evaluationOverlaps(booking.getServiceId(), booking.range(), others, evaluations)
+                                    : List.of());
                 })
                 .toList();
     }
 
     // The intervals this booking shares with the others', when one of the two is an evaluation (D-043).
     // The shared part of two half-open intervals: from the later start to the earlier end
-    private static List<RoomOverlap> evaluationOverlaps(Booking booking, List<BookedRange> others, Set<Long> evaluations) {
-        boolean ownIsEvaluation = evaluations.contains(booking.getServiceId());
-        TimeRange own = booking.range();
+    private static List<RoomOverlap> evaluationOverlaps(long serviceId, TimeRange own, List<BookedRange> others,
+                                                        Set<Long> evaluations) {
+        boolean ownIsEvaluation = evaluations.contains(serviceId);
         return others.stream()
                 .filter(other -> own.overlaps(other.range()))
                 .filter(other -> ownIsEvaluation || evaluations.contains(other.serviceId()))

@@ -61,8 +61,10 @@ public class CustomerServiceTest {
 
     @Test
     void aNewCustomerIsCreatedWithTheirNames() {
-        long id = service.findOrCreate(new CustomerDetails("mario.rossi@example.com", "Mario", "Rossi"));
+        FoundCustomer found = service.findOrCreate(new CustomerDetails("mario.rossi@example.com", "Mario", "Rossi"));
         entityManager.flush();
+        long id = found.id();
+        assertThat(found.created()).isTrue();
 
         Map<String, Object> row = jdbc.queryForMap("""
                 select c.first_name, c.last_name, u.email, u.role
@@ -80,8 +82,10 @@ public class CustomerServiceTest {
         long existing = insertCustomer("mario.rossi@example.com");
 
         // the practitioner typed the name differently: the customer's data stay theirs (guide 22, 3.2)
-        long id = service.findOrCreate(new CustomerDetails("Mario.Rossi@Example.com", "Marione", "R."));
+        FoundCustomer found = service.findOrCreate(new CustomerDetails("Mario.Rossi@Example.com", "Marione", "R."));
         entityManager.flush();
+        long id = found.id();
+        assertThat(found.created()).isFalse();
 
         assertThat(id).isEqualTo(existing);
         assertThat(service.namesOf(List.of(id))).containsEntry(id, new CustomerName("Test", "Customer"));

@@ -16,10 +16,15 @@ class PushSubscriptionService {
 
     private final PushSubscriptionRepository subscriptions;
     private final Vapid vapid;
+    private final PushSender sender;
+    private final PushMessages messages;
 
-    PushSubscriptionService(PushSubscriptionRepository subscriptions, Vapid vapid) {
+    PushSubscriptionService(PushSubscriptionRepository subscriptions, Vapid vapid, PushSender sender,
+                            PushMessages messages) {
         this.subscriptions = subscriptions;
         this.vapid = vapid;
+        this.sender = sender;
+        this.messages = messages;
     }
 
     String vapidPublicKey() {
@@ -38,5 +43,12 @@ class PushSubscriptionService {
     @Transactional
     void unsubscribe(long practitionerId, String endpoint) {
         subscriptions.deleteOwn(practitionerId, endpoint);
+    }
+
+    // A test push to every device of this practitioner (D-088), sent now, in the request's thread: the panel
+    // waits for the answer to say whether it worked. No transaction: PushSender deletes a dead device by itself.
+    // true if at least one device took it; false with no devices, or when none took it
+    boolean sendTest(long practitionerId) {
+        return sender.sendToPractitioner(practitionerId, messages.test());
     }
 }
