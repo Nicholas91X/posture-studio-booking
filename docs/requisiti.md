@@ -22,7 +22,8 @@ I clienti prenotano e poi cancellano all'ultimo momento senza conseguenze, perch
 - Una modifica di prezzo non cambia le prenotazioni e i pagamenti già fatti: ognuno conserva il prezzo del momento.
 
 ### Prenotazione e pagamento
-- Una seduta singola si paga **per intero al momento della prenotazione**, con carta, tramite Stripe.
+- Una seduta singola si paga **per intero al momento della prenotazione**, con carta, tramite Stripe, **se il professionista ha un conto di incasso**.
+- **Senza conto di incasso si paga in studio** (D-089, 2026-11-17): il cliente prenota online senza pagare, e la richiesta segue l'approvazione come le altre. Valgono anticipo, orizzonte e limite. Una seduta "in studio" cancellata in tempo non genera credito; tardi, o se il cliente non si presenta, il cliente non perde niente. Restano a difesa l'approvazione manuale e il limite di sedute future. Il sistema non registra l'incasso dei contanti. Quando il conto arriva, si torna al pagamento anticipato: le prenotazioni già "in studio" restano tali, con il link di pagamento disponibile.
 - In alternativa si prenota usando un **credito** (da pacchetto o da cancellazione in tempo).
 - Mentre il cliente paga, l'orario scelto resta bloccato per lui per un tempo limitato. Se non completa il pagamento, l'orario torna libero.
 - Il sistema non vede e non conserva mai i dati della carta.
@@ -31,7 +32,7 @@ I clienti prenotano e poi cancellano all'ultimo momento senza conseguenze, perch
 
 ### Prenotazione dal pannello
 - Il professionista può prenotare **a nome di un suo cliente** (D-024), senza orizzonte né limite di prenotazioni future. Queste prenotazioni contano comunque nel limite quando il cliente prenota da solo.
-- Se il cliente ha crediti validi per quel servizio, si usano.
+- Se il cliente ha crediti validi per quel servizio, il professionista **sceglie** se usarne uno o far pagare la seduta in studio (D-090).
 - Altrimenti **pagamento in studio** (D-040): seduta confermata subito; se cancellata in tempo non genera credito. Il professionista può mandare al cliente un **link di pagamento** con WhatsApp (D-059): pagata con il link, la seduta conta come pagata con carta.
 - Se il cliente non esiste ancora, il professionista lo crea dal pannello con nome, cognome ed email.
 
@@ -47,7 +48,7 @@ Risposte dello studio del 2026-11-02 e del 2026-11-06.
 ### Pacchetti
 - I pacchetti sono una novità per lo studio. Si creano e si modificano dal pannello: numero di sedute, prezzo, durata di validità.
 - Un pacchetto è **legato a un solo professionista** e a un servizio.
-- Si paga per intero all'acquisto. Le sedute diventano crediti da usare per prenotare.
+- Si paga per intero all'acquisto: online con carta se il professionista ha un conto di incasso, altrimenti **in studio**. Un pacchetto venduto in studio il professionista lo **registra dal pannello** per email del cliente, con sedute, validità e prezzo del pacchetto in quel momento (D-089). Le sedute diventano crediti da usare per prenotare.
 - I crediti scadono alla fine della validità del pacchetto.
 - Un credito si usa per una seduta che cade **entro il suo ultimo giorno valido** (D-071, confermato dallo studio il 2026-11-12).
 
@@ -74,6 +75,7 @@ Risposte dello studio del 2026-11-02 e del 2026-11-06.
 ### Riservatezza del calendario
 - Il calendario **non è pubblico**. Senza accesso si vedono solo gli **orari liberi**: mai chi ha prenotato, né l'elenco delle sedute.
 - Il professionista vede solo le **proprie** prenotazioni, non quelle dell'altro professionista. Unica eccezione, per la stanza unica: la segnalazione di una sovrapposizione con una visita di valutazione dice all'altro professionista l'orario e che si tratta di una valutazione, senza il nome del cliente (D-043).
+- **Agende a confronto** (D-091): in una sezione dedicata del pannello ogni professionista vede le agende di tutti i professionisti attivi **solo come occupato e libero**, con orari di lavoro e assenze (senza il motivo), e cerca gli orari **liberi insieme** per le sedute di coppia. Mai cliente, servizio o altri dati delle prenotazioni degli altri.
 - Il cliente vede solo le **proprie** prenotazioni.
 
 ## Impostazioni modificabili dal pannello
@@ -125,7 +127,7 @@ Da decidere prima del passo indicato.
     - **effetto sulla prenotazione**: resta `CONFIRMED`, `paid_with` passa da `IN_STUDIO` a `CARD`, incasso immediato (niente da approvare). Una seduta pagata, se cancellata in tempo, genera il credito: pagare cambia le regole di cancellazione;
     - **link vecchi**: un pagamento che arriva per una seduta già cancellata va impedito (link annullato alla cancellazione) o rifiutato all'arrivo.
 17. **Fornitore degli SMS** (prima della messa online, passo 14; nuovo il 2026-11-09, D-055) — Orientamento: **Brevo**, come per le email (offre SMS transazionali). Da confrontare con almeno un altro fornitore: prezzo per SMS in Italia (prezzi di mercato intorno a 5–9 centesimi, da verificare sui listini), nome mittente alfanumerico e sua eventuale registrazione, affidabilità della consegna, conformità GDPR. Si implementa come un altro `SmsCodeSender` in `notification`, con la sua chiave nel `.env`. Fino ad allora in produzione l'SMS è spento (503 `SMS_UNAVAILABLE`).
-18. **Testi legali** (prima della messa online, passo 14; nuovo il 2026-11-17) — Servono tre testi: l'**informativa privacy**, le **condizioni di prenotazione e vendita** e il **diritto di recesso** sui pacchetti comprati online. Le prime versioni le scriviamo noi, con le bozze dalla chat di pianificazione; poi le rivede un legale. Collegato al punto 8 (cancellazione dei dati di un cliente). Domande per il legale:
+18. **Testi legali** (prima della messa online, passo 14; nuovo il 2026-11-17) — Servono tre testi: l'**informativa privacy**, le **condizioni di prenotazione e vendita** e il **diritto di recesso** sui pacchetti comprati online. Le prime versioni le scriviamo noi, con le bozze dalla chat di pianificazione; poi le rivede un legale. Collegato al punto 8 (cancellazione dei dati di un cliente). **Le condizioni di prenotazione descrivono i due modi di pagare** (D-089, 2026-11-17): anticipato con carta, quando il professionista ha un conto di incasso, oppure in studio; per ognuno, cosa succede con una cancellazione in tempo, tardiva o con la mancata presentazione, e la vendita dei pacchetti in studio (fuori dal recesso online). Domande per il legale:
     - **titolare del trattamento**: con due partite IVA distinte, è titolare ognuno dei due professionisti per i propri clienti, o sono contitolari?
     - **responsabile del trattamento**: serve un accordo con Nicholas, che gestisce il sistema e il server. Va allegato l'elenco dei fornitori che toccano i dati: Hetzner (server), Stripe (pagamenti), il servizio email (punto 5) e il servizio SMS (punto 17);
     - **dati sulla salute**: gli appuntamenti con un posturologo sono dati sulla salute, cioè una categoria particolare per il GDPR?

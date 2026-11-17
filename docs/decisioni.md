@@ -291,7 +291,7 @@ Le due regole valgono solo quando **prenota il cliente**. Le prenotazioni fatte 
 ---
 
 ## D-024 — Il professionista può prenotare per un cliente dal pannello
-**Stato:** accettata · 2026-10-29 · pagamento in studio **confermato da D-040** (2026-11-06); chi ha creato la prenotazione: D-042 · "cosa rende un cliente suo" **completato da D-066** (2026-11-10)
+**Stato:** accettata · 2026-10-29 · **modificata da D-090** (2026-11-17): con un credito utilizzabile il professionista sceglie tra credito e pagamento in studio · pagamento in studio **confermato da D-040** (2026-11-06); chi ha creato la prenotazione: D-042 · "cosa rende un cliente suo" **completato da D-066** (2026-11-10)
 
 **Contesto.** Non tutti i clienti prenoteranno da soli: alcuni chiedono la seduta di persona o al telefono. Il professionista deve poterla inserire lui.
 
@@ -775,7 +775,7 @@ Implementazione (pezzo 3, guida 16): `FreeSlots.compute(SlotQuery)` nel package 
 ---
 
 ## D-049 — Liste e segnalazioni: domande su insiemi di id, la stanza unica senza leggere i clienti degli altri
-**Stato:** accettata · 2026-11-07 · completa D-034 e D-043 · confronto completo: `docs/studio/23-liste-e-segnalazioni.md` · scelte di Claude secondo le raccomandazioni della guida, su indicazione di Nicholas
+**Stato:** accettata · 2026-11-07 · **precisata da D-091** (2026-11-17): le agende a confronto mostrano l'occupato degli altri, con la stessa riservatezza per costruzione · completa D-034 e D-043 · confronto completo: `docs/studio/23-liste-e-segnalazioni.md` · scelte di Claude secondo le raccomandazioni della guida, su indicazione di Nicholas
 
 **Contesto.** Il professionista deve vedere le proprie prenotazioni e le richieste da approvare, con due segnalazioni: prenotazione fuori dall'orario di lavoro attuale (D-034) e sovrapposizione con una valutazione dell'altro professionista (D-043), senza mai il nome del cliente dell'altro. Il cliente deve vedere le proprie.
 
@@ -1494,7 +1494,7 @@ Implementazione (pezzo 3, guida 16): `FreeSlots.compute(SlotQuery)` nel package 
 ---
 
 ## D-084 — Il professionista pubblico dice se è prenotabile online, come conferma, e il preavviso di cancellazione
-**Stato:** accettata · 2026-11-12 · brief del passo 12 · realizza la nota di Nicholas del 2026-11-10 (`stato.md`, "professionista prenotabile online") · **completa D-030** ("il cliente vede il tempo di risposta prima di prenotare": l'API pubblica non lo diceva) · modifica il contratto di `PublicPractitioner` (D-029)
+**Stato:** accettata · 2026-11-12 · **modificata da D-089** (2026-11-17): `onlineBooking` diventa `paymentMode` (`CARD`/`IN_STUDIO`), e senza conto si prenota pagando in studio · brief del passo 12 · realizza la nota di Nicholas del 2026-11-10 (`stato.md`, "professionista prenotabile online") · **completa D-030** ("il cliente vede il tempo di risposta prima di prenotare": l'API pubblica non lo diceva) · modifica il contratto di `PublicPractitioner` (D-029)
 
 **Contesto.** Un cliente scopriva che un professionista senza conto di incasso (D-057) non si può pagare online solo alla fine, con il 409 `CARD_PAYMENTS_UNAVAILABLE`. Inoltre D-030 vuole che il cliente veda il tempo di risposta del professionista **prima** di prenotare, ma `PublicPractitioner` aveva solo id e nome.
 
@@ -1584,3 +1584,62 @@ Implementazione (pezzo 3, guida 16): `FreeSlots.compute(SlotQuery)` nel package 
 **Alternative scartate.** *Frase fissa "se il cliente è nuovo riceverà un'email"*: avviso sempre presente, quindi ignorato. *Segnalazione solo dopo la conferma* (nella riga del calendario): arriva quando la seduta è già prenotata. *Una prova "vera" al posto del pulsante* (una richiesta di un cliente di prova): troppi passaggi per chi installa il pannello sul telefono. *`customerCreated` dentro `PanelBookingView`*: falso o senza senso nelle risposte di approvazione, rifiuto e cancellazione. *Una risposta annidata* `{booking, customerCreated}`: cambierebbe la forma della risposta che test e strumenti già leggono.
 
 **Conseguenze.** 9 test nuovi nel backend (1137 in tutto). Contratto e tipi rigenerati (`npm run api`). Il link della push resta l'indirizzo base (`notification.app-url`): è la home a mandare un professionista al pannello (instradamento per ruolo, passo 13).
+
+---
+
+## D-089 — Senza conto di incasso si paga in studio: richieste dei clienti "in studio", pacchetti venduti in studio e registrati dal pannello
+**Stato:** accettata · 2026-11-17 · brief del passo 13b · **modifica** il requisito del pagamento anticipato ("Prenotazione e pagamento") e **D-084** (`onlineBooking` diventa il modo di pagamento) · completa D-040, D-057 e D-059
+
+**Contesto.** Un professionista può non avere un conto Stripe, perché non lo vuole o non ancora (D-057). Finora i suoi clienti potevano prenotare solo con un suo credito, e senza credito ricevevano il 409 `CARD_PAYMENTS_UNAVAILABLE`. I pacchetti poi non si potevano comprare affatto, quindi nemmeno i crediti potevano nascere. Lo studio vuole che un professionista così lavori normalmente "in studio".
+
+**Decisione.**
+- **Decide il conto, nessuna impostazione nuova.** Senza un conto di incasso assegnato, tutto si paga in studio. Con il conto si torna al pagamento anticipato. Le prenotazioni già "in studio" restano tali, e per quelle confermate diventa disponibile il link di pagamento (D-059).
+- **Richiesta del cliente senza conto**: niente Stripe e niente blocco dell'importo. Nasce `paid_with = IN_STUDIO`, `booked_by = CUSTOMER`, e segue l'approvazione come una richiesta pagata con un credito (D-030): `PENDING_APPROVAL` con la scadenza, oppure `CONFIRMED` subito in automatica. Valgono anticipo minimo, orizzonte e limite di sedute future. Un credito utilizzabile del cliente si usa comunque, come sempre (D-071).
+- **Cancellazione e mancata presentazione**: le regole di "in studio" (D-040). Cancellata in tempo, nessun credito, perché non è stato pagato niente. Tardi o non presentato, il cliente non perde niente. **Conseguenza accettata**: senza conto il deterrente economico non c'è. Restano l'approvazione manuale e il limite di sedute future.
+- **Il sistema non registra l'incasso dei contanti**: "in studio" vuol dire "si paga lì", non "pagata".
+- **Via il 409 `CARD_PAYMENTS_UNAVAILABLE` sulle prenotazioni.** Il codice resta per l'acquisto online di un pacchetto e per il link di pagamento senza conto.
+- **API pubblica**: `PublicPractitioner.onlineBooking` (D-084) diventa **`paymentMode`**, `CARD` o `IN_STUDIO`. La regola è la stessa (`OnlinePayments`), cambia la parola: il sito non deve tradurre un booleano in una regola.
+- **Pacchetti venduti in studio**: il professionista registra dal pannello, per email del cliente (trovato o creato come in D-048), un suo pacchetto venduto in studio. Nasce un **lotto con un'origine propria, `STUDIO_SALE`**, diversa dall'omaggio. Sedute, validità e prezzo sono **fotografati dal pacchetto** in quel momento (D-011, come la fotografia di D-069). La traccia è nella riga: **chi** (`sold_by`, l'account del professionista) e **quando** (`created_at`). Nessuna riga in `payment`. Si può registrare anche un professionista **con** conto, per un pacchetto pagato al banco.
+- **L'admin può togliere un conto** (`DELETE /api/admin/practitioners/{id}/payment-account`): i pagamenti in corso restano sul loro conto (D-057), e da quel momento le nuove richieste nascono "in studio".
+- **Testi legali (punto aperto 18)**: le condizioni di prenotazione descrivono i due modi di pagare, anticipato con carta o in studio, e cosa cambia per la cancellazione.
+
+**Alternative scartate.** *Un'impostazione "pagamento in studio" separata dal conto*: due fonti di verità che possono contraddirsi, per esempio un conto assegnato e la carta spenta. *Pacchetto in studio come omaggio (`GRANT`) con una nota*: il prezzo non sarebbe fotografato, e una statistica delle vendite li confonderebbe con i regali. *Riga in `payment` con un metodo "contanti"*: `payment` è il registro di Stripe (D-062), e il sistema non registra i contanti.
+
+**Conseguenze.** Migrazione **V17**:
+- via `booking_in_studio_ck`, sostituito da "in studio non è mai in attesa di pagamento";
+- `credit_lot` riceve `sold_by` e l'origine `STUDIO_SALE`, con i `check` che legano origine, pagamento, pacchetto, prezzo e traccia;
+- la funzione del trigger che protegge il lotto elenca la colonna nuova.
+
+`confirmPaid` e `releasePayment` hanno un ramo per `IN_STUDIO`: nessun incasso, niente da restituire. Le email della richiesta dicono "pagherai in studio".
+
+---
+
+## D-090 — Prenotazione dal pannello: con un credito utilizzabile il professionista sceglie tra credito e pagamento in studio
+**Stato:** accettata · 2026-11-17 · brief del passo 13b · **modifica D-024** ("se il cliente ha crediti validi, si usano") e D-072
+
+**Contesto.** Dal pannello un credito utilizzabile del cliente si usava sempre (D-072). Ma a volte il cliente vuole pagare la seduta in studio e tenere il credito per un'altra volta.
+
+**Decisione.**
+- `NewPanelBooking` riceve **`inStudio`** (facoltativo, default `false`). Con `false` resta la regola di prima: il credito se c'è, altrimenti in studio. Con `true` la seduta è "in studio" anche se un credito c'è.
+- Prima di confermare, il pannello chiede **`GET /api/panel/bookings/credit-check?serviceId=&startsAt=&email=`** → `{usableCredit, validUntil}`. Considera solo i lotti di **questo** professionista, con la stessa regola della prenotazione (D-071). Un'email sconosciuta risponde "nessun credito" e non crea niente. La scelta compare solo se il credito c'è.
+
+**Alternative scartate.** *Un `enum` `CREDIT`/`IN_STUDIO` obbligatorio*: costringerebbe a scegliere anche quando non c'è niente da scegliere, e i chiamanti esistenti dovrebbero cambiare. *Scoprire il credito solo dopo la prenotazione*: la scelta arriverebbe tardi.
+
+**Conseguenze.** Riservatezza: la risposta dice solo se c'è un credito **con questo professionista**, cosa che il professionista vede già nei suoi clienti (D-066). Nessun dato dell'altro professionista.
+
+---
+
+## D-091 — Agende a confronto: occupato e libero di ogni professionista attivo, orari di lavoro e assenze, "liberi insieme"
+**Stato:** accettata · 2026-11-17 · brief del passo 13b · **precisa** "Riservatezza del calendario" (requisiti) e **D-049**
+
+**Contesto.** Lo studio vuole sedute di coppia (due professionisti con lo stesso cliente o con due clienti insieme) e una visione d'insieme della stanza unica. Ogni professionista vedeva solo le proprie sedute, più la segnalazione delle valutazioni (D-043).
+
+**Decisione.**
+- Una **sezione dedicata del pannello** mostra le agende di **tutti i professionisti attivi** (il proprio compreso) **solo come occupato e libero**: gli intervalli occupati (stati che occupano l'orario adesso, come D-049), gli orari di lavoro e le assenze. **Mai** cliente, servizio, id o stato delle prenotazioni degli altri, e mai il motivo di un'assenza.
+- **API** `GET /api/panel/agendas?from=&to=` (date di Roma, al massimo 31 giorni) → per ogni professionista attivo `practitionerId`, nome, `busy`, `working`, `absences`, ognuno una lista di `{start, end}`. La query sulle prenotazioni **seleziona solo professionista e orari** (riservatezza per costruzione, come `BookedRange`): i dati dei clienti non vengono nemmeno letti.
+- **"Liberi insieme"**: `GET /api/panel/agendas/free-together?from=&to=&durationMinutes=&practitionerIds=` → le finestre in cui **tutti** i professionisti scelti sono al lavoro, non assenti e non occupati, lunghe almeno la durata, e non nel passato. Intervalli semiaperti `[inizio, fine)`: una finestra lunga esattamente la durata c'è; una seduta che finisce alle 10 lascia libere le 10.
+- **Sedute di coppia**: si prenotano ognuna nella propria agenda, dal pannello. La vendita online di una seduta di coppia resta fuori.
+
+**Alternative scartate.** *Mostrare il servizio "valutazione" a tutti*: la segnalazione di D-043 basta per la stanza, il resto non serve per trovare un orario comune. *Calcolare "liberi insieme" nel browser*: sarebbe una regola (orari, assenze, stati che occupano) fuori dal backend.
+
+**Conseguenze.** Il requisito "il professionista vede solo le proprie prenotazioni" resta vero: degli altri vede solo il tempo occupato. Provato da un test che controlla la risposta **campo per campo**.
