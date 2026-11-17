@@ -59,6 +59,17 @@ public class CreditService {
         return !lots.findUsableIds(customerId, practitionerId, serviceId, ValidUntil.dayOf(sessionStart)).isEmpty();
     }
 
+    // The last valid day of the credit a booking from the panel would use now (D-090): the usable lot that ends
+    // first, as lockUsableLot chooses it, but without locks. Only a question: the booking decides under its locks
+    @Transactional(readOnly = true)
+    public Optional<java.time.LocalDate> usableCreditUntil(long customerId, long practitionerId, long serviceId,
+                                                          Instant sessionStart) {
+        return lots.findUsableIds(customerId, practitionerId, serviceId, ValidUntil.dayOf(sessionStart)).stream()
+                .findFirst()
+                .flatMap(lots::findById)
+                .map(lot -> lot.getValidUntil().lastDay());
+    }
+
     // The choice that counts, under the locks (guide 38, parts 5 and 6): the usable lot that ends first, LOCKED,
     // its balance read again after the lock. Usable for a session = its last valid day covers the day of the
     // session (guide 38, part 2: ValidUntil.covers(sessionStart)), not only today. The caller already holds the

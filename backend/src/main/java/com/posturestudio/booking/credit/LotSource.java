@@ -13,5 +13,8 @@ enum LotSource {
     // a credit of 1 born from a cancellation (in time, or by the studio): a session paid by card, or a credit
     // whose lot ended too soon (minimum validity, D-076). Its LOT_CREATED movement carries the booking (V16).
     // Always "already extended": a cancellation of the customer never extends it again (D-078, guide 42, part 8)
-    CANCELLATION
+    CANCELLATION,
+    // a package sold in the studio and recorded from the panel (D-089, V17): which package and its price
+    // photographed, who sold it; no payment row, the system does not record cash
+    STUDIO_SALE
 }

@@ -981,3 +981,60 @@ textarea.input {
 main > .row {
   margin-bottom: 1.25rem;
 }
+
+/* ***** The agendas compared (step 13b, D-091) ***** */
+
+/* background bands under the blocks: when someone works, is away, and the windows free together */
+.shade {
+  position: relative;
+  z-index: 0;
+  margin: 0 1px;
+  border-radius: 4px;
+}
+.shade-work {
+  background: var(--color-periwinkle-tint);
+}
+.shade-away {
+  background: repeating-linear-gradient(135deg, var(--color-danger-bg) 0 6px, transparent 6px 12px);
+}
+.shade-together {
+  background: var(--color-success-bg);
+  border-left: 3px solid var(--color-success);
+}
+
+/* a practitioner's name on top of their column */
+.column-name {
+  display: block;
+  font-weight: 600;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* a checkbox as a pill: who is compared */
+.chip {
+  min-height: var(--tap);
+  align-items: center;
+  padding: 0 0.8rem;
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-pill);
+  background: var(--color-surface);
+}
+.chip input {
+  margin-top: 0;
+}
+
+/* the legend under the grid */
+.legend {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.3rem 0.6rem;
+}
+.legend-swatch {
+  display: inline-block;
+  width: 0.9rem;
+  height: 0.9rem;
+  border-radius: 3px;
+  vertical-align: middle;
+}

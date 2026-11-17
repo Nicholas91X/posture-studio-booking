@@ -167,11 +167,12 @@ function AccountCard({ practitionerId }: { practitionerId: number }) {
       <ErrorNotice error={accounts.error ?? assigned.error} />
       {assigned.loading || accounts.loading ? <Loading /> : null}
       {assigned.data !== null && assigned.data.account === null ? (
-        <p className="small">Nessun conto: i clienti non possono pagare online questo professionista, solo con un credito.</p>
+        <p className="small">Nessun conto: i clienti di questo professionista prenotano online e pagano in studio.</p>
       ) : null}
       {assigned.data?.account != null ? (
         <p className="small">
-          Assegnato: <strong>{assigned.data.account.account}</strong>, dal {formatDateTime(assigned.data.account.assignedAt)}.
+          Assegnato: <strong>{assigned.data.account.account}</strong>, dal {formatDateTime(assigned.data.account.assignedAt)}. I
+          clienti pagano in anticipo con la carta.
         </p>
       ) : null}
       {accounts.data?.length === 0 ? (
@@ -194,6 +195,24 @@ function AccountCard({ practitionerId }: { practitionerId: number }) {
             Assegna il conto
           </button>
         </>
+      ) : null}
+      {assigned.data?.account != null ? (
+        <button
+          type="button"
+          className="link-button small"
+          disabled={action.running}
+          onClick={() =>
+            window.confirm(
+              "Togliere il conto? Le prossime prenotazioni dei clienti si pagheranno in studio. I pagamenti già avviati restano sul loro conto.",
+            ) &&
+            void action.run(async () => {
+              await unwrap(api.DELETE("/api/admin/practitioners/{id}/payment-account", { params: { path: { id: practitionerId } } }));
+              assigned.set({ account: null });
+            })
+          }
+        >
+          Togli il conto: si paga in studio
+        </button>
       ) : null}
     </form>
   );

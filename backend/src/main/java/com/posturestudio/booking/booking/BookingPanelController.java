@@ -72,6 +72,12 @@ class BookingPanelController {
         return bookings.roomOverlapsForPanel(current.id(), serviceId, startsAt);
     }
 
+    // before booking from the panel (D-090): would a credit of this customer pay it? Only with this practitioner
+    @GetMapping("/credit-check")
+    PanelCreditCheck creditCheck(@Valid PanelCreditQuery query) {
+        return bookings.creditCheckForPanel(current.id(), query);
+    }
+
     @GetMapping("/{id}")
     PanelBookingView find(@PathVariable long id) {
         return bookings.findForPractitioner(current.id(), id);

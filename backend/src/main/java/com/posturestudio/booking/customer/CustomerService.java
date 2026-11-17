@@ -56,6 +56,12 @@ public class CustomerService {
                         repository.save(new Customer(userId, details.firstName(), details.lastName())).getId(), true));
     }
 
+    // The customer of this email, if there is one (D-090); nothing is created
+    @Transactional(readOnly = true)
+    public java.util.Optional<Long> findByEmail(String email) {
+        return accounts.customerAccountOf(email).flatMap(repository::findByUserId).map(Customer::getId);
+    }
+
     // The profile of the customer of this account (guide 25, 7.3); 409 PROFILE_INCOMPLETE before the names
     @Transactional(readOnly = true)
     public CustomerProfile profileOf(long userId) {

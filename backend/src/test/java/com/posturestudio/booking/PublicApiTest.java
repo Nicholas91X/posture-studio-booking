@@ -61,7 +61,7 @@ public class PublicApiTest {
 
         // the exact set of fields: a new one must be a decision, not an accident (D-029, D-084)
         Map<String, Object> first = JsonPath.read(body, "$[0]");
-        assertThat(first.keySet()).containsExactlyInAnyOrder("id", "firstName", "lastName", "onlineBooking",
+        assertThat(first.keySet()).containsExactlyInAnyOrder("id", "firstName", "lastName", "paymentMode",
                 "bookingApproval", "approvalWindowHours", "cancellationNoticeHours");
         assertThat(first).containsEntry("firstName", "Luca").containsEntry("lastName", "Bianchi");
     }
@@ -79,10 +79,10 @@ public class PublicApiTest {
         MvcTestResult result = mvc.get().uri("/api/public/practitioners").exchange();
 
         // Bianchi first (last name), without an account and with the defaults of the database
-        assertThat(result).bodyJson().extractingPath("$[0].onlineBooking").isEqualTo(false);
+        assertThat(result).bodyJson().extractingPath("$[0].paymentMode").isEqualTo("IN_STUDIO");
         assertThat(result).bodyJson().extractingPath("$[0].bookingApproval").isEqualTo("MANUAL");
         assertThat(result).bodyJson().extractingPath("$[0].cancellationNoticeHours").isEqualTo(24);
-        assertThat(result).bodyJson().extractingPath("$[1].onlineBooking").isEqualTo(true);
+        assertThat(result).bodyJson().extractingPath("$[1].paymentMode").isEqualTo("CARD");
         assertThat(result).bodyJson().extractingPath("$[1].bookingApproval").isEqualTo("AUTOMATIC");
         assertThat(result).bodyJson().extractingPath("$[1].approvalWindowHours").isEqualTo(6);
         assertThat(result).bodyJson().extractingPath("$[1].cancellationNoticeHours").isEqualTo(48);

@@ -2,6 +2,8 @@ package com.posturestudio.booking.payment;
 
 import java.util.List;
 
+import org.springframework.http.ResponseEntity;
+import org.springframework.web.bind.annotation.DeleteMapping;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PutMapping;
@@ -40,5 +42,12 @@ class PaymentAccountAdminController {
     @PutMapping("/practitioners/{id}/payment-account")
     AssignedAccountView assign(@PathVariable long id, @Valid @RequestBody AccountAssignment request) {
         return service.assign(id, request.account());
+    }
+
+    // 204, also when there was no account: the result is the same (D-089)
+    @DeleteMapping("/practitioners/{id}/payment-account")
+    ResponseEntity<Void> unassign(@PathVariable long id) {
+        service.unassign(id);
+        return ResponseEntity.noContent().build();
     }
 }

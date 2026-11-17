@@ -16,8 +16,8 @@ const BY_CODE: Record<ApiErrorCode, string> = {
   SLOT_NOT_AVAILABLE: "Questo orario non è più disponibile. Scegline un altro.",
   BOOKING_LIMIT_REACHED:
     "Hai già il numero massimo di sedute future con questo professionista. Potrai prenotarne un'altra quando una di queste sarà iniziata.",
-  CARD_PAYMENTS_UNAVAILABLE:
-    "Con questo professionista non si può pagare online, e non hai un suo credito valido per questa seduta. Contatta lo studio per prenotare.",
+  // since D-089 only for buying a package online: the sessions of these practitioners are paid in the studio
+  CARD_PAYMENTS_UNAVAILABLE: "Con questo professionista i pacchetti si acquistano in studio, non online.",
   PAYMENT_PROVIDER_UNAVAILABLE: "Il servizio di pagamento non risponde. Non è stato addebitato niente: riprova tra qualche minuto.",
   BOOKING_TRANSITION_NOT_ALLOWED: "Questa seduta è cambiata nel frattempo. Ricarica la pagina per vedere com'è adesso.",
   BOOKING_ALREADY_STARTED: "La seduta è già iniziata: non si può più cancellare.",

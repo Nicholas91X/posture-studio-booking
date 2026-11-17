@@ -42,6 +42,17 @@ class CreditLot {
         return lot;
     }
 
+    // A package sold in the studio (D-089): sessions, validity and price photographed from the package as it is now,
+    // who recorded it in the lot itself, so that a check can demand it (V17). No payment: nothing went through Stripe
+    static CreditLot studioSale(long customerId, long practitionerId, long serviceId, long packageOfferId,
+                                long priceCents, long soldBy, ValidUntil validUntil, Instant now) {
+        CreditLot lot = lot(LotSource.STUDIO_SALE, customerId, practitionerId, serviceId, validUntil, now);
+        lot.packageOfferId = packageOfferId;
+        lot.priceCents = Checks.requirePositive(priceCents, "priceCents");
+        lot.soldBy = soldBy;
+        return lot;
+    }
+
     // A credit of 1 born from a cancellation (V16, guide 43, part 4): a session paid by card, or a credit whose lot
     // ended too soon (D-076). The booking it comes from is in its LOT_CREATED movement, not here (D-078)
     static CreditLot fromCancellation(long customerId, long practitionerId, long serviceId, ValidUntil validUntil,
@@ -95,6 +106,10 @@ class CreditLot {
 
     @Column(updatable = false)
     private String note;
+
+    // who recorded a package sold in the studio (D-089); null for every other source
+    @Column(updatable = false)
+    private Long soldBy;
 
     // the only column that changes: forward, with an extension
     @Column

@@ -165,16 +165,17 @@ public class BookingCheckoutApiTest {
                 .hasStatusOk().bodyJson().extractingPath("$.paymentUrl").isNull();
     }
 
-    // guide 30, part 6: refused before anything is written, so no slot is held for nobody
+    // D-089 (was a 409 until step 13b): without an account the request is paid in the studio, and Stripe is never
+    // asked. The rest of the path is BookingInStudioTest
     @Test
-    void aPractitionerWithoutAccountRefusesTheRequestAndHoldsNothing() {
+    void aPractitionerWithoutAccountTakesTheRequestInTheStudio() {
         jdbc.update("delete from practitioner_payment_account where practitioner_id = ?", anna);
 
         MvcTestResult result = request();
 
-        assertThat(result).hasStatus(HttpStatus.CONFLICT);
-        assertThat(result).bodyJson().extractingPath("$.code").isEqualTo("CARD_PAYMENTS_UNAVAILABLE");
-        assertThat(jdbc.queryForObject("select count(*) from booking", Long.class)).isZero();
+        assertThat(result).hasStatus(HttpStatus.CREATED);
+        assertThat(result).bodyJson().extractingPath("$.paidWith").isEqualTo("IN_STUDIO");
+        assertThat(result).bodyJson().extractingPath("$.paymentUrl").isNull();
         assertThat(stripe.calls()).isEmpty();
     }
 

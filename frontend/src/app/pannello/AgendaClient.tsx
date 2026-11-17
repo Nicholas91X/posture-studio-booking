@@ -84,9 +84,14 @@ export function AgendaClient() {
         <Agenda view={view} days={days} today={today} rows={bookings.data} services={services.data} />
       ) : null}
 
-      <Link href={`/pannello/prenota${day === today ? "" : `?giorno=${day}`}`} className="button button-block">
-        Prenota per un cliente
-      </Link>
+      <div className="stack">
+        <Link href={`/pannello/prenota${day === today ? "" : `?giorno=${day}`}`} className="button button-block">
+          Prenota per un cliente
+        </Link>
+        <Link href={`/pannello/agende${day === today ? "" : `?giorno=${day}`}`} className="button button-secondary button-block">
+          Agende a confronto
+        </Link>
+      </div>
     </>
   );
 }

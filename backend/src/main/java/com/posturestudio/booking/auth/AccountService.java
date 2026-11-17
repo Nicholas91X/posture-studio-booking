@@ -104,6 +104,15 @@ public class AccountService {
         return user.getId();
     }
 
+    // The customer account of this email, if there is one; nothing is created (D-090: the panel asks before
+    // booking). Another role, or no account: empty
+    @Transactional(readOnly = true)
+    public java.util.Optional<Long> customerAccountOf(String email) {
+        return users.findByEmail(new Email(email))
+                .filter(user -> user.getRole() == Role.CUSTOMER)
+                .map(AppUser::getId);
+    }
+
     private AppUser find(long userId) {
         return users.findById(userId).orElseThrow(() -> new NotFoundException("User " + userId + " not found"));
     }

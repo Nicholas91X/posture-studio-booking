@@ -57,6 +57,15 @@ public class PractitionerService {
                 .toList();
     }
 
+    // The active practitioners by name, in the order of the public list (D-091)
+    @Transactional(readOnly = true)
+    public List<ActivePractitioner> activeByName() {
+        return activeInOrder().stream()
+                .map(practitioner -> new ActivePractitioner(practitioner.getId(), practitioner.getFirstName(),
+                        practitioner.getLastName()))
+                .toList();
+    }
+
     // Missing and deactivated throw the same exception: a public 404 must not tell them apart
     @Transactional(readOnly = true)
     public void requireActive(long practitionerId) {

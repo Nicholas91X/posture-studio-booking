@@ -21,6 +21,7 @@ let paola: { context: BrowserContext; page: Page };
 let paolaApi: Actor;
 let giulia: Actor;
 let saraId: number;
+let paolaId: number;
 let requestId: number;
 // the admin signs in once, in the browser: the setup uses the same session for the APIs. A second code for the same
 // address within minutes would hit the limit of D-050 (3 every 15 minutes) when the whole suite runs
@@ -63,6 +64,7 @@ test.beforeAll(async ({ browser }) => {
   const adminApi = Actor.of(admin.context.request);
   const made = await practitioner(adminApi, "paola", "Paola", "Neri", "MANUAL");
   paolaApi = made.actor;
+  paolaId = made.id;
   const sara = await practitioner(adminApi, "sara", "Sara", "Gialli", "AUTOMATIC");
   saraId = sara.id;
 
@@ -185,6 +187,21 @@ test("una concessione: due sedute regalate a Giulia, con la nota, poi nei suoi c
   const lot = page.locator(".card", { hasText: "Omaggio dello studio" }).filter({ hasText: "2 crediti" });
   await lot.getByRole("button", { name: "Storia e note" }).click();
   await expect(lot.getByText("Nota: Per la seduta spostata dallo studio")).toBeVisible();
+  await expectFitsTheScreen(page);
+});
+
+// D-091: Paola compares her agenda with Sara's. In two days Sara is busy 10-11, Paola is free all day, both work 8-20:
+// free together 8-10 and 11-20. Of Sara's session Paola sees only "Occupato"
+test("le agende a confronto: solo occupato e libero, e gli orari liberi insieme", async () => {
+  const { page } = paola;
+  const day = plusDays(todayInRome(), 2);
+  await page.goto(`/pannello/agende?giorno=${day}&chi=${paolaId},${saraId}`);
+
+  await expect(page.getByRole("heading", { name: "Agende a confronto" })).toBeVisible();
+  await expect(page.getByRole("img", { name: /Sara Gialli.*10:00–11:00, Occupato/ })).toBeVisible();
+  await expect(page.getByText("Liberi insieme: 08:00–10:00, 11:00–20:00")).toBeVisible();
+  // nothing of Sara's customer anywhere on the page
+  await expect(page.getByText("Bruno")).toHaveCount(0);
   await expectFitsTheScreen(page);
 });
 

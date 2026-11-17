@@ -11,6 +11,7 @@ import java.util.Comparator;
 import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
+import java.util.Optional;
 import java.util.Set;
 import java.util.stream.Collectors;
 
@@ -96,7 +97,8 @@ public class BookingService {
 
     // A customer asks for a slot (guide 19, part 2 for the order; guide 38, part 4 for the credit). One
     // transaction, one reading of the clock. Outcome, with a usable credit: PENDING_APPROVAL with the credit
-    // committed, nothing to pay (or CONFIRMED in AUTOMATIC mode). Without: PENDING_PAYMENT, held for 32 minutes
+    // committed, nothing to pay (or CONFIRMED in AUTOMATIC mode). Without a credit, and the practitioner with no
+    // payment account (D-089): the same, paid in the studio. Otherwise: PENDING_PAYMENT, held for 32 minutes
     // (D-008, D-061), with the page where the customer pays (guide 31), until paymentAuthorized
     @Transactional
     public CustomerBookingView request(long customerId, NewBooking request) {
@@ -111,14 +113,6 @@ public class BookingService {
 
         // 1. the request names something on sale (404): no lock needed for that
         ServiceOnSale service = catalog.serviceOnSale(practitionerId, request.serviceId());
-
-        // 1b. neither a credit nor a card account: nobody can pay this booking, refused before any lock or write,
-        // so no slot is ever held for it (guide 30, part 6). A quick look without locks: it decides nothing,
-        // step 5 decides. A practitioner with no account still takes the bookings of a customer with a credit
-        if (!checkout.available(practitionerId)
-                && !credits.hasUsableCredit(customerId, practitionerId, service.id(), start)) {
-            throw cardPaymentsUnavailable(practitionerId);
-        }
 
         // 2. from here on, the requests of this customer go one at a time (guide 19, part 4):
         // a second one waits here until this transaction ends, then counts again and sees this booking
@@ -147,11 +141,11 @@ public class BookingService {
         // that ends first, itself locked. The limit above holds for credits too: it protects the calendar
         var lot = credits.lockUsableLot(customerId, practitionerId, service.id(), slot.start());
         if (lot.isPresent()) {
-            return requestWithCredit(customerId, practitionerId, service, slot, lot.get(), settings, now);
+            return requestWithoutCard(customerId, practitionerId, service, slot, lot, settings, now);
         }
-        // the credit of step 1b is gone in the meantime (rare), and nobody can pay by card
+        // no payment account: everything is paid in the studio (D-089), no Stripe, no hold
         if (!checkout.available(practitionerId)) {
-            throw cardPaymentsUnavailable(practitionerId);
+            return requestWithoutCard(customerId, practitionerId, service, slot, Optional.empty(), settings, now);
         }
 
         // 7. the insert, flushed here and not at commit, so that a violation can be translated
@@ -167,17 +161,17 @@ public class BookingService {
         return CustomerBookingView.from(booking, page);
     }
 
-    // Paid with a credit (guide 38): born PENDING_APPROVAL, the credit committed (-1) after the insert, then the
-    // same path as after a payment (D-030): AUTOMATIC confirms at once, MANUAL asks the practitioner. Nothing to
-    // capture, so the confirmation of AUTOMATIC cannot be refused
-    private CustomerBookingView requestWithCredit(long customerId, long practitionerId, ServiceOnSale service,
-                                                  TimeRange slot, long lotId, PractitionerSettings settings,
-                                                  Instant now) {
-        Booking booking = Booking.requestedWithCredit(customerId, practitionerId, service.id(), slot,
+    // Paid with a credit (guide 38) or in the studio (D-089): born PENDING_APPROVAL, a credit committed (-1) after
+    // the insert, then the same path as after a payment (D-030): AUTOMATIC confirms at once, MANUAL asks the
+    // practitioner. Nothing to capture, so the confirmation of AUTOMATIC cannot be refused
+    private CustomerBookingView requestWithoutCard(long customerId, long practitionerId, ServiceOnSale service,
+                                                   TimeRange slot, Optional<Long> lot, PractitionerSettings settings,
+                                                   Instant now) {
+        Booking booking = Booking.requestedWithoutCard(customerId, practitionerId, service.id(), slot,
                 service.priceCents(), now, Duration.ofHours(settings.approvalWindowHours()),
-                cancellationNotice(settings));
+                cancellationNotice(settings), lot.isPresent() ? PaidWith.CREDIT : PaidWith.IN_STUDIO);
         insert(booking, practitionerId, slot);
-        credits.commit(lotId, booking.getId());
+        lot.ifPresent(lotId -> credits.commit(lotId, booking.getId()));
         switch (settings.bookingApproval()) {
             case AUTOMATIC -> confirmPaid(booking, now);
             case MANUAL -> events.publishEvent(ApprovalRequested.of(booking));
@@ -196,11 +190,6 @@ public class BookingService {
         } catch (DataIntegrityViolationException | PessimisticLockingFailureException e) {
             throw translateOverlap(e, practitionerId, slot);
         }
-    }
-
-    private static BusinessRuleException cardPaymentsUnavailable(long practitionerId) {
-        return new BusinessRuleException(ErrorCode.CARD_PAYMENTS_UNAVAILABLE,
-                "Practitioner " + practitionerId + " cannot take card payments yet");
     }
 
     @Transactional(readOnly = true)
@@ -395,8 +384,10 @@ public class BookingService {
         // the same last steps as a customer's request: stale holds closed, overlap left to the constraint
         bookings.expireStaleHolds(practitionerId, slot.start(), slot.end(), now,
                 BookingStatus.PENDING_PAYMENT, BookingStatus.EXPIRED);
-        // the usable lot that ends first, locked: under the lock on the customer taken above (lock order of D-069)
-        var lot = credits.lockUsableLot(customerId, practitionerId, service.id(), slot.start());
+        // the usable lot that ends first, locked: under the lock on the customer taken above (lock order of D-069).
+        // Unless the practitioner chose the studio anyway (D-090): then no credit is even looked at
+        Optional<Long> lot = request.paidInStudioAnyway() ? Optional.empty()
+                : credits.lockUsableLot(customerId, practitionerId, service.id(), slot.start());
         Booking booking = Booking.bookedFromPanel(customerId, practitionerId, service.id(), slot,
                 service.priceCents(), now, lot.isPresent() ? PaidWith.CREDIT : PaidWith.IN_STUDIO,
                 cancellationNotice(practitioners.getSettings(practitionerId)));
@@ -426,6 +417,18 @@ public class BookingService {
         serviceIds.add(service.id());
         others.forEach(other -> serviceIds.add(other.serviceId()));
         return evaluationOverlaps(service.id(), slot, others, catalog.evaluationsAmong(serviceIds));
+    }
+
+    // Before booking from the panel (D-090): would a credit of this customer with this practitioner pay it? An
+    // email nobody has, or of another role, has none; nothing is created. An own active service, or 404
+    @Transactional(readOnly = true)
+    public PanelCreditCheck creditCheckForPanel(long practitionerId, PanelCreditQuery query) {
+        ServiceOnSale service = catalog.serviceOnSale(practitionerId, query.serviceId());
+        return customers.findByEmail(query.email())
+                .flatMap(customerId -> credits.usableCreditUntil(customerId, practitionerId, service.id(),
+                        query.startsAt().toInstant()))
+                .map(until -> new PanelCreditCheck(true, until))
+                .orElseGet(() -> new PanelCreditCheck(false, null));
     }
 
     @Transactional(readOnly = true)
@@ -735,10 +738,8 @@ public class BookingService {
         boolean paid = switch (booking.getPaidWith()) {
             case CARD -> cards.capture(booking.getId(), booking.getPriceCents())
                     instanceof CardHolds.CaptureResult.Captured;
-            case CREDIT -> true;
-            // born CONFIRMED from the panel: it never waits for an approval, so this is a bug
-            case IN_STUDIO -> throw new IllegalStateException("Booking " + booking.getId()
-                    + " is paid in the studio and cannot be waiting for an approval");
+            // a credit was committed at the request; in the studio nothing is paid online (D-089)
+            case CREDIT, IN_STUDIO -> true;
         };
         if (paid) {
             booking.approve(now);
@@ -754,8 +755,9 @@ public class BookingService {
         switch (booking.getPaidWith()) {
             case CARD -> cards.cancel(booking.getId());
             case CREDIT -> credits.release(booking.getId());
-            case IN_STUDIO -> throw new IllegalStateException("Booking " + booking.getId()
-                    + " is paid in the studio and cannot be waiting for an approval");
+            // nothing was paid, nothing to give back (D-089)
+            case IN_STUDIO -> {
+            }
         }
     }
 

@@ -242,15 +242,15 @@ class BookingWithCreditTest {
         assertThat(result).bodyJson().extractingPath("$.paidWith").isEqualTo("CREDIT");
     }
 
+    // D-089 (was a 409 until step 13b): without a credit and without an account, paid in the studio
     @Test
-    void withoutAPaymentAccountAndWithoutACreditNothingIsBooked() throws Exception {
+    void withoutAPaymentAccountAndWithoutACreditItIsPaidInTheStudio() throws Exception {
         jdbc.update("delete from practitioner_payment_account where practitioner_id = ?", anna);
 
         MvcTestResult result = request(MONDAY_9);
 
-        assertThat(result).hasStatus(HttpStatus.CONFLICT);
-        assertThat(result).bodyJson().extractingPath("$.code").isEqualTo("CARD_PAYMENTS_UNAVAILABLE");
-        assertThat(jdbc.queryForObject("select count(*) from booking where customer_id = ?", Long.class, cliente)).isZero();
+        assertThat(result).hasStatus(HttpStatus.CREATED);
+        assertThat(result).bodyJson().extractingPath("$.paidWith").isEqualTo("IN_STUDIO");
     }
 
     // D-023 holds with a credit too: it protects the calendar, not the money

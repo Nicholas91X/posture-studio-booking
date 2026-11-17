@@ -187,7 +187,9 @@ class BookingEmails {
                 """.formatted(facts.practitioner().firstName(), facts.serviceName(), when(requested.startsAt()),
                 when(requested.approvalDeadline()), switch (requested.paidWith()) {
                     case CREDIT -> "il credito torna al cliente";
-                    case CARD, IN_STUDIO -> "il blocco sulla carta del cliente si annulla";
+                    case CARD -> "il blocco sulla carta del cliente si annulla";
+                    // a request paid in the studio (D-089): nothing to give back
+                    case IN_STUDIO -> "il cliente non paga niente (la seduta era da pagare in studio)";
                 }, appUrl);
         return new OutgoingEmail(Recipient.PRACTITIONER, facts.practitioner().email(),
                 subject("Nuova richiesta da approvare", requested.startsAt()), text + FOOTER);
@@ -210,9 +212,11 @@ class BookingEmails {
                     case CREDIT -> """
                             Hai usato un credito: è impegnato per questa richiesta. Se la richiesta
                             non viene approvata, torna disponibile.""";
-                    case CARD, IN_STUDIO -> """
+                    case CARD -> """
                             L'importo è bloccato sulla carta, non addebitato: si addebita solo se la richiesta
                             viene approvata. Altrimenti il blocco si annulla e non paghi niente.""";
+                    case IN_STUDIO -> """
+                            Non hai pagato niente online: la seduta, se approvata, si paga in studio.""";
                 }, appUrl));
     }
 
@@ -221,7 +225,9 @@ class BookingEmails {
     private static String creditUsed(PaidWith paidWith) {
         return switch (paidWith) {
             case CREDIT -> "\nPer questa seduta è stato usato uno dei tuoi crediti.\n";
-            case CARD, IN_STUDIO -> "";
+            // the customer must know they pay on the day (D-040, D-089)
+            case IN_STUDIO -> "\nLa seduta si paga in studio.\n";
+            case CARD -> "";
         };
     }
 
@@ -230,7 +236,8 @@ class BookingEmails {
     private static String nothingLost(PaidWith paidWith) {
         return switch (paidWith) {
             case CREDIT -> CREDIT_BACK;
-            case CARD, IN_STUDIO -> NOTHING_CHARGED;
+            case CARD -> NOTHING_CHARGED;
+            case IN_STUDIO -> "Non avevi pagato niente: la seduta era da pagare in studio.";
         };
     }
 

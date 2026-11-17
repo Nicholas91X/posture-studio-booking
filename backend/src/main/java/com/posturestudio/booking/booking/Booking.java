@@ -57,16 +57,21 @@ class Booking {
         return booking;
     }
 
-    // A request of the customer paid with a credit (step 10, guide 38): nothing to pay, so it is born waiting for
-    // the practitioner, with the same deadline a paid request gets (D-030): request + window, from createdAt.
-    // The credit is committed by BookingService right after the insert (-1 on the lot). Not a transition:
-    // the state machine is about steps, not birth (as bookedFromPanel)
-    static Booking requestedWithCredit(long customerId, long practitionerId, long serviceId, TimeRange slot,
-                                       long priceCents, Instant now, Duration approvalWindow,
-                                       Duration cancellationNotice) {
+    // A request of the customer with nothing to pay online (step 10, guide 38; D-089): paid with a credit, or in the
+    // studio when the practitioner has no payment account. So it is born waiting for the practitioner, with the
+    // same deadline a paid request gets (D-030): request + window, from createdAt. A credit is committed by
+    // BookingService right after the insert (-1 on the lot). Not a transition: the state machine is about steps,
+    // not birth (as bookedFromPanel)
+    static Booking requestedWithoutCard(long customerId, long practitionerId, long serviceId, TimeRange slot,
+                                        long priceCents, Instant now, Duration approvalWindow,
+                                        Duration cancellationNotice, PaidWith paidWith) {
         Objects.requireNonNull(slot, "slot must not be null");
         Objects.requireNonNull(now, "now must not be null");
         Objects.requireNonNull(approvalWindow, "approvalWindow must not be null");
+        if (paidWith != PaidWith.CREDIT && paidWith != PaidWith.IN_STUDIO) {
+            throw new IllegalArgumentException("A request without a card is paid with a credit or in the studio, not "
+                    + paidWith);
+        }
         Booking booking = new Booking();
         booking.customerId = customerId;
         booking.practitionerId = practitionerId;
@@ -75,7 +80,7 @@ class Booking {
         booking.endsAt = slot.end();
         booking.status = BookingStatus.PENDING_APPROVAL;
         booking.bookedBy = BookedBy.CUSTOMER;
-        booking.paidWith = PaidWith.CREDIT;
+        booking.paidWith = paidWith;
         // the value of the session, photographed as for a card (D-011): useful to step 11
         booking.priceCents = Checks.requirePositive(priceCents, "priceCents");
         booking.createdAt = now;

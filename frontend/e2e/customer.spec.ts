@@ -106,11 +106,13 @@ test("l'admin sul sito dei clienti legge che non è la sua sezione, e può uscir
   await expect(page).toHaveURL(/\/accedi\?torna=%2Fprofilo/);
 });
 
-test("il sito dice prima che con Anna non si paga online, e mostra i crediti di Maria", async () => {
+// Anna has no payment account in these tests: everything with her is paid in the studio (D-089)
+test("il sito dice prima che con Anna si paga in studio, e mostra i crediti di Maria", async () => {
   const { page } = maria;
   await page.goto("/");
+  await expect(page.getByText("Prenoti online, paghi in studio.")).toBeVisible();
   await page.getByRole("link", { name: /Anna Rossi/ }).click();
-  await expect(page.getByText("non si può pagare online").first()).toBeVisible();
+  await expect(page.getByText(/le sedute si pagano in studio/).first()).toBeVisible();
   await expect(page.getByText("I tuoi crediti con Anna")).toBeVisible();
   await expect(page.getByText(/3 crediti per Seduta posturale/)).toBeVisible();
 });
@@ -249,6 +251,30 @@ test("la settimana e il mese mostrano la seduta confermata, non quelle annullate
   await expect(page.getByRole("link", { name: /, 1 seduta$/ })).toHaveCount(1);
   await expect(page.getByRole("link", { name: /Seduta posturale con Anna Rossi/ })).toBeVisible();
   await expectFitsTheScreen(page);
+});
+
+// D-089: a customer without credits books a practitioner without an account, and pays in the studio
+test("una prenotazione in studio dal sito: niente Stripe, la frase prima e la seduta confermata dopo", async ({ browser }) => {
+  const sofia = await phone(browser);
+  try {
+    const { page } = sofia;
+    await page.goto(`/professionisti/${practitionerId}/servizi/${serviceId}`);
+    await page.getByRole("link", { name: "Accedi" }).first().click();
+    await signInThroughThePages(page, email("sofia"), { firstName: "Sofia", lastName: "Neri" });
+    await page.goto(`/professionisti/${practitionerId}/servizi/${serviceId}`);
+    await page.getByRole("group", { name: "Orari liberi", exact: true }).getByRole("button").first().click();
+    await expect(page.getByText(/altrimenti pagherai 30,00\s€ in studio, il giorno della seduta/)).toBeVisible();
+
+    await page.getByRole("button", { name: "Prenota" }).click();
+
+    // never to Stripe: straight to the session, confirmed (Anna approves automatically in these tests)
+    await expect(page).toHaveURL(/\/prenotazioni\/\d+\?nuova=1/);
+    await expect(page.getByText("Seduta confermata: la paghi in studio, il giorno della seduta.")).toBeVisible();
+    await expect(page.getByText(/Da pagare in studio/).first()).toBeVisible();
+    await expectFitsTheScreen(page);
+  } finally {
+    await sofia.context.close();
+  }
 });
 
 test("ogni pagina sta nello schermo del telefono", async ({ browser }) => {

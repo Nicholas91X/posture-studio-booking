@@ -85,6 +85,19 @@ interface BookingRepository extends JpaRepository<Booking, Long> {
     List<BookedRange> findOthersHolding(long practitionerId, Instant spanStart, Instant spanEnd, Instant now,
                                         Collection<BookingStatus> holding, BookingStatus pending);
 
+    // The busy time of some practitioners in a span, for the agendas compared (D-091): only who and when are
+    // selected, never the customer, the service or the state. Same "holding at now" as findOthersHolding
+    @Query("""
+            select new com.posturestudio.booking.booking.BusyRange(b.practitionerId, b.startsAt, b.endsAt)
+            from Booking b
+            where b.practitionerId in :practitionerIds
+              and b.startsAt < :spanEnd and b.endsAt > :spanStart
+              and b.status in :holding
+              and (b.status <> :pending or b.holdExpiresAt > :now)
+            """)
+    List<BusyRange> findBusy(Collection<Long> practitionerIds, Instant spanStart, Instant spanEnd, Instant now,
+                             Collection<BookingStatus> holding, BookingStatus pending);
+
     // ***** for the jobs (guide 21) *****
 
     // all the expired holds at once: the lazy expiry above without the range. Same guard in the where

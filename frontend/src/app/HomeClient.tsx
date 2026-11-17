@@ -44,9 +44,7 @@ export function HomeClient() {
             <h2>{fullName(practitioner)}</h2>
             <span aria-hidden="true">›</span>
           </div>
-          {practitioner.onlineBooking ? null : (
-            <p className="small muted">Pagamento online non disponibile: si prenota con un credito.</p>
-          )}
+          {practitioner.paymentMode === "IN_STUDIO" ? <p className="small muted">Prenoti online, paghi in studio.</p> : null}
         </Link>
       ))}
     </>

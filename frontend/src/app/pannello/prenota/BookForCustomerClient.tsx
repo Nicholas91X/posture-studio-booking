@@ -8,16 +8,17 @@ import { PANEL_WORDING } from "@/api/errors";
 import { Dialog } from "@/components/Dialog";
 import { ErrorNotice, Loading, Notice } from "@/components/Notice";
 import { isDay } from "@/lib/calendar";
-import { formatDateTime, formatDayWithWeekday, formatTime, romeDateTime, todayInRome } from "@/lib/format";
+import { formatCalendarDay, formatDateTime, formatDayWithWeekday, formatTime, romeDateTime, todayInRome } from "@/lib/format";
 import { loadOwnServices, serviceNameIn, useAction, useApi } from "@/lib/panel";
 
 type Overlap = Schemas["RoomOverlap"];
 type Created = Schemas["PanelBookingCreated"];
-type Check = { startsAt: string; overlaps: Overlap[] };
+type Check = { startsAt: string; overlaps: Overlap[]; credit: Schemas["PanelCreditCheck"] };
 
 // A session booked by the practitioner for a customer (D-024, D-048): found or created by email, confirmed at once,
 // with a credit of the customer if one covers it, otherwise paid in the studio. Working hours and absences apply, the
-// grid does not: the backend decides. Before confirming, the room (D-043, D-088): only times, never who
+// grid does not: the backend decides. Before confirming, the room (D-043, D-088): only times, never who; and whether
+// a credit of the customer with this practitioner would pay it, so that the practitioner chooses (D-090)
 export function BookForCustomerClient() {
   const query = useSearchParams();
   const services = useApi(() => loadOwnServices(), []);
@@ -30,6 +31,7 @@ export function BookForCustomerClient() {
   const [firstName, setFirstName] = useState(query.get("nome") ?? "");
   const [lastName, setLastName] = useState(query.get("cognome") ?? "");
   const [check, setCheck] = useState<Check | null>(null);
+  const [pay, setPay] = useState<"credit" | "studio">("credit");
   const [created, setCreated] = useState<Created | null>(null);
   const checking = useAction();
   const booking = useAction();
@@ -50,8 +52,12 @@ export function BookForCustomerClient() {
     }
     const startsAt = romeDateTime(day, time);
     void checking.run(async () => {
-      const overlaps = await unwrap(api.GET("/api/panel/bookings/room-overlaps", { params: { query: { serviceId: chosen, startsAt } } }));
-      setCheck({ startsAt, overlaps });
+      const [overlaps, credit] = await Promise.all([
+        unwrap(api.GET("/api/panel/bookings/room-overlaps", { params: { query: { serviceId: chosen, startsAt } } })),
+        unwrap(api.GET("/api/panel/bookings/credit-check", { params: { query: { serviceId: chosen, startsAt, email: email.trim() } } })),
+      ]);
+      setPay("credit");
+      setCheck({ startsAt, overlaps, credit });
     });
   };
 
@@ -62,7 +68,13 @@ export function BookForCustomerClient() {
     void booking.run(async () => {
       const answer = await unwrap(
         api.POST("/api/panel/bookings", {
-          body: { serviceId: chosen, startsAt: check.startsAt, customer: { email: email.trim(), firstName: firstName.trim(), lastName: lastName.trim() } },
+          body: {
+            serviceId: chosen,
+            startsAt: check.startsAt,
+            customer: { email: email.trim(), firstName: firstName.trim(), lastName: lastName.trim() },
+            // the choice only exists with a credit (D-090); without one the backend books it in the studio anyway
+            inStudio: check.credit.usableCredit && pay === "studio",
+          },
         }),
       );
       setCheck(null);
@@ -143,7 +155,24 @@ export function BookForCustomerClient() {
               </p>
             </Notice>
           ) : null}
-          <p className="small muted">Se il cliente ha un credito valido per questo servizio si usa quello; altrimenti la seduta si paga in studio.</p>
+          {check.credit.usableCredit ? (
+            <fieldset className="stack">
+              <legend>Come si paga</legend>
+              <label className="check">
+                <input type="radio" name="pay" checked={pay === "credit"} onChange={() => setPay("credit")} />
+                <span>
+                  Usa un credito del cliente
+                  {check.credit.validUntil !== null ? ` (valido fino al ${formatCalendarDay(check.credit.validUntil)})` : ""}
+                </span>
+              </label>
+              <label className="check">
+                <input type="radio" name="pay" checked={pay === "studio"} onChange={() => setPay("studio")} />
+                <span>Pagamento in studio: il credito resta al cliente</span>
+              </label>
+            </fieldset>
+          ) : (
+            <p className="small muted">Il cliente non ha crediti con te per questa seduta: si paga in studio.</p>
+          )}
           <ErrorNotice error={booking.error} wording={PANEL_WORDING} />
           <div className="dialog-actions">
             <button type="button" className="button" disabled={booking.running} onClick={confirm}>
