@@ -1,6 +1,6 @@
 # Passo 13b — Contanti e agende a confronto
 
-> **Stato: in revisione** (2026-11-17), branch `feat/step-13b-cash-and-agendas`. 1174 test del backend, 17 test end-to-end e 16 prove unitarie del frontend verdi.
+> **Stato: chiuso** (2026-11-17). Unito in `main` con un merge (PR #11, branch `feat/step-13b-cash-and-agendas`). 1174 test del backend, 17 test end-to-end e 16 prove unitarie del frontend verdi.
 
 ## Obiettivo
 
