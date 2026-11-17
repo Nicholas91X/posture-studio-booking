@@ -55,6 +55,11 @@ export async function codeFor(address: string, ask: () => Promise<unknown>): Pro
 export class Actor {
   private constructor(private readonly http: APIRequestContext) {}
 
+  /** The API side of a browser already signed in: the same cookies, so no other access code (D-050: 3 in 15 minutes). */
+  static of(http: APIRequestContext): Actor {
+    return new Actor(http);
+  }
+
   static async signIn(address: string): Promise<Actor> {
     const http = await request.newContext({ baseURL: BACKEND_URL });
     const actor = new Actor(http);
